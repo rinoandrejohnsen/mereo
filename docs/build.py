@@ -42,8 +42,14 @@ for _lib in ("linux.mereo", "core.mereo"):
     _f = HERE.parent / _lib
     if _f.exists():
         LIBS |= mereohl.namespaces_of(_f.read_text(), _f.resolve())
+# ...and a bare CALL line, which is how a one-line snippet usually reads:
+# `text.find (data is block, ...)`. The space before `(` is what separates it
+# from C and from an strace transcript, neither of which writes one -- so
+# `write(1, ...)` and `rt_sigaction(SIGPIPE, ...)` stay plain, as they should.
+# Without this, a snippet that was only a call went unhighlighted in the guide
+# and untagged in the wiki.
 IS_MEREO = re.compile(r'^\s*(include "|\w+ is |.* goes$|scope$|ensure |repeat |'
-                      r"leave |end$|--)")
+                      r"leave |end$|--|[\w.]+ \()")
 
 
 # ...and the palette those spans use, straight off the same theme table.
@@ -422,6 +428,32 @@ def to_wiki(text):
     from -- so the removal belongs here, in the wiki rewrite, rather than in the
     source."""
     text = re.sub(r"\A#\s+[^\n]*\n\n?", "", text)
+
+    # Tag mereo blocks as Ada so GitHub colours them. GitHub has no mereo
+    # grammar and adding one means a pull request to linguist, so the choice is
+    # the nearest language it already knows -- and that was measured, not
+    # guessed. Against the guide's own examples: Ada covers 395 of 554 keyword
+    # occurrences (`is`, `end`, `when`, `in`, `out`, `and`, `or`, `constant`,
+    # `exit`), takes `--` as a comment, and takes "..." as a STRING. SQL scored
+    # marginally higher on keywords alone (415, it also has `as`) and was
+    # rejected for the strings: SQL reads "..." as a quoted identifier, which
+    # would leave all 38 of them uncoloured.
+    #
+    # Only blocks that look like mereo are tagged -- the same test the HTML
+    # highlighter uses -- so shell transcripts, generated C and output samples
+    # stay plain.
+    # Fences are paired WITH their tag. Matching a bare "```\n" instead reads a
+    # tagged block's CLOSING fence as an opener, and every fence after it is off
+    # by one -- prose gets tagged and real examples get missed. That trap has
+    # now been walked into twice in this file; see check_examples for the first.
+    def _tag(m):
+        if m.group(1):                       # already tagged (c, sh) -- leave it
+            return m.group(0)
+        body = m.group(2)
+        looks = any(IS_MEREO.match(l) for l in body.split("\n"))
+        return ("```ada\n" if looks else "```\n") + body + "```"
+    text = re.sub(r"^```(\w*)\n(.*?)^```", _tag, text, flags=re.S | re.M)
+
     return re.sub(r"\]\(([a-z0-9-]+)\.md\)",
                   lambda m: f"]({wiki_name(m.group(1))})", text)
 

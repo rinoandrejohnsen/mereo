@@ -3,7 +3,7 @@ build, so none can drift from the language.
 
 ## Hello world
 
-```
+```ada
 include "linux.mereo"
 
 program is
@@ -21,7 +21,7 @@ end
 The `close` is absent because it is derived; `source` belongs to the program's
 scope and is released when that scope ends, on any path out.
 
-```
+```ada
 include "linux.mereo"
 
 program is
@@ -41,7 +41,7 @@ end
 
 ## Requiring an argument
 
-```
+```ada
 include "linux.mereo"
 
 program (arguments) is
@@ -59,7 +59,7 @@ Two views doing the work: a `span` names the block being read and is narrowed in
 place, a `builder` fills the output and checks that each append fits. No offset
 arithmetic appears at any call site.
 
-```
+```ada
 include "linux.mereo"
 include "core.mereo"
 

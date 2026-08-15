@@ -168,7 +168,7 @@ release_server:
   <span class="t-plain">digits</span> <span class="t-bind">is</span> <span class="t-number">24</span> <span class="t-inside">bytes</span></code></pre>
 <h3>Arguments are wired by name</h3>
 <p>Every argument in a call is labelled, and arguments are matched by name rather than by position, so the order at a call site carries no meaning:</p>
-<pre><code>  text.find (data is block, length is count, byte is 10, offset is at)</code></pre>
+<pre><code>  <span class="t-namespace">text</span><span class="t-operator">.</span><span class="t-call">find</span> <span class="t-operator">(</span><span class="t-label">data</span> <span class="t-bind">is</span> <span class="t-plain">block</span><span class="t-operator">,</span> <span class="t-label">length</span> <span class="t-bind">is</span> <span class="t-plain">count</span><span class="t-operator">,</span> <span class="t-label">byte</span> <span class="t-bind">is</span> <span class="t-number">10</span><span class="t-operator">,</span> <span class="t-label">offset</span> <span class="t-bind">is</span> <span class="t-plain">at</span><span class="t-operator">)</span></code></pre>
 <p>There is no return value. An <strong>out-port</strong> is a named place the answer is written: <code>offset is at</code> means "put the offset in <code>at</code>". A step that answers three things has three out-ports and no tuple.</p>
 <h3>Conditions</h3>
 <p>Conditions are written in operators, never in words — <code>==</code>, <code>!=</code>, <code>&lt;</code>, <code>&gt;=</code>, <code>&amp;&amp;</code>, <code>||</code> — so a condition cannot be confused with prose:</p>
@@ -176,8 +176,8 @@ release_server:
   <span class="t-structure">leave</span> <span class="t-decl">scan</span> <span class="t-inside">when</span> <span class="t-plain">c</span> <span class="t-operator">==</span> <span class="t-number">32</span></code></pre>
 <h3>Namespaces</h3>
 <p>A namespace is opened with <code>NAME contains</code> and closed with <code>end</code>, and a file may hold several. The system-call library places everything under <code>linux</code>; the computation library deliberately uses none, so its groups are reached bare:</p>
-<pre><code>  linux.files.remove (name is "scratch", flags is 0)
-  text.find (data is block, length is count, byte is 10, offset is at)</code></pre>
+<pre><code>  <span class="t-namespace">linux</span><span class="t-operator">.</span><span class="t-member">files</span><span class="t-operator">.</span><span class="t-call">remove</span> <span class="t-operator">(</span><span class="t-label">name</span> <span class="t-bind">is</span> <span class="t-string">"scratch"</span><span class="t-operator">,</span> <span class="t-label">flags</span> <span class="t-bind">is</span> <span class="t-number">0</span><span class="t-operator">)</span>
+  <span class="t-namespace">text</span><span class="t-operator">.</span><span class="t-call">find</span> <span class="t-operator">(</span><span class="t-label">data</span> <span class="t-bind">is</span> <span class="t-plain">block</span><span class="t-operator">,</span> <span class="t-label">length</span> <span class="t-bind">is</span> <span class="t-plain">count</span><span class="t-operator">,</span> <span class="t-label">byte</span> <span class="t-bind">is</span> <span class="t-number">10</span><span class="t-operator">,</span> <span class="t-label">offset</span> <span class="t-bind">is</span> <span class="t-plain">at</span><span class="t-operator">)</span></code></pre>
 <p>A namespace is a resolution layer only. It renames nothing in the generated output.</p>
 <h3>Reserved words</h3>
 <p>The 42 reserved words fall into a few groups: block openers and closers (<code>is</code>, <code>goes</code>, <code>contains</code>, <code>end</code>, <code>scope</code>, <code>program</code>), the two jumps (<code>leave</code>, <code>repeat</code>), declarations (<code>bytes</code>, <code>constant</code>, <code>already</code>, <code>adopted</code>, <code>extends</code>, <code>helper</code>, <code>assembly</code>, <code>pure</code>, <code>final</code>), checks and repair (<code>ensure</code>, <code>fails</code>, <code>failures</code>, <code>or</code>, <code>continue</code>, <code>when</code>, <code>likely</code>, <code>branchless</code>), and the words that describe memory and machine detail (<code>as</code>, <code>in</code>, <code>out</code>, <code>to</code>, <code>high</code>, <code>low</code>, <code>whole</code>, <code>atomic</code>, <code>volatile</code>, <code>fence</code>, <code>clobbers</code>, <code>register</code>).</p>
@@ -253,12 +253,12 @@ release_server:
   <span class="t-structure">end</span>
 <span class="t-structure">end</span></code></pre>
 <p>The outer scope is the whole conditional; the inner one is the <code>if</code>; whatever follows it is the <code>else</code>, reached only by not leaving. That lowers to exactly what C's <code>if</code>/<code>else</code> lowers to — one test, one jump:</p>
-<pre><code>    if (!((x == 2))) goto past_2;      /* the only test */
-    ...the if arm...
-    goto main_done;                    /* skip the else */
-past_2:
-    ...the else arm...
-main_done:</code></pre>
+<pre><code>    <span class="t-call">if</span> <span class="t-operator">(</span><span class="t-other">!</span><span class="t-operator">(</span><span class="t-operator">(</span><span class="t-plain">x</span> <span class="t-operator">==</span> <span class="t-number">2</span><span class="t-operator">)</span><span class="t-operator">)</span><span class="t-operator">)</span> <span class="t-plain">goto</span> <span class="t-plain">past_2</span><span class="t-other">;</span>      <span class="t-operator">/</span><span class="t-operator">*</span> <span class="t-plain">the</span> <span class="t-plain">only</span> <span class="t-plain">test</span> <span class="t-operator">*</span><span class="t-operator">/</span>
+    <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span><span class="t-member">the</span> <span class="t-plain">if</span> <span class="t-plain">arm</span><span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>
+    <span class="t-plain">goto</span> <span class="t-plain">main_done</span><span class="t-other">;</span>                    <span class="t-operator">/</span><span class="t-operator">*</span> <span class="t-plain">skip</span> <span class="t-plain">the</span> <span class="t-plain">else</span> <span class="t-operator">*</span><span class="t-operator">/</span>
+<span class="t-plain">past_2</span><span class="t-operator">:</span>
+    <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span><span class="t-member">the</span> <span class="t-plain">else</span> <span class="t-plain">arm</span><span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>
+<span class="t-plain">main_done</span><span class="t-operator">:</span></code></pre>
 <p><code>leave main</code> is the ordinary jump, so it also releases anything the <code>if</code> arm had taken, on its way past the <code>else</code>.</p>
 <p>Two scopes with opposite conditions work too, and read fine for two independent questions — but they are two conditions, and <strong>both are evaluated</strong>, because nothing relates them:</p>
 <pre><code>  <span class="t-plain">argc</span> <span class="t-operator">==</span> <span class="t-number">1</span> <span class="t-structure">goes</span>
@@ -410,7 +410,7 @@ main_done:</code></pre>
 <p>A template's parameters are <strong>ports</strong>, wired by name at each use. A port's direction is derived from what the body does with it — read it and it is an input, assign it and it is an output — so directions are not declared separately. Because ports are matched by name, adding one to a template does not disturb existing uses, but <em>renaming</em> one breaks every use, which is why <code>core.mereo</code> adds a separate template rather than a <code>base</code> port to an existing one.</p>
 <h3>Groups</h3>
 <p>Templates that belong together are gathered into a stateless group and reached through its name:</p>
-<pre><code>  text.find (data is block, length is count, byte is 10, offset is at)</code></pre>
+<pre><code>  <span class="t-namespace">text</span><span class="t-operator">.</span><span class="t-call">find</span> <span class="t-operator">(</span><span class="t-label">data</span> <span class="t-bind">is</span> <span class="t-plain">block</span><span class="t-operator">,</span> <span class="t-label">length</span> <span class="t-bind">is</span> <span class="t-plain">count</span><span class="t-operator">,</span> <span class="t-label">byte</span> <span class="t-bind">is</span> <span class="t-number">10</span><span class="t-operator">,</span> <span class="t-label">offset</span> <span class="t-bind">is</span> <span class="t-plain">at</span><span class="t-operator">)</span></code></pre>
 <p>A group holds no state and acquires nothing; it exists so related work has one name. The byte layer of <code>core.mereo</code> is such a group.</p>
 <h3>What splicing costs and forbids</h3>
 <p>Splicing has no frame, so:</p>
@@ -490,8 +490,8 @@ release_server:
 <p>So a non-zero status means exactly one thing, and there is no second way for a program to come back non-zero. A <code>failures is</code> entry chooses <em>which</em> non-zero code where the default does not suit. Where a number is a result rather than a failure, the program calls the kernel itself — <code>linux.exit (status is bits)</code> — and says so.</p>
 <h3>Repairing an expected failure</h3>
 <p>Where a failure is ordinary rather than exceptional, <code>or continue</code> supplies the values to carry on with:</p>
-<pre><code>  linux.files.remove (name is "scratch", flags is 0)
-  or continue (result is 0)          -- fine if it was not there</code></pre>
+<pre><code>  <span class="t-namespace">linux</span><span class="t-operator">.</span><span class="t-member">files</span><span class="t-operator">.</span><span class="t-call">remove</span> <span class="t-operator">(</span><span class="t-label">name</span> <span class="t-bind">is</span> <span class="t-string">"scratch"</span><span class="t-operator">,</span> <span class="t-label">flags</span> <span class="t-bind">is</span> <span class="t-number">0</span><span class="t-operator">)</span>
+  <span class="t-inside">or</span> <span class="t-inside">continue</span> <span class="t-operator">(</span><span class="t-label">result</span> <span class="t-bind">is</span> <span class="t-number">0</span><span class="t-operator">)</span>          <span class="t-comment">-- fine if it was not there</span></code></pre>
 <p>This does not remove the check; it handles it. An alternative <em>construction</em> may also be given, so a program can try a second way of obtaining something before giving up.</p>
 <h3>Clean shutdowns</h3>
 <p>Two errno values end a program without a diagnostic, because neither is a fault in the program: <code>EPIPE</code>, when the reader of a pipe has gone, and <code>EINTR</code>, which is how an interrupt reaches a program that owns something. Both route to the release tower like any other exit.</p>

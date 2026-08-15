@@ -6,7 +6,7 @@ the variable but the access.
 
 A **backing** is a run of bytes with a name:
 
-```
+```ada
   block is 4096 bytes
   message is "hello, world\n"
 ```
@@ -19,7 +19,7 @@ definition and cannot live in a register.
 
 An access states its width, and optionally its signedness and byte order:
 
-```
+```ada
   c is [block + i : 1]                  -- one byte
   n is [header + 4 : 2] as big          -- two, big-endian
   v is [record + 8 : 8] as signed       -- eight, signed
@@ -34,7 +34,7 @@ system, and it sits at the boundary between a register and memory.
 Writing readings out at every use is repetitive, so a **layout view** names them
 once and a record describes itself:
 
-```
+```ada
 sockaddr_in is
   family is 2 bytes
   port is 2 bytes as big          -- network order, stated here rather than
@@ -49,7 +49,7 @@ end
 nothing and allocates nothing — the instance *is* those bytes, and reading a
 field is the load the view describes:
 
-```
+```ada
   block is 16 bytes
 
   host is block as sockaddr_in
@@ -66,7 +66,7 @@ The same view may be laid at an offset, or over an address only known while the
 program runs — a run of variable-length records, for instance, where the
 programmer supplies the width the compiler checks against the layout's size:
 
-```
+```ada
   bits is meta + 28 as linux.file_mode     -- at a compile-time offset
 
   entry is [at : 19] as linux.dirent       -- at a runtime address
@@ -76,7 +76,7 @@ programmer supplies the width the compiler checks against the layout's size:
 
 A layout instance can also own its bytes rather than borrow them:
 
-```
+```ada
   over is block as header            -- a lens: block's bytes, nothing allocated
   fresh is header                    -- owns a zero-filled block of its shape
   given is already header (tag is 9, length is 4660)   -- ...and filled at once
@@ -93,7 +93,7 @@ block, not a resource — because a template is inlined work rather than a
 lifecycle, and a view's whole point is the bytes it describes. What it gains is
 a name for the operations that belong to the record:
 
-```
+```ada
 include "linux.mereo"
 
 record is
@@ -130,7 +130,7 @@ performs.
 A **flag view** names the individual bits of a word, which is what a mode or a
 set of options is:
 
-```
+```ada
 local_mode is
   echo is bit 3
   canonical is bits 1 to 2
@@ -142,7 +142,7 @@ can be checked. Where the address is only known while running — a run of
 variable-length records, for instance — the backing is stated inline instead,
 and the programmer supplies the width the compiler checks:
 
-```
+```ada
   entry is [at : 19] as linux.dirent
 ```
 
@@ -153,7 +153,7 @@ passing them as separate arguments. A **span** is a region being read, a
 **builder** a buffer being filled; neither owns anything, so neither is
 released.
 
-```
+```ada
   rest is already span (data is block, length is count)
   rest.find (byte is 10, offset is n)
   rest.skip (count is n + 1)
@@ -181,7 +181,7 @@ hand-written copy-and-advance pairs it replaced in the corpus checked nothing.
 
 A **container** is a buffer that carries its own fill level:
 
-```
+```ada
   data is container of 4096 bytes    -- data.data, data.count, data.size
 ```
 

@@ -2,7 +2,7 @@ mereo has no functions. Reuse is by **splicing**: a template is copied into each
 place it is used, with its locals renamed. There is no call, no return, no stack
 frame and no calling convention.
 
-```
+```ada
 shout (area, length) is
   i is 0
   fix goes
@@ -33,7 +33,7 @@ one.
 Templates that belong together are gathered into a stateless group and reached
 through its name:
 
-```
+```ada
   text.find (data is block, length is count, byte is 10, offset is at)
 ```
 
@@ -62,7 +62,7 @@ derived for a resource's `acquire` and `release`.
 A template may be a machine instruction rather than mereo steps, with operands
 bound to registers by name:
 
-```
+```ada
 population_count is pure assembly "popcnt %[source], %[result]"
   source in register
   result out register

@@ -5,7 +5,7 @@ against that indentation rather than replacing it.
 
 ## A complete program
 
-```
+```ada
 include "linux.mereo"
 
 program is
@@ -27,13 +27,13 @@ no `print`: `linux.write` sends bytes, `linux.read` receives them, and reaching
 Comments run from `--` to the end of the line, following Lua and Ada, and there
 is no block comment form:
 
-```
+```ada
   -- one line, and that is the only kind
 ```
 
 String literals are double-quoted and carry a compile-time `.size`:
 
-```
+```ada
   message is "hello\n"
   count is message.size          -- 6, folded at compile time
 ```
@@ -43,14 +43,14 @@ String literals are double-quoted and carry a compile-time `.size`:
 `NAME is VALUE` binds a name. The same form declares and assigns, and a name's
 first mention is its declaration:
 
-```
+```ada
   total is 0
   total is total + 1
 ```
 
 Buffers are declared with a size in bytes, and a buffer's name *is* its address:
 
-```
+```ada
   block is 4096 bytes
   digits is 24 bytes
 ```
@@ -60,7 +60,7 @@ Buffers are declared with a size in bytes, and a buffer's name *is* its address:
 Every argument in a call is labelled, and arguments are matched by name rather
 than by position, so the order at a call site carries no meaning:
 
-```
+```ada
   text.find (data is block, length is count, byte is 10, offset is at)
 ```
 
@@ -73,7 +73,7 @@ three things has three out-ports and no tuple.
 Conditions are written in operators, never in words — `==`, `!=`, `<`, `>=`,
 `&&`, `||` — so a condition cannot be confused with prose:
 
-```
+```ada
   ensure argc >= 2
   leave scan when c == 32
 ```
@@ -84,7 +84,7 @@ A namespace is opened with `NAME contains` and closed with `end`, and a file may
 hold several. The system-call library places everything under `linux`; the
 computation library deliberately uses none, so its groups are reached bare:
 
-```
+```ada
   linux.files.remove (name is "scratch", flags is 0)
   text.find (data is block, length is count, byte is 10, offset is at)
 ```

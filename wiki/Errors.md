@@ -4,7 +4,7 @@ standard error — is derived from the failure and from the scope it happened in
 
 ## `ensure`
 
-```
+```ada
 include "linux.mereo"
 
 program (arguments) is
@@ -52,7 +52,7 @@ and says so.
 Where a failure is ordinary rather than exceptional, `or continue` supplies the
 values to carry on with:
 
-```
+```ada
   linux.files.remove (name is "scratch", flags is 0)
   or continue (result is 0)          -- fine if it was not there
 ```

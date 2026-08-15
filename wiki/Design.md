@@ -69,7 +69,7 @@ than exceptional, `or continue` repairs it in place.
 A value in mereo is a machine word with no type. What carries a type is the
 *access* — how many bytes, signed or not, in which byte order:
 
-```
+```ada
   c is [buffer + i : 1]                 -- one byte
   n is [header + 4 : 2] as big          -- two, big-endian
 ```

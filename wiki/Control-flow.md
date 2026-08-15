@@ -18,7 +18,7 @@ where they continue. A scope that acquires something releases it on either.
 
 A loop is a scope that ends by repeating itself:
 
-```
+```ada
   scan goes
     c is [block + i : 1]
     leave scan when c == 32
@@ -36,7 +36,7 @@ closes it each pass, without being told.
 Because both jumps name their target, a jump from an inner scope may address an
 outer one, and no flag is needed to carry the decision outwards:
 
-```
+```ada
 include "linux.mereo"
 
 program is
@@ -87,7 +87,7 @@ the path taken, and recording that is a drop flag.
 An `if` is a scope with a condition where the name would be. It is anonymous
 because nothing jumps to it:
 
-```
+```ada
   count == 0 goes
     message is "nothing\n"
   end
@@ -97,7 +97,7 @@ because nothing jumps to it:
 
 There does not need to be one. An `else` is a scope the `if` **leaves early**:
 
-```
+```ada
 include "linux.mereo"
 
 program (arguments) is
@@ -136,7 +136,7 @@ Two scopes with opposite conditions work too, and read fine for two independent
 questions — but they are two conditions, and **both are evaluated**, because
 nothing relates them:
 
-```
+```ada
   argc == 1 goes
     ...
   end
@@ -158,14 +158,14 @@ Where the arms only choose a *value*, neither form is needed.
 
 `when` states a dependence and lets the target lower it however it can:
 
-```
+```ada
   offset is i when [data + i] == byte
 ```
 
 Several clauses form a cascade, first match winning, and the value is left
 unchanged if none match:
 
-```
+```ada
   my_number is 40 when argument_count > 2 or
                50 when argument_count > 1
 ```
@@ -181,7 +181,7 @@ Where one case is common and the rest are exceptions, a **crossroad** keeps the
 common road inline and moves the others past the program's exit, rejoining at
 the label:
 
-```
+```ada
   name likely goes                -- the common case, inline
     out_ptr is comp_at
     out_len is comp_len
@@ -208,7 +208,7 @@ inner dispatch sits where its enclosing road does, and its own roads go past it.
 Reaching the program's `end` releases everything and returns zero. `leave
 program` is the way out from the middle, and takes no status:
 
-```
+```ada
   leave program when nothing_to_do
 ```
 
@@ -216,7 +216,7 @@ program` is the way out from the middle, and takes no status:
 and the signal dispositions, which are settled once and are not part of what
 repeats:
 
-```
+```ada
   repeat program when i < 3
 ```
 

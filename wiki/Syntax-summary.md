@@ -2,7 +2,7 @@ Every form in the language on one page. Each links to the section that explains 
 
 ## Shape of a program
 
-```
+```ada
 include "linux.mereo"          -- everything the kernel does, behind `linux.`
 include "core.mereo"           -- ...and everything that needs none, unqualified
 
@@ -22,7 +22,7 @@ See [`program is`](Syntax).
 
 ## Values and memory
 
-```
+```ada
 count is 0                     -- a scalar -- one machine word, signed
 buf is 4096 bytes              -- a backing: its name is its ADDRESS
 buf is 4096 bytes in static    -- ...or `in stack`, `in register`
@@ -40,7 +40,7 @@ See [Buffers](Memory),
 
 A value has no type; the **access** does.
 
-```
+```ada
 c is [buf + i : 1]             -- load 1 byte
 n is [hdr + 4 : 2] as big      -- 2 bytes, big-endian
 v is [rec + 8 : 8] as signed   -- readings: signed unsigned big little
@@ -52,7 +52,7 @@ See [Views](Memory).
 
 ## Namespaces
 
-```
+```ada
 linux contains                 -- a file may declare several; what it declares
   file is                      -- outside one is global
     ...
@@ -67,7 +67,7 @@ a namespace is refused by name.
 
 ## Scopes and jumps
 
-```
+```ada
 NAME goes                      -- a scope: bounds a lifetime, offers two labels
   ...
 end
@@ -88,7 +88,7 @@ scope whose body ends by repeating. See [Scopes](Control-flow),
 
 ## Branches
 
-```
+```ada
 LABEL likely goes              -- the common case, inline
   ...set values...
 end
@@ -116,7 +116,7 @@ an assignment:
 
 ## A value that depends on a condition
 
-```
+```ada
 n is 40 when argc > 2 or       -- first clause that holds wins;
      50 when argc > 1          -- if none do, n keeps its value
 n is 40 when argc > 2 branchless   -- require a cmov, no branch
@@ -126,7 +126,7 @@ See [Choosing a value](Control-flow).
 
 ## Templates
 
-```
+```ada
 shout (area, length) is        -- free-standing: called by its own name
   ...
 end
@@ -147,7 +147,7 @@ derived (read it → input, assign it → output). See
 
 ## Resources
 
-```
+```ada
 file is                        -- define one
   descriptor is 4 bytes as signed
   acquire (path) is
@@ -171,7 +171,7 @@ See [Defining a resource](Resources), [`open`](Library).
 
 ## Files and directories
 
-```
+```ada
 -- statx -> a 256-byte block
 linux.files.inspect (name is "/etc/passwd",
                buffer is meta,
@@ -195,7 +195,7 @@ See [Files and directories](Library).
 
 ## Time
 
-```
+```ada
 span is ticks as linux.timespec      -- seconds of, nanoseconds of
 linux.clock.elapsed (buffer is ticks)  -- since boot -- measure with this one
 linux.clock.now (buffer is ticks)    -- wall time
@@ -204,7 +204,7 @@ linux.clock.wait (request is ticks, remain is 0)  -- sleep
 
 ## Views over bytes
 
-```
+```ada
 sockaddr_in is                 -- a LAYOUT view: byte fields, in order
   family is 2 bytes
   port is 2 bytes as big
@@ -223,7 +223,7 @@ host.port is 8080              -- read and write its fields
 An address and a length, named once instead of passed as two arguments —
 `span` reads, `builder` appends and checks that it fits:
 
-```
+```ada
 rest is already span (data is block, length is count)
 rest.find (byte is 10, offset is n)   -- `n` is rest.length if absent
 part is already span (data is rest.data, length is n)   -- narrow
@@ -241,7 +241,7 @@ See [Layout views](Memory), [Flag views](Memory),
 
 ## Failure
 
-```
+```ada
 ensure count >= 1              -- must hold, or: release, report, exit non-zero
 ensure a > 2 && b > 3          -- each conjunct reports separately
 

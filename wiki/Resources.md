@@ -2,7 +2,7 @@ A **resource** is a definition that owns something and releases it when its
 scope ends. This is the behaviour C++ gets from destructors, obtained without
 destructors, without an unwinder and without a runtime.
 
-```
+```ada
 include "linux.mereo"
 
 program is
