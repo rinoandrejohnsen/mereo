@@ -1,0 +1,32 @@
+include "markers.mereo"
+
+-- A MULTI-STEP acquire whose ACQUISITION fails -- the mirror of 24. The open
+-- fails, so the `acquired when` boundary is never crossed and `staged` owns
+-- NOTHING: its release must not run at all, not even the part that would have
+-- closed a sentinel. `keep`, acquired earlier, still unwinds.
+-- Expect close(102) alone -- and never close(101).
+
+staged is
+  handle is 0
+  status is 0
+  fd_mark is 101
+
+  acquire (path, spot) is
+    linux.open (path is path, flags is 0, mode is 0, descriptor is handle)
+    acquired when handle >= 0        -- <- never reached: the open failed
+    linux.lseek (descriptor is handle,
+                 offset is spot,
+                 whence is 0,
+                 position is status)
+  end
+
+  release is
+    linux.close (descriptor is handle)
+    linux.close (descriptor is fd_mark)
+  end
+end
+
+program is
+  keep is adopted mark_b (descriptor is 102)
+  thing is staged (path is "/nonexistent/mereo-test", spot is 0)
+end

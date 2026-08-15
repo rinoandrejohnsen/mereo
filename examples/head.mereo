@@ -1,0 +1,56 @@
+include "../linux.mereo"
+include "../core.mereo"
+
+-- head -n N: copy the first N lines of stdin, then stop.
+--
+-- The interesting part is the STOPPING. `leave copy` gets out of the refill loop
+-- the moment the count is reached, and because the write happens before it, the
+-- partial block is flushed first -- no flag, no second exit path. The bound is
+-- tested at the TOP of each scan so a block that has no newline at all falls
+-- through without a special case.
+--
+--   ./head 3 < lorem_ipsum.txt
+program (arguments) is
+  argc is arguments.count
+  ensure argc >= 2
+
+  capacity is 65536
+  buffer is capacity bytes
+  count is 0
+  want is 0
+  seen is 0
+  i is 0
+  c is 0
+  arg is 0
+
+  input is already linux.file (descriptor is 0)
+
+  terminal is already linux.file (descriptor is 1)
+
+  arg is arguments.pointer + 1
+  given is already span (data is arg, length is 24)
+  given.until (byte is 0)        -- an argument ends at its NUL; 24 bounds the
+  given.number (value is want)   -- scan, and is past the longest decimal there is
+  ensure want >= 0
+
+  copy goes
+    input.read (buffer is buffer, capacity is capacity, count is count)
+    leave copy when count == 0
+
+    i is 0
+    scan goes                        -- how much of this block do we want?
+      leave scan when i >= count
+      leave scan when seen >= want
+      c is [buffer + i : 1]
+      seen is seen + 1 when c == 10
+      i is i + 1
+      repeat scan
+    end
+
+    terminal.write (buffer is buffer, count is i)
+
+    leave copy when seen >= want     -- ...after the partial block went out
+    repeat copy
+  end
+
+end

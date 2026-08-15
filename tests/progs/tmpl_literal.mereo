@@ -1,0 +1,40 @@
+include "../../linux.mereo"
+
+-- A template handing a LITERAL out through a port. `at is "/hello"` inside a
+-- template body is not a declaration -- the name is a parameter, so it is the
+-- assignment that hands the literal's address to the caller, exactly as
+-- `message is "..."` means in a branch road.
+--
+-- It read as a declaration once: the splice made a buffer under the parameter's
+-- name, renamed it to the caller's slot, and collided with it ("name 'p' is not
+-- unique"). That made a responder -- a template whose whole job is to hand back
+-- a path and a body -- impossible to write.
+greeting is
+  path (at, length) is
+    at is "/hello"
+    length is "/hello".size
+  end
+
+  body (at, length) is
+    at is "hello world!"
+    length is "hello world!".size
+  end
+end
+
+program is
+  route is 0
+  route_length is 0
+  text is 0
+  text_length is 0
+
+  greeting.path (at is route, length is route_length)
+
+  greeting.body (at is text, length is text_length)
+
+  ensure route_length == 6
+  ensure text_length == 12
+
+  terminal is already linux.file (descriptor is 1)
+  terminal.write (buffer is route, count is route_length)
+  terminal.write (buffer is text, count is text_length)
+end

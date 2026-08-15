@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE language>
+<!--
+  Kate / KSyntaxHighlighting definition for mereo (v4 prose surface).
+  Install: cp mereo.xml ~/.local/share/org.kde.syntax-highlighting/syntax/
+
+  Tokens map to Kate's semantic default styles, so mereo follows any Kate
+  color theme. The mapping mirrors how Kate's lua.xml uses Breeze Light
+  (and mereohl's -\-kate theme): grammar glue -> dsKeyword, classes ->
+  dsDataType, methods -> dsFunction, primitives and lifecycle words ->
+  dsBuiltIn, failure and control-flow words -> dsControlFlow, and the
+  three direction verbs keep their dataflow colors through accents Lua
+  never uses: is -> dsOthers (in), into -> dsImport (out), through ->
+  dsAnnotation. A control-flow label (the name a `goes` / `likely goes` /
+  `when ... goes` attaches to) is the one exception: it gets an explicit
+  teal (#0d9488), because every default style already maps to a
+  mereo token (dsVariable/dsDataType are both the resource blue), and
+  teal is the one hue nothing else uses, so a jump target stays unique.
+
+  mereo's grammar is line-shaped with fixed indentation, so most rules
+  are anchored regexes; the Binding context disambiguates verb-`is`
+  (green) from declaration-`is` (keyword gray). Two accepted blurs vs
+  mereohl: an adopted instance's `SLOT is VALUE` init renders with the
+  verb color (same line shape as a repair), and the `with` of `fails
+  with` renders as plain glue.
+-->
+<language name="Mereo" section="Sources" version="14" kateversion="5.62"
+          extensions="*.mereo" author="rino" license="MIT">
+  <highlighting>
+    <list name="glue">
+      <item>is</item>
+      <item>where</item>
+      <item>with</item>
+      <item>and</item>
+      <item>goes</item>
+      <item>bytes</item>
+      <item>call</item>
+      <item>final</item>
+      <item>assembly</item>
+      <item>pure</item>
+      <item>clobbers</item>
+      <item>use</item>
+      <item>from</item>
+    </list>
+    <list name="lifecycle">
+      <item>initialize</item>
+      <item>finalize</item>
+      <item>already</item>
+      <item>adopted</item>
+      <item>borrowed</item>
+      <item>arguments</item>
+      <item>environment</item>
+      <item>auxiliary</item>
+    </list>
+    <list name="failure">
+      <item>fails</item>
+      <item>or</item>
+      <item>continue</item>
+    </list>
+    <list name="flow">
+      <item>likely</item>
+      <item>when</item>
+      <item>repeat</item>
+      <item>leave</item>
+    </list>
+    <list name="contract">
+      <item>ensure</item>
+    </list>
+    <list name="dirs">
+      <item>in</item>
+      <item>out</item>
+    </list>
+    <contexts>
+      <context name="Normal" attribute="Normal Text" lineEndContext="#stay">
+        <RegExpr String="#.*$" attribute="Comment" context="#stay"/>
+        <RegExpr String="^use(?= &quot;)" attribute="Failure" context="#stay"/>
+        <DetectChar char="&quot;" attribute="String" context="StringLit"/>
+        <RegExpr String="^program(?= (?:with .+ )?is$)" attribute="Section" context="Program"/>
+        <RegExpr String="^failures(?= is$)" attribute="Section" context="#stay"/>
+        <RegExpr String="^\w+(?= is (?:final )?call \d+ where$)" attribute="Primitive" context="#stay"/>
+        <RegExpr String="^\w+(?= is (?:pure |final )?assembly )" attribute="Primitive" context="#stay"/>
+        <RegExpr String="^ {2,}\w+(?= (?:likely )?goes$)" attribute="Label" context="#stay"/>
+        <RegExpr String="^ {2,}\w+(?= when )" attribute="Label" context="#stay"/>
+        <RegExpr String="^\w+(?= is$)" attribute="Class" context="#stay"/>
+        <RegExpr String="^ {2}(?:initialize|finalize)\b" attribute="Lifecycle" context="#stay"/>
+        <RegExpr String="^ {2}\w+(?= (?:with .+ )?is$)" attribute="Method" context="#stay"/>
+        <RegExpr String="(?&lt;= already )\w+(?= where$)" attribute="Class" context="#stay"/>
+        <RegExpr String="(?&lt;= adopted )\w+(?= where$)" attribute="Class" context="#stay"/>
+        <RegExpr String="(?&lt;= is )\w+(?= where$)" attribute="Class" context="#stay"/>
+        <RegExpr String="^ {2}or(?= continue where$)" attribute="Failure" context="#stay"/>
+        <RegExpr String="^ {2}\w+(?= \w+ where$)" attribute="Method" context="#stay"/>
+        <RegExpr String="^ {2}\w+(?= \w+ fails with \d+$)" attribute="Method" context="#stay"/>
+        <RegExpr String="(?&lt;= is )[A-Za-z_]\w*$" attribute="Class" context="#stay"/>
+        <RegExpr String="(?&lt;= borrowed )\w+$" attribute="Class" context="#stay"/>
+        <RegExpr String="^ {4}initialize(?= \w+ where$)" attribute="Lifecycle" context="#stay"/>
+        <RegExpr String="^ {4}\w+(?= \w+ where$)" attribute="Method" context="#stay"/>
+        <RegExpr String="^ {4}\w+(?= where$)" attribute="Primitive" context="#stay"/>
+        <RegExpr String="^ {2}\w+(?= where$)" attribute="Primitive" context="#stay"/>
+        <RegExpr String="^ {2}\w+$" attribute="Primitive" context="#stay"/>
+        <RegExpr String="^(?: {4}| {6})\w+(?= is )" attribute="Normal Text" context="Binding"/>
+        <RegExpr String="^\s*@\w+$" attribute="Through" context="#stay"/>
+        <keyword String="dirs" attribute="Out" context="#stay"/>
+        <keyword String="lifecycle" attribute="Lifecycle" context="#stay"/>
+        <keyword String="failure" attribute="Failure" context="#stay"/>
+        <keyword String="flow" attribute="Failure" context="#stay"/>
+        <keyword String="contract" attribute="Contract" context="#stay"/>
+        <keyword String="glue" attribute="Keyword" context="#stay"/>
+        <RegExpr String="(?&lt;= with )[A-Za-z_]\w*" attribute="Param" context="#stay"/>
+        <RegExpr String="(?&lt;= and )[A-Za-z_]\w*" attribute="Param" context="#stay"/>
+        <RegExpr String="(?:&lt;=|&gt;=|==|!=|&lt;|&gt;)" attribute="Operator" context="#stay"/>
+        <RegExpr String="-?\d+\b" attribute="Number" context="#stay"/>
+      </context>
+      <context name="Program" attribute="Normal Text" lineEndContext="#stay">
+        <RegExpr String="^ {2}\w+" attribute="Anchor" context="#stay"/>
+        <RegExpr String="(?&lt;= is )[A-Za-z_]\w*$" attribute="Reference" context="#stay"/>
+        <IncludeRules context="Normal"/>
+        <RegExpr String="[A-Za-z_]\w*\b(?!\s+is\b)" attribute="Reference" context="#stay"/>
+      </context>
+      <context name="Binding" attribute="Normal Text" lineEndContext="#pop">
+        <WordDetect String="is" attribute="In" context="#stay"/>
+        <DetectChar char="@" attribute="Through" context="#stay"/>
+        <DetectChar char="&quot;" attribute="String" context="StringLit"/>
+        <RegExpr String="-?\d+\b" attribute="Number" context="#stay"/>
+        <RegExpr String="[A-Za-z_]\w*\b(?!\s+is\b)" attribute="Reference" context="#stay"/>
+      </context>
+      <context name="StringLit" attribute="String" lineEndContext="#pop">
+        <DetectChar char="&quot;" attribute="String" context="#pop"/>
+      </context>
+    </contexts>
+    <itemDatas>
+      <itemData name="Normal Text" defStyleNum="dsNormal" bold="0"/>
+      <itemData name="Anchor" defStyleNum="dsNormal" bold="1"/>
+      <itemData name="Reference" defStyleNum="dsNormal" bold="1" italic="1"/>
+      <itemData name="Param" defStyleNum="dsNormal" bold="1"/>
+      <itemData name="Keyword" defStyleNum="dsKeyword" bold="0"/>
+      <itemData name="Section" defStyleNum="dsKeyword" bold="0"/>
+      <itemData name="Class" defStyleNum="dsDataType" bold="0"/>
+      <itemData name="Method" defStyleNum="dsFunction" bold="0"/>
+      <itemData name="Label" defStyleNum="dsNormal" color="#0d9488" bold="0"/>
+      <itemData name="Primitive" defStyleNum="dsBuiltIn" bold="0"/>
+      <itemData name="Lifecycle" defStyleNum="dsBuiltIn" bold="0"/>
+      <itemData name="Contract" defStyleNum="dsKeyword" bold="0"/>
+      <itemData name="Failure" defStyleNum="dsControlFlow" bold="0"/>
+      <itemData name="In" defStyleNum="dsOthers" bold="0"/>
+      <itemData name="Out" defStyleNum="dsImport" bold="0"/>
+      <itemData name="Through" defStyleNum="dsAnnotation" bold="0"/>
+      <itemData name="Number" defStyleNum="dsDecVal" bold="0"/>
+      <itemData name="String" defStyleNum="dsString" bold="0"/>
+      <itemData name="Operator" defStyleNum="dsOperator" bold="0"/>
+      <itemData name="Comment" defStyleNum="dsComment" bold="0"/>
+    </itemDatas>
+  </highlighting>
+  <general>
+    <comments>
+      <comment name="singleLine" start="#"/>
+    </comments>
+    <keywords casesensitive="1"/>
+  </general>
+</language>

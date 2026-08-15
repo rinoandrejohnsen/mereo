@@ -1,0 +1,285 @@
+
+_start:
+                                        // 38: void _start() {
+    // push %rbp                                                 // 401000
+                                        // 16: __asm__ volatile ("syscall" : "=a"(ret) : "a"(n), "D"(a1), "S"(a2), "d"(a3), "r"(r10) : "rcx", "r11", "memory");
+    eax = 13;                                                    // 401001
+                                        // 15: register long r10 __asm__("r10") = a4;
+    r10d = 8;                                                    // 401006
+                                        // 16: __asm__ volatile ("syscall" : "=a"(ret) : "a"(n), "D"(a1), "S"(a2), "d"(a3), "r"(r10) : "rcx", "r11", "memory");
+    edx = 0;                                                     // 40100c
+    rdi = rax;                                                   // 40100e
+                                        // 38: void _start() {
+    rbp = rsp;                                                   // 401011
+    rsp &= -16;                                                  // 401014
+    rsp -= 4024;                                                 // 401018
+                                        // 16: __asm__ volatile ("syscall" : "=a"(ret) : "a"(n), "D"(a1), "S"(a2), "d"(a3), "r"(r10) : "rcx", "r11", "memory");
+    rsi = &_sigign;                                              // 40101f
+                                        // 49: long _sigign[4] = { 1, 0, 0, 0 };  /* SIG_IGN */
+    // movdqa 0x1034(%rip),%xmm0                                 // 401024
+    // movaps %xmm0,-0x68(%rsp)                                  // 40102c
+    // pxor %xmm0,%xmm0                                          // 401031
+    // movaps %xmm0,-0x58(%rsp)                                  // 401035
+                                        // 50: syscall4(13, 13, (long)_sigign, 0, 8);  /* SIGPIPE */
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // rt_sigaction // 40103a
+                                        // 17: return ret;
+    eax = 0;                                                     // 40103c
+    edi = 0;                                                     // 40103e
+    rsi = &buffer;                                               // 401040
+                                        // 9: __asm__ volatile ("syscall" : "=a"(ret) : "a"(n), "D"(a1), "S"(a2), "d"(a3) : "rcx", "r11", "memory");
+    edx = 4096;                                                  // 401045
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // read // 40104a
+    r9 = rax;                                                    // 40104c
+                                        // 10: return ret;
+    if (rax < 0) goto error_1_read_input;                        // 401052
+                                        // 55: if (__builtin_expect(count == 0, 0)) goto report_road_0;
+    if (rax == 0) goto report_road_0;                            // 401058
+                                        // 56: if (__builtin_expect(count == 1, 0)) goto report_road_1;
+    rsi = &"many bytes\n";                                       // 40105e
+                                        // 60: length = 11;
+    edx = 11;                                                    // 401065
+                                        // 56: if (__builtin_expect(count == 1, 0)) goto report_road_1;
+    if (rax == 1) goto report_road_1;                            // 40106e
+
+report:
+                                        // 64: written = syscall3(1, terminal_descriptor, message, length);
+    eax = 1;                                                     // 401074
+                                        // 9: __asm__ volatile ("syscall" : "=a"(ret) : "a"(n), "D"(a1), "S"(a2), "d"(a3) : "rcx", "r11", "memory");
+    edi = 1;                                                     // 401079
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // write // 40107e
+    r9 = rax;                                                    // 401080
+
+error_2_write_terminal:
+                                        // 10: return ret;
+    if (rdx == rax) goto L_40108e;                               // 401086
+    if (rax != -32) goto L_401097;                               // 40108c
+L_40108e:
+                                        // 47: long _status = 0;
+    edi = 0;                                                     // 40108e
+
+exit:
+                                        // 68: syscall1(231, _status);
+    eax = 231;                                                   // 401090
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // exit_group // 401095
+L_401097:
+                                        // 4: return ret;
+    edi = 2;                                                     // 401097
+    edx = 27;                                                    // 40109c
+                                        // 9: __asm__ volatile ("syscall" : "=a"(ret) : "a"(n), "D"(a1), "S"(a2), "d"(a3) : "rcx", "r11", "memory");
+    eax = 1;                                                     // 4010a1
+    rsi = &"branch: 2: write terminal: ";                        // 4010a6
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // write // 4010ad
+                                        // 10: return ret;
+    r10 = r9;                                                    // 4010af
+                                        // 24: if (_n) _e = -_e;
+    rcx = r9;                                                    // 4010b2
+                                        // 25: _d[1] = '0' + _e / 10000 % 10;
+    esi = 10000;                                                 // 4010b5
+                                        // 30: _d[6] = '\n';
+    _d+6 = 10;                                                   // 4010ba
+                                        // 22: long _n = _e < 0;
+    r10 u>>= 63;                                                 // 4010bf
+                                        // 23: long _i;
+    rcx = -rcx;                                                  // 4010c3
+    if (< 0) rcx = r9;                                           // 4010c6
+                                        // 25: _d[1] = '0' + _e / 10000 % 10;
+    r9d = 1000;                                                  // 4010ca
+    rax = rcx;                                                   // 4010d0
+    rdx = sign(rax);                                             // 4010d3
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;                   // 4010d5
+    esi = 10;                                                    // 4010d8
+    rdx = sign(rax);                                             // 4010dd
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;                   // 4010df
+                                        // 26: _d[2] = '0' + _e / 1000 % 10;
+    rax = rcx;                                                   // 4010e2
+                                        // 25: _d[1] = '0' + _e / 10000 % 10;
+    edx += 48;                                                   // 4010e5
+    _d+1 = dl;                                                   // 4010e8
+                                        // 26: _d[2] = '0' + _e / 1000 % 10;
+    rdx = sign(rax);                                             // 4010ec
+    rax = rdx:rax / r9;  rdx = rdx:rax % r9;                     // 4010ee
+                                        // 27: _d[3] = '0' + _e / 100 % 10;
+    r9d = 100;                                                   // 4010f1
+                                        // 26: _d[2] = '0' + _e / 1000 % 10;
+    rdx = sign(rax);                                             // 4010f7
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;                   // 4010f9
+                                        // 27: _d[3] = '0' + _e / 100 % 10;
+    rax = rcx;                                                   // 4010fc
+                                        // 26: _d[2] = '0' + _e / 1000 % 10;
+    edx += 48;                                                   // 4010ff
+    _d+2 = dl;                                                   // 401102
+                                        // 27: _d[3] = '0' + _e / 100 % 10;
+    rdx = sign(rax);                                             // 401106
+    rax = rdx:rax / r9;  rdx = rdx:rax % r9;                     // 401108
+    rdx = sign(rax);                                             // 40110b
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;                   // 40110d
+                                        // 28: _d[4] = '0' + _e / 10 % 10;
+    rax = rcx;                                                   // 401110
+                                        // 27: _d[3] = '0' + _e / 100 % 10;
+    edx += 48;                                                   // 401113
+    _d+3 = dl;                                                   // 401116
+                                        // 28: _d[4] = '0' + _e / 10 % 10;
+    rdx = sign(rax);                                             // 40111a
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;                   // 40111c
+    r9 = rdx;                                                    // 40111f
+    rdx = sign(rax);                                             // 401122
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;                   // 401124
+                                        // 29: _d[5] = '0' + _e % 10;
+    r9d += 48;                                                   // 401127
+                                        // 31: _i = 5 - (_e >= 10) - (_e >= 100) - (_e >= 1000) - (_e >= 10000);
+    eax = 0;                                                     // 40112b
+                                        // 29: _d[5] = '0' + _e % 10;
+    _d+5 = r9b;                                                  // 40112d
+                                        // 28: _d[4] = '0' + _e / 10 % 10;
+    edx += 48;                                                   // 401132
+                                        // 31: _i = 5 - (_e >= 10) - (_e >= 100) - (_e >= 1000) - (_e >= 10000);
+    al = (rcx < 10);                                             // 401139
+                                        // 28: _d[4] = '0' + _e / 10 % 10;
+    _d+4 = dl;                                                   // 40113c
+                                        // 29: _d[5] = '0' + _e % 10;
+    edx = 0;                                                     // 401140
+                                        // 31: _i = 5 - (_e >= 10) - (_e >= 100) - (_e >= 1000) - (_e >= 10000);
+    eax += 4;                                                    // 401142
+    dl = (rcx > 99);                                             // 401149
+    eax -= edx;                                                  // 40114c
+    edx = 0;                                                     // 40114e
+    dl = (rcx > 999);                                            // 401157
+    eax -= edx;                                                  // 40115a
+    edx = 0;                                                     // 40115c
+    dl = (rcx > 9999);                                           // 401165
+    eax -= edx;                                                  // 401168
+                                        // 32: _d[_i - 1] = '-';
+    edx = 7;                                                     // 40116a
+    [rsp + rax - 113] = 45;                                      // 40116f
+                                        // 33: _i = _i - _n;
+    rax -= r10;                                                  // 401174
+                                        // 34: syscall3(1, 2, (long)_d + _i, 7 - _i);
+    rsi = rsp + rax - 112;                                       // 401177
+    rdx -= rax;                                                  // 40117c
+                                        // 9: __asm__ volatile ("syscall" : "=a"(ret) : "a"(n), "D"(a1), "S"(a2), "d"(a3) : "rcx", "r11", "memory");
+    eax = 1;                                                     // 40117f
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // write // 401184
+                                        // 10: return ret;
+    edi = 1;                                                     // 401186
+                                        // 97: goto exit;
+    goto exit;                                                   // 40118b
+
+error_1_read_input:
+                                        // 53: if (__builtin_expect(!(count >= 0), 0)) goto error_1_read_input;
+    if (rax == -32) goto L_40108e;                               // 401194
+                                        // 85: syscall3(1, 2, (long)"branch: 1: read input: ", 23);
+    edi = 2;                                                     // 40119a
+    edx = 23;                                                    // 40119f
+    eax = 1;                                                     // 4011a4
+                                        // 9: __asm__ volatile ("syscall" : "=a"(ret) : "a"(n), "D"(a1), "S"(a2), "d"(a3) : "rcx", "r11", "memory");
+    rsi = &"branch: 1: read input: ";                            // 4011a9
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // write // 4011b0
+                                        // 10: return ret;
+    rcx = r9;                                                    // 4011b2
+                                        // 25: _d[1] = '0' + _e / 10000 % 10;
+    esi = 10000;                                                 // 4011b5
+                                        // 26: _d[2] = '0' + _e / 1000 % 10;
+    r10d = 1000;                                                 // 4011ba
+                                        // 30: _d[6] = '\n';
+    _d+6 = 10;                                                   // 4011c0
+                                        // 24: if (_n) _e = -_e;
+    rcx = -rcx;                                                  // 4011c5
+                                        // 25: _d[1] = '0' + _e / 10000 % 10;
+    rax = rcx;                                                   // 4011c8
+    rdx = sign(rax);                                             // 4011cb
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;                   // 4011cd
+    esi = 10;                                                    // 4011d0
+    rdx = sign(rax);                                             // 4011d5
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;                   // 4011d7
+                                        // 26: _d[2] = '0' + _e / 1000 % 10;
+    rax = rcx;                                                   // 4011da
+                                        // 25: _d[1] = '0' + _e / 10000 % 10;
+    edx += 48;                                                   // 4011dd
+    _d+1 = dl;                                                   // 4011e0
+                                        // 26: _d[2] = '0' + _e / 1000 % 10;
+    rdx = sign(rax);                                             // 4011e4
+    rax = rdx:rax / r10;  rdx = rdx:rax % r10;                   // 4011e6
+                                        // 27: _d[3] = '0' + _e / 100 % 10;
+    r10d = 100;                                                  // 4011e9
+                                        // 26: _d[2] = '0' + _e / 1000 % 10;
+    rdx = sign(rax);                                             // 4011ef
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;                   // 4011f1
+                                        // 27: _d[3] = '0' + _e / 100 % 10;
+    rax = rcx;                                                   // 4011f4
+                                        // 26: _d[2] = '0' + _e / 1000 % 10;
+    edx += 48;                                                   // 4011f7
+    _d+2 = dl;                                                   // 4011fa
+                                        // 27: _d[3] = '0' + _e / 100 % 10;
+    rdx = sign(rax);                                             // 4011fe
+    rax = rdx:rax / r10;  rdx = rdx:rax % r10;                   // 401200
+    rdx = sign(rax);                                             // 401203
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;                   // 401205
+                                        // 28: _d[4] = '0' + _e / 10 % 10;
+    rax = rcx;                                                   // 401208
+                                        // 27: _d[3] = '0' + _e / 100 % 10;
+    edx += 48;                                                   // 40120b
+    _d+3 = dl;                                                   // 40120e
+                                        // 28: _d[4] = '0' + _e / 10 % 10;
+    rdx = sign(rax);                                             // 401212
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;                   // 401214
+    rcx = rdx;                                                   // 401217
+    rdx = sign(rax);                                             // 40121a
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;                   // 40121c
+                                        // 29: _d[5] = '0' + _e % 10;
+    ecx += 48;                                                   // 40121f
+                                        // 31: _i = 5 - (_e >= 10) - (_e >= 100) - (_e >= 1000) - (_e >= 10000);
+    eax = 0;                                                     // 401222
+                                        // 29: _d[5] = '0' + _e % 10;
+    _d+5 = cl;                                                   // 401224
+                                        // 28: _d[4] = '0' + _e / 10 % 10;
+    edx += 48;                                                   // 401228
+                                        // 31: _i = 5 - (_e >= 10) - (_e >= 100) - (_e >= 1000) - (_e >= 10000);
+    al = (r9 > -10);                                             // 40122f
+                                        // 28: _d[4] = '0' + _e / 10 % 10;
+    _d+4 = dl;                                                   // 401232
+                                        // 29: _d[5] = '0' + _e % 10;
+    edx = 0;                                                     // 401236
+                                        // 31: _i = 5 - (_e >= 10) - (_e >= 100) - (_e >= 1000) - (_e >= 10000);
+    eax += 4;                                                    // 401238
+                                        // 32: _d[_i - 1] = '-';
+    dl = (r9 < -99);                                             // 40123f
+                                        // 31: _i = 5 - (_e >= 10) - (_e >= 100) - (_e >= 1000) - (_e >= 10000);
+    eax -= edx;                                                  // 401242
+    edx = 0;                                                     // 401244
+    dl = (r9 < -999);                                            // 40124d
+    eax -= edx;                                                  // 401250
+    edx = 0;                                                     // 401252
+    dl = (r9 < -9999);                                           // 40125b
+    eax -= edx;                                                  // 40125e
+                                        // 34: syscall3(1, 2, (long)_d + _i, 7 - _i);
+    edx = 7;                                                     // 401260
+                                        // 32: _d[_i - 1] = '-';
+    eax -= 1;                                                    // 401265
+    [rsp + rax - 112] = 45;                                      // 401268
+                                        // 33: _i = _i - _n;
+    rsi = rsp + rax - 112;                                       // 40126d
+                                        // 34: syscall3(1, 2, (long)_d + _i, 7 - _i);
+    rdx -= rax;                                                  // 401272
+                                        // 9: __asm__ volatile ("syscall" : "=a"(ret) : "a"(n), "D"(a1), "S"(a2), "d"(a3) : "rcx", "r11", "memory");
+    eax = 1;                                                     // 401275
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // write // 40127a
+                                        // 10: return ret;
+    edi = 1;                                                     // 40127c
+                                        // 89: goto exit;
+    goto exit;                                                   // 401281
+
+report_road_0:
+                                        // 55: if (__builtin_expect(count == 0, 0)) goto report_road_0;
+    rsi = &"nothing\n";                                          // 401286
+                                        // 73: length = 8;
+    edx = 8;                                                     // 40128d
+                                        // 75: goto report;
+    goto report;                                                 // 401292
+
+report_road_1:
+                                        // 56: if (__builtin_expect(count == 1, 0)) goto report_road_1;
+    rsi = &"one byte\n";                                         // 401297
+                                        // 79: length = 9;
+    edx = 9;                                                     // 40129e
+                                        // 81: goto report;
+    goto report;                                                 // 4012a3

@@ -1,0 +1,188 @@
+
+_start:
+    // push %rbp
+    eax = 13;
+    r10d = 8;
+    edx = 0;
+    rdi = rax;
+    rbp = rsp;
+    rsp &= -16;
+    rsp -= 4024;
+    rsi = &_sigign;
+    // movdqa 0x1034(%rip),%xmm0
+    // movaps %xmm0,-0x68(%rsp)
+    // pxor %xmm0,%xmm0
+    // movaps %xmm0,-0x58(%rsp)
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // rt_sigaction
+    eax = 0;
+    edi = 0;
+    rsi = &buffer;
+    edx = 4096;
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // read
+    r9 = rax;
+    if (rax < 0) goto error_1_read_input;
+    if (rax == 0) goto report_road_0;
+    rsi = &"many bytes\n";
+    edx = 11;
+    if (rax == 1) goto report_road_1;
+
+report:
+    eax = 1;
+    edi = 1;
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // write
+    r9 = rax;
+
+error_2_write_terminal:
+    if (rdx == rax) goto L_40108e;
+    if (rax != -32) goto L_401097;
+L_40108e:
+    edi = 0;
+
+exit:
+    eax = 231;
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // exit_group
+L_401097:
+    edi = 2;
+    edx = 27;
+    eax = 1;
+    rsi = &"branch: 2: write terminal: ";
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // write
+    r10 = r9;
+    rcx = r9;
+    esi = 10000;
+    _d+6 = 10;
+    r10 u>>= 63;
+    rcx = -rcx;
+    if (< 0) rcx = r9;
+    r9d = 1000;
+    rax = rcx;
+    rdx = sign(rax);
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;
+    esi = 10;
+    rdx = sign(rax);
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;
+    rax = rcx;
+    edx += 48;
+    _d+1 = dl;
+    rdx = sign(rax);
+    rax = rdx:rax / r9;  rdx = rdx:rax % r9;
+    r9d = 100;
+    rdx = sign(rax);
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;
+    rax = rcx;
+    edx += 48;
+    _d+2 = dl;
+    rdx = sign(rax);
+    rax = rdx:rax / r9;  rdx = rdx:rax % r9;
+    rdx = sign(rax);
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;
+    rax = rcx;
+    edx += 48;
+    _d+3 = dl;
+    rdx = sign(rax);
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;
+    r9 = rdx;
+    rdx = sign(rax);
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;
+    r9d += 48;
+    eax = 0;
+    _d+5 = r9b;
+    edx += 48;
+    al = (rcx < 10);
+    _d+4 = dl;
+    edx = 0;
+    eax += 4;
+    dl = (rcx > 99);
+    eax -= edx;
+    edx = 0;
+    dl = (rcx > 999);
+    eax -= edx;
+    edx = 0;
+    dl = (rcx > 9999);
+    eax -= edx;
+    edx = 7;
+    [rsp + rax - 113] = 45;
+    rax -= r10;
+    rsi = rsp + rax - 112;
+    rdx -= rax;
+    eax = 1;
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // write
+    edi = 1;
+    goto exit;
+
+error_1_read_input:
+    if (rax == -32) goto L_40108e;
+    edi = 2;
+    edx = 23;
+    eax = 1;
+    rsi = &"branch: 1: read input: ";
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // write
+    rcx = r9;
+    esi = 10000;
+    r10d = 1000;
+    _d+6 = 10;
+    rcx = -rcx;
+    rax = rcx;
+    rdx = sign(rax);
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;
+    esi = 10;
+    rdx = sign(rax);
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;
+    rax = rcx;
+    edx += 48;
+    _d+1 = dl;
+    rdx = sign(rax);
+    rax = rdx:rax / r10;  rdx = rdx:rax % r10;
+    r10d = 100;
+    rdx = sign(rax);
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;
+    rax = rcx;
+    edx += 48;
+    _d+2 = dl;
+    rdx = sign(rax);
+    rax = rdx:rax / r10;  rdx = rdx:rax % r10;
+    rdx = sign(rax);
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;
+    rax = rcx;
+    edx += 48;
+    _d+3 = dl;
+    rdx = sign(rax);
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;
+    rcx = rdx;
+    rdx = sign(rax);
+    rax = rdx:rax / rsi;  rdx = rdx:rax % rsi;
+    ecx += 48;
+    eax = 0;
+    _d+5 = cl;
+    edx += 48;
+    al = (r9 > -10);
+    _d+4 = dl;
+    edx = 0;
+    eax += 4;
+    dl = (r9 < -99);
+    eax -= edx;
+    edx = 0;
+    dl = (r9 < -999);
+    eax -= edx;
+    edx = 0;
+    dl = (r9 < -9999);
+    eax -= edx;
+    edx = 7;
+    eax -= 1;
+    [rsp + rax - 112] = 45;
+    rsi = rsp + rax - 112;
+    rdx -= rax;
+    eax = 1;
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // write
+    edi = 1;
+    goto exit;
+
+report_road_0:
+    rsi = &"nothing\n";
+    edx = 8;
+    goto report;
+
+report_road_1:
+    rsi = &"one byte\n";
+    edx = 9;
+    goto report;

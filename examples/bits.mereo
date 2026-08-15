@@ -1,0 +1,28 @@
+include "../core.mereo"
+include "../linux.mereo"  -- for `exit`: the asm primitives above need no kernel,
+                        -- but ending the program does
+
+-- A template group wrapping the asm primitives -- they compose with ensure and the
+-- rest of the machinery exactly like syscalls do.
+math is
+  count (source, result) is
+    population_count (source is source, result is result)
+    ensure result >= 0
+  end
+
+  barrier is
+    memory_fence
+  end
+end
+
+program is
+  bits is 0
+
+  -- `math` holds nothing, so it needs no instance -- a stateless group is
+  -- called by its own name, the way `find text where` is.
+  math.count (source is 255, result is bits)
+
+  math.barrier
+
+  linux.exit (status is bits)
+end

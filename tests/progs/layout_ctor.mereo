@@ -1,0 +1,23 @@
+include "../../linux.mereo"
+
+-- THE SHORTEST FORM of layout_long.mereo / layout_bare.mereo: name the layout and
+-- give its fields their values in the same breath, with `where`. Same 24 bytes,
+-- same syscall, same .text -- the suite asserts all three are byte-identical.
+--
+-- Port bindings indent by 4 (to column 6), not 2.
+-- The name must stay 11 characters -- see layout_long.mereo.
+structure is
+  a is 8 bytes
+  b is 8 bytes
+  c is 8 bytes
+end
+
+program is
+  data is structure (a is 4702111234474983745,  -- 'AAAAAAAA'
+                     b is 4774451407313060418,  -- 'BBBBBBBB'
+                     c is 4846791580151137091)  -- 'CCCCCCCC'
+
+  terminal is already linux.file (descriptor is 1)
+  written is 0
+  terminal.write (buffer is data, count is 24, written is written)
+end

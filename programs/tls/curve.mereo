@@ -1,0 +1,104 @@
+include "../../core.mereo"
+include "field.mereo"
+
+-- A CSPRNG source. getrandom is fallible, so (like every syscall) it lives in a
+-- method carrying its own `ensure`, invoked through an instance.
+entropy is
+  count is 0
+  fill (buffer, length) is
+    linux.getrandom (buffer is buffer,
+                     length is length,
+                     flags is 0,
+                     count is count)
+    ensure count == length
+  end
+end
+
+-- X25519(secret, point) -> shared (32 bytes). Montgomery ladder
+-- (crypto.h++), a reusable procedure over caller buffers.
+curve is
+
+  x25519 (secret, point, shared) is
+    z is 32 bytes
+    pt is 128 bytes
+    la is 128 bytes
+    lb is 128 bytes
+    lc is 128 bytes
+    ld is 128 bytes
+    le is 128 bytes
+    lf is 128 bytes
+    k1 is 128 bytes
+    i is 0
+    v is 0
+    byteidx is 0
+    bitidx is 0
+    zb is 0
+    r is 0
+    text.copy (source is secret, target is z, length is 32)
+    v is [z + 31 : 1]
+    v is v & 127
+    v is v | 64
+    [z + 31 : 1] is v
+    v is [z + 0 : 1]
+    v is v & 248
+    [z + 0 : 1] is v
+
+    field.unpack (o is pt, n is point)
+
+    field.dup (o is lb, a is pt)
+    field.blank (o is la)
+    field.blank (o is lc)
+    field.blank (o is ld)
+    [la + 0 : 8] is 1
+    [ld + 0 : 8] is 1
+    field.blank (o is k1)
+    [k1 + 0 : 8] is 56129
+    [k1 + 8 : 8] is 1
+
+    i is 254
+    ladder goes
+      byteidx is i >> 3
+      bitidx is i & 7
+      zb is [z + byteidx : 1]
+      r is zb >> bitidx
+      r is r & 1
+      field.swap (p is la, q is lb, bit is r)
+      field.swap (p is lc, q is ld, bit is r)
+      field.add (o is le, a is la, b is lc)
+      field.sub (o is la, a is la, b is lc)
+      field.add (o is lc, a is lb, b is ld)
+      field.sub (o is lb, a is lb, b is ld)
+      field.mul (o is ld, a is le, b is le)
+      field.mul (o is lf, a is la, b is la)
+      field.mul (o is la, a is lc, b is la)
+      field.mul (o is lc, a is lb, b is le)
+      field.add (o is le, a is la, b is lc)
+      field.sub (o is la, a is la, b is lc)
+      field.mul (o is lb, a is la, b is la)
+      field.sub (o is lc, a is ld, b is lf)
+      field.mul (o is la, a is lc, b is k1)
+      field.add (o is la, a is la, b is ld)
+      field.mul (o is lc, a is lc, b is la)
+      field.mul (o is la, a is ld, b is lf)
+      field.mul (o is ld, a is lb, b is pt)
+      field.mul (o is lb, a is le, b is le)
+      field.swap (p is la, q is lb, bit is r)
+      field.swap (p is lc, q is ld, bit is r)
+      i is i - 1
+      repeat ladder when i >= 0
+    end
+
+    field.invert (o is lc, a is lc)
+    field.mul (o is la, a is la, b is lc)
+    field.pack (o is shared, n is la)
+  end
+
+  -- keypair: priv <- 32 fresh random bytes (getrandom), pub <- X25519(priv, 9).
+  keypair (priv, pub) is
+    base is 32 bytes
+    src is already entropy (count is 0)
+    src.fill (buffer is priv, length is 32)
+    [base + 0 : 1] is 9
+    curve.x25519 (secret is priv, point is base, shared is pub)
+  end
+end

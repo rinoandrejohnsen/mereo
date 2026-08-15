@@ -1,0 +1,14 @@
+include "markers.mereo"
+
+-- tmp is released at the block dedent; `later` is then acquired at program
+-- scope; a fault must release later + keep, NOT re-release tmp.
+-- Expect close(101) close(102) close(103).
+program is
+  keep is adopted mark_c (descriptor is 103)
+  g is 0
+  scope
+    tmp is adopted mark_a (descriptor is 101)
+  end
+  later is adopted mark_b (descriptor is 102)
+  ensure g >= 1
+end

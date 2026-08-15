@@ -1,0 +1,14 @@
+include "../../../linux.mereo"
+
+-- One syscall, and the checking mereo derives around it: the write is required
+-- to have moved every byte, a short write reports the step, and EPIPE is a
+-- clean exit rather than a failure.
+
+program is
+  message is "hello, world\n"
+
+  terminal is already linux.file (descriptor is 1)
+
+  terminal.write (buffer is message, count is message.size)
+
+end

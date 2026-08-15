@@ -1,0 +1,105 @@
+# Syntax and semantics
+
+mereo's surface is deliberately word-based: it has 42 reserved words, no
+punctuation-heavy operators outside arithmetic, and a shape meant to be read
+aloud. Indentation is structural, and `end` closes a block and is checked
+against that indentation rather than replacing it.
+
+## A complete program
+
+```
+include "linux.mereo"
+
+program is
+  message is "hello, world\n"
+
+  terminal is already linux.file (descriptor is 1)
+
+  terminal.write (buffer is message, count is message.size)
+
+end
+```
+
+This prints `hello, world` and links to a 784-byte static executable. There is
+no `print`: `linux.write` sends bytes, `linux.read` receives them, and reaching
+`end` ends the program with status zero.
+
+## Lexical structure
+
+Comments run from `--` to the end of the line, following Lua and Ada, and there
+is no block comment form:
+
+```
+  -- one line, and that is the only kind
+```
+
+String literals are double-quoted and carry a compile-time `.size`:
+
+```
+  message is "hello\n"
+  count is message.size          -- 6, folded at compile time
+```
+
+## Bindings
+
+`NAME is VALUE` binds a name. The same form declares and assigns, and a name's
+first mention is its declaration:
+
+```
+  total is 0
+  total is total + 1
+```
+
+Buffers are declared with a size in bytes, and a buffer's name *is* its address:
+
+```
+  block is 4096 bytes
+  digits is 24 bytes
+```
+
+## Arguments are wired by name
+
+Every argument in a call is labelled, and arguments are matched by name rather
+than by position, so the order at a call site carries no meaning:
+
+```
+  text.find (data is block, length is count, byte is 10, offset is at)
+```
+
+There is no return value. An **out-port** is a named place the answer is
+written: `offset is at` means "put the offset in `at`". A step that answers
+three things has three out-ports and no tuple.
+
+## Conditions
+
+Conditions are written in operators, never in words — `==`, `!=`, `<`, `>=`,
+`&&`, `||` — so a condition cannot be confused with prose:
+
+```
+  ensure argc >= 2
+  leave scan when c == 32
+```
+
+## Namespaces
+
+A namespace is opened with `NAME contains` and closed with `end`, and a file may
+hold several. The system-call library places everything under `linux`; the
+computation library deliberately uses none, so its groups are reached bare:
+
+```
+  linux.files.remove (name is "scratch", flags is 0)
+  text.find (data is block, length is count, byte is 10, offset is at)
+```
+
+A namespace is a resolution layer only. It renames nothing in the generated
+output.
+
+## Reserved words
+
+The 42 reserved words fall into a few groups: block openers and closers (`is`,
+`goes`, `contains`, `end`, `scope`, `program`), the two jumps (`leave`,
+`repeat`), declarations (`bytes`, `constant`, `already`, `adopted`, `extends`,
+`helper`, `assembly`, `pure`, `final`), checks and repair (`ensure`, `fails`,
+`failures`, `or`, `continue`, `when`, `likely`, `branchless`), and the words
+that describe memory and machine detail (`as`, `in`, `out`, `to`, `high`,
+`low`, `whole`, `atomic`, `volatile`, `fence`, `clobbers`, `register`).

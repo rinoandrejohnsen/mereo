@@ -1,0 +1,23 @@
+include "../linux.mereo"
+
+-- Copy one file to another through linux.mereo's `file`: two owned file
+-- objects, each opening its own descriptor and closed by the derived
+-- release tower (sink then source, reverse acquisition order). abc2.mereo
+-- reads a file to the terminal; copy.mereo does file-to-file with local
+-- resources -- this shows the linux.mereo `file` abstraction doing it.
+
+program is
+  capacity is 4096
+  buffer is capacity bytes
+  count is 0
+  written is 0
+
+  source is linux.file (path is "lorem_ipsum.txt", flags is 0, mode is 0)
+
+  sink is linux.file (path is "copy_out.txt", flags is 577, mode is 420)
+
+  source.read (buffer is buffer, capacity is capacity, count is count)
+
+  sink.write (buffer is buffer, count is count, written is written)
+
+end

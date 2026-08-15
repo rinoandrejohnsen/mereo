@@ -1,0 +1,173 @@
+include "../../linux.mereo"
+
+-- AES-128-GCM (encrypt) over AF_ALG aead. sendmsg carries op/iv/assoclen as
+-- control messages; recvmsg returns ciphertext||tag. NIST vector (all-zero
+-- key/iv/pt, empty aad) -> 0388..fe78 ab6e..bddf.
+
+transform is
+  descriptor is -1
+  status is 0
+  acquire (domain, type, protocol) is
+    linux.socket (domain is domain,
+                  type is type,
+                  protocol is protocol,
+                  descriptor is descriptor)
+  end
+  attach (address, length) is
+    linux.bind (descriptor is descriptor,
+                address is address,
+                length is length,
+                result is status)
+  end
+  option (level, name, value, length) is
+    linux.setsockopt (descriptor is descriptor,
+                      level is level,
+                      optname is name,
+                      value is value,
+                      length is length,
+                      result is status)
+  end
+  reap (accepted) is
+    linux.accept (descriptor is descriptor,
+                  address is 0,
+                  length is 0,
+                  connection is accepted)
+  end
+  release is
+    linux.close (descriptor is descriptor)
+  end
+end
+
+duplex is
+  descriptor is -1
+  status is 0
+  send (message) is
+    linux.sendmsg (descriptor is descriptor,
+                   message is message,
+                   flags is 0,
+                   sent is status)
+  end
+  receive (message, got) is
+    linux.recvmsg (descriptor is descriptor,
+                   message is message,
+                   flags is 0,
+                   received is got)
+  end
+  release is
+    linux.close (descriptor is descriptor)
+  end
+end
+
+program is
+  key is 16 bytes
+  ivb is 16 bytes
+  pt is 16 bytes
+  sec is 48 bytes
+  cbuf is 96 bytes
+  siov is 16 bytes
+  smsg is 56 bytes
+  riov is 16 bytes
+  rmsg is 56 bytes
+  peer is -1
+  count is 0
+  written is 0
+  terminal is already linux.file (descriptor is 1)
+
+  [key + 0 : 1] is 0
+  [key + 1 : 1] is 0
+  [key + 2 : 1] is 0
+  [key + 3 : 1] is 0
+  [key + 4 : 1] is 0
+  [key + 5 : 1] is 0
+  [key + 6 : 1] is 0
+  [key + 7 : 1] is 0
+  [key + 8 : 1] is 0
+  [key + 9 : 1] is 0
+  [key + 10 : 1] is 0
+  [key + 11 : 1] is 0
+  [key + 12 : 1] is 0
+  [key + 13 : 1] is 0
+  [key + 14 : 1] is 0
+  [key + 15 : 1] is 0
+  [ivb + 0 : 1] is 0
+  [ivb + 1 : 1] is 0
+  [ivb + 2 : 1] is 0
+  [ivb + 3 : 1] is 0
+  [ivb + 4 : 1] is 0
+  [ivb + 5 : 1] is 0
+  [ivb + 6 : 1] is 0
+  [ivb + 7 : 1] is 0
+  [ivb + 8 : 1] is 0
+  [ivb + 9 : 1] is 0
+  [ivb + 10 : 1] is 0
+  [ivb + 11 : 1] is 0
+  [pt + 0 : 1] is 0
+  [pt + 1 : 1] is 0
+  [pt + 2 : 1] is 0
+  [pt + 3 : 1] is 0
+  [pt + 4 : 1] is 0
+  [pt + 5 : 1] is 0
+  [pt + 6 : 1] is 0
+  [pt + 7 : 1] is 0
+  [pt + 8 : 1] is 0
+  [pt + 9 : 1] is 0
+  [pt + 10 : 1] is 0
+  [pt + 11 : 1] is 0
+  [pt + 12 : 1] is 0
+  [pt + 13 : 1] is 0
+  [pt + 14 : 1] is 0
+  [pt + 15 : 1] is 0
+  [cbuf + 0 : 8] is 20
+  [cbuf + 8 : 4] is 279
+  [cbuf + 12 : 4] is 3
+  [cbuf + 16 : 4] is 1
+  [cbuf + 24 : 8] is 32
+  [cbuf + 32 : 4] is 279
+  [cbuf + 36 : 4] is 2
+  [cbuf + 40 : 4] is 12
+  [cbuf + 44 : 1] is 0
+  [cbuf + 45 : 1] is 0
+  [cbuf + 46 : 1] is 0
+  [cbuf + 47 : 1] is 0
+  [cbuf + 48 : 1] is 0
+  [cbuf + 49 : 1] is 0
+  [cbuf + 50 : 1] is 0
+  [cbuf + 51 : 1] is 0
+  [cbuf + 52 : 1] is 0
+  [cbuf + 53 : 1] is 0
+  [cbuf + 54 : 1] is 0
+  [cbuf + 55 : 1] is 0
+  [cbuf + 56 : 8] is 20
+  [cbuf + 64 : 4] is 279
+  [cbuf + 68 : 4] is 4
+  [cbuf + 72 : 4] is 0
+  [siov + 0 : 8] is pt
+  [siov + 8 : 8] is 16
+  [smsg + 0 : 8] is 0
+  [smsg + 8 : 8] is 0
+  [smsg + 16 : 8] is siov
+  [smsg + 24 : 8] is 1
+  [smsg + 32 : 8] is cbuf
+  [smsg + 40 : 8] is 80
+  [smsg + 48 : 8] is 0
+  [riov + 0 : 8] is sec
+  [riov + 8 : 8] is 32
+  [rmsg + 0 : 8] is 0
+  [rmsg + 8 : 8] is 0
+  [rmsg + 16 : 8] is riov
+  [rmsg + 24 : 8] is 1
+  [rmsg + 32 : 8] is 0
+  [rmsg + 40 : 8] is 0
+  [rmsg + 48 : 8] is 0
+
+  tfm is transform (domain is 38, type is 5, protocol is 0)
+  tfm.attach (address is "&\x00aead\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00gcm(aes)\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+              length is 88)
+  tfm.option (level is 279, name is 1, value is key, length is 16)
+  tfm.option (level is 279, name is 5, value is 0, length is 16)
+  tfm.reap (accepted is peer)
+  op is adopted duplex (descriptor is peer)
+  op.send (message is smsg)
+  op.receive (message is rmsg, got is count)
+  terminal.write (buffer is sec, count is 32, written is written)
+end

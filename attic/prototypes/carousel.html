@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mereo — a branch as a carousel</title>
+<style>
+  :root{
+    --hot:#3fb950; --cold:#58a6ff; --bg:#0d1117; --panel:#161b22;
+    --line:#30363d; --fg:#c9d1d9; --dim:#8b949e; --code:#010409;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--fg);
+    font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    margin:0;padding:28px}
+  .wrap{max-width:720px;margin:0 auto}
+  h1{font-size:19px;margin:0 0 6px}
+  .sub{color:var(--dim);margin:0 0 26px}
+  .sub kbd{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:0 5px}
+
+  /* the vertical spine */
+  .spine{display:flex;flex-direction:column;align-items:center}
+  .node{background:var(--panel);border:1px solid var(--line);border-radius:6px;
+    padding:7px 16px;min-width:230px;text-align:center;color:var(--dim)}
+  .conn{width:2px;height:20px;background:var(--line)}
+
+  /* the carousel slot */
+  .slot{width:460px;max-width:100%;overflow:hidden;border-radius:10px;
+    border:1px solid var(--line);background:var(--panel)}
+  .track{display:flex;transition:transform .38s cubic-bezier(.4,0,.2,1)}
+  .frame{flex:0 0 100%;padding:18px 20px;min-height:168px}
+  .frame.hot{box-shadow:inset 4px 0 0 var(--hot)}
+  .frame.cold{box-shadow:inset 4px 0 0 var(--cold)}
+  .badge{display:inline-block;font-size:11px;letter-spacing:.06em;
+    padding:2px 9px;border-radius:11px;margin-bottom:10px}
+  .hot .badge{background:rgba(63,185,80,.16);color:var(--hot)}
+  .cold .badge{background:rgba(88,166,255,.16);color:var(--cold)}
+  .guard{color:var(--dim);margin-bottom:10px}
+  .code{white-space:pre;color:var(--fg)}
+  .role{font-size:12.5px;color:var(--dim);margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+  .role b.hot{color:var(--hot)} .role b.cold{color:var(--cold)}
+
+  .nav{display:flex;align-items:center;justify-content:center;gap:16px;margin:14px 0 4px}
+  .nav button{background:var(--panel);color:var(--fg);border:1px solid var(--line);
+    border-radius:7px;width:36px;height:36px;cursor:pointer;font-size:18px;line-height:1}
+  .nav button:hover{border-color:var(--dim)}
+  .counter{color:var(--dim);min-width:64px;text-align:center}
+
+  .divider{text-align:center;color:var(--dim);font-size:12px;
+    border-top:1px dashed var(--line);margin:26px 0 14px;padding-top:12px}
+
+  /* the film-strip: where the frames physically live (past exit) */
+  .strip{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+  .thumb{border:1px solid var(--line);border-radius:7px;background:var(--panel);
+    padding:8px 11px;cursor:pointer;min-width:120px;opacity:.6;transition:.15s}
+  .thumb:hover{opacity:1}
+  .thumb.on{opacity:1;transform:translateY(-4px)}
+  .thumb.hot.on{border-color:var(--hot)} .thumb.cold.on{border-color:var(--cold)}
+  .thumb .t{font-size:11px;letter-spacing:.05em}
+  .thumb.hot .t{color:var(--hot)} .thumb.cold .t{color:var(--cold)}
+  .thumb .g{color:var(--dim);font-size:11px;margin-top:3px}
+  .lifted{font-size:11px;color:var(--dim);margin-top:5px}
+
+  .cpanel{background:var(--code);border:1px solid var(--line);border-radius:9px;
+    padding:15px 17px;margin-top:20px;white-space:pre;color:var(--dim);font-size:13px;overflow-x:auto}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>a branch as a carousel</h1>
+  <p class="sub">Frame&nbsp;0 is the default — it falls through, on the spine.
+  Slide&nbsp;► for the cold arms, which physically live after <code>exit</code>.
+  <kbd>←</kbd> <kbd>→</kbd>, the arrows, or the strip below.</p>
+
+  <div class="spine">
+    <div class="node">read input</div>
+    <div class="conn"></div>
+    <div class="slot"><div class="track" id="track"></div></div>
+    <div class="conn"></div>
+    <div class="node">exit</div>
+  </div>
+
+  <div class="nav">
+    <button id="prev">‹</button>
+    <span class="counter" id="counter"></span>
+    <button id="next">›</button>
+  </div>
+
+  <div class="divider">──  past <code>exit</code> · the cold region · this is where the frames actually live  ──</div>
+  <div class="strip" id="strip"></div>
+
+  <div class="cpanel" id="cpanel"></div>
+</div>
+
+<script>
+const frames = [
+  { role:"FRAME 0 · DEFAULT", short:"default", guard:"(no guard — the fall-through)", hot:true,
+    body:'write terminal\n  buffer is "many bytes\\n"\n  count is 11',
+    role_txt:'On the spine — <b class="hot">falls straight through</b> into <code>exit</code>. No jump, no test taken.',
+    c:'    if (count == 0) goto arm_0;      // guards peel off\n    if (count == 1) goto arm_1;\n    write(1, "many bytes\\n", 11);   // ← THIS FRAME, inline on the spine\nmerge:\n    exit;' },
+  { role:"FRAME 1 · COLD", short:"count is 0", guard:"when count is 0", hot:false,
+    body:'write terminal\n  buffer is "nothing\\n"\n  count is 8',
+    role_txt:'Lives <b class="cold">after exit</b>. Reached by the guard, runs, then <b class="cold">returns</b> to the merge.',
+    c:'arm_0:                              // ← THIS FRAME, past the tail\n    write(1, "nothing\\n", 8);\n    goto merge;' },
+  { role:"FRAME 2 · COLD", short:"count is 1", guard:"when count is 1", hot:false,
+    body:'write terminal\n  buffer is "one byte\\n"\n  count is 9',
+    role_txt:'Lives <b class="cold">after exit</b>. Reached by the guard, runs, then <b class="cold">returns</b> to the merge.',
+    c:'arm_1:                              // ← THIS FRAME, past the tail\n    write(1, "one byte\\n", 9);\n    goto merge;' },
+];
+
+let i = 0;
+const track = document.getElementById('track');
+const strip = document.getElementById('strip');
+const cpanel = document.getElementById('cpanel');
+const counter = document.getElementById('counter');
+
+track.innerHTML = frames.map(f => `
+  <div class="frame ${f.hot?'hot':'cold'}">
+    <span class="badge">${f.role}</span>
+    <div class="guard">${f.guard}</div>
+    <div class="code">${f.body}</div>
+    <div class="role">${f.role_txt}</div>
+  </div>`).join('');
+
+strip.innerHTML = frames.map((f,idx) => `
+  <div class="thumb ${f.hot?'hot':'cold'}" data-i="${idx}">
+    <div class="t">${f.hot?'DEFAULT':'COLD'}</div>
+    <div class="g">${f.short}</div>
+    ${f.hot?'<div class="lifted">↑ lifted onto the spine</div>':''}
+  </div>`).join('');
+
+function render(){
+  track.style.transform = `translateX(-${i*100}%)`;
+  [...strip.children].forEach((t,idx)=>t.classList.toggle('on', idx===i));
+  counter.textContent = `${i} / ${frames.length-1}`;
+  cpanel.textContent = frames[i].c;
+}
+function go(n){ i = (n+frames.length)%frames.length; render(); }
+document.getElementById('prev').onclick = ()=>go(i-1);
+document.getElementById('next').onclick = ()=>go(i+1);
+strip.onclick = e=>{ const t=e.target.closest('.thumb'); if(t) go(+t.dataset.i); };
+document.addEventListener('keydown', e=>{
+  if(e.key==='ArrowLeft')  go(i-1);
+  if(e.key==='ArrowRight') go(i+1);
+});
+render();
+</script>
+</body>
+</html>

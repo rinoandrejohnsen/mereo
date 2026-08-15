@@ -1,0 +1,20 @@
+include "markers.mereo"
+
+-- `leave` releases what the pass holds on the way out -- so a fault AFTER the
+-- loop must not release it a second time. The tower still has a floor for `t`
+-- (faults inside the loop need it); this checks the exit path does not enter it.
+-- Expect 101 104, not 101 101 104.
+program (arguments) is
+  keep is adopted mark_d (descriptor is 104)
+  limit is arguments.count
+  i is 0
+
+  serve goes
+    t is adopted mark_a (descriptor is 101)
+    leave serve when i < limit       -- argc is 1, so it leaves on the first pass
+    i is i + 1
+    repeat serve when i < 3
+  end
+
+  ensure i == 99                     -- always fails: only `keep` is still live
+end

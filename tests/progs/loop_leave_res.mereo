@@ -1,0 +1,30 @@
+include "../../linux.mereo"
+
+-- A loop that OWNS something and is left from the middle. The file is opened
+-- each iteration and must be closed on every way out -- the back-edge, the
+-- `leave`, and a fault anywhere inside. mereoraii injects a failure at the open
+-- and at the read in turn and checks all three.
+--
+-- Run from the repo root (the path is relative). Prints the first byte of
+-- lorem_ipsum.txt once, then leaves.
+program is
+  cap is 64
+  buffer is cap bytes
+  n is 0
+  i is 0
+
+  terminal is already linux.file (descriptor is 1)
+
+  spin goes
+    source is linux.file (path is "lorem_ipsum.txt", flags is 0, mode is 0)
+
+    source.read (buffer is buffer, capacity is cap, count is n)
+
+    terminal.write (buffer is buffer, count is 1)
+
+    leave spin when n > 0             -- one pass is enough
+    i is i + 1
+    repeat spin when i < 3
+  end
+
+end

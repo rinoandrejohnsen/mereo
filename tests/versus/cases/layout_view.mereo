@@ -1,0 +1,35 @@
+include "../../../linux.mereo"
+
+-- A layout view against hand-written offsets. The fields are deliberately
+-- awkward -- unaligned, mixed widths, one of them big-endian -- because that is
+-- where naming them is worth most and where the byte-swapping could hide a
+-- cost. Written, then read back, then both the record and the read-back value
+-- go out.
+
+record is
+  tag is 2 bytes
+  length is 4 bytes as big
+  flags is 1 bytes
+end
+
+program is
+  block is 8 bytes
+  word is 8 bytes
+  n is 0
+
+  terminal is already linux.file (descriptor is 1)
+
+  rec is block as record
+  rec.tag is 4660                -- 0x1234
+  rec.length is 305419896        -- 0x12345678, stored most-significant first
+  rec.flags is 255
+
+  n is rec.length
+
+  [word : 8] is n
+
+  terminal.write (buffer is block, count is 7)
+
+  terminal.write (buffer is word, count is 8)
+
+end

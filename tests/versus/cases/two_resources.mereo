@@ -1,0 +1,23 @@
+include "../../../linux.mereo"
+
+-- The tower with TWO owned descriptors: a failure after the first is opened but
+-- before the second must close exactly one, and a failure after both must close
+-- both, in reverse. That is the case a C programmer gets wrong, and the case
+-- drop flags exist to handle -- mereo needs neither, because how far
+-- acquisition got is known statically at every point.
+
+program is
+  buffer is 64 bytes
+  count is 0
+
+  terminal is already linux.file (descriptor is 1)
+
+  first is linux.file (path is "lorem_ipsum.txt", flags is 0, mode is 0)
+
+  second is linux.file (path is "lorem_ipsum.txt", flags is 0, mode is 0)
+
+  second.read (buffer is buffer, capacity is 11, count is count)
+
+  terminal.write (buffer is buffer, count is count)
+
+end

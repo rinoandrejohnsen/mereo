@@ -1,0 +1,28 @@
+include "../../linux.mereo"
+
+-- A LAYOUT that also carries a template working on its own fields. The four
+-- programs view_* each build one of the four shapes such an instance can take,
+-- and print chr(64 + value) so a wrong value shows up in stdout, not just exit.
+record is
+  tag is 1 bytes
+  total (sink) is
+    sink is tag
+  end
+end
+
+-- 3. LENSED AT AN OFFSET: the same layout further into the backing.
+program is
+  buf is 8 bytes
+  h is buf + 4 as record
+  h.tag is 6
+  n is 0
+  h.total (sink is n)
+  ensure n == 6
+  first is [buf : 1]
+  ensure first == 0          -- the lens wrote at +4, not at 0
+
+  letter is 1 bytes
+  [letter : 1] is 64 + n
+  terminal is already linux.file (descriptor is 1)
+  terminal.write (buffer is letter, count is 1)
+end

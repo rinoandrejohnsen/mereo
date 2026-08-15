@@ -1,0 +1,22 @@
+include "markers.mereo"
+
+-- A template that acquires a resource locally must release it when the method
+-- returns -- exactly what crypto hash()/aes_gcm() need. Expect close(101) once
+-- per call, i.e. close(101) close(101).
+worker is
+  descriptor is 0
+
+  run is
+    tmp is adopted mark_a (descriptor is 101)
+  end
+
+  release is
+    linux.close (descriptor is descriptor)
+  end
+end
+
+program is
+  w is adopted worker (descriptor is 100)
+  w.run
+  w.run
+end

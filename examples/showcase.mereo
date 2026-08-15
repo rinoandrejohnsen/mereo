@@ -1,0 +1,122 @@
+-- showcase -- one working program that uses every shape `tools/mereohl.py` has
+-- a colour for, so the highlighter has something to be looked at with. The two
+-- files that used to serve that purpose did not transpile; this one does, and
+-- `./build.sh` builds it like any other.
+--
+--   ./build/showcase lorem_ipsum.txt   ->  4 line(s)
+--   printf 'a\nb' > two && ./build/showcase two   ->  1 line(s), ends short
+
+include "../linux.mereo"
+include "../core.mereo"
+
+-- a LAYOUT view -- named byte fields at fixed offsets
+tally is
+  lines is 8 bytes
+  last is 8 bytes
+end
+
+-- a FLAG view -- named bits over one word
+shape is
+  empty is bit 0
+  partial is bit 1
+  kind is bits 4 to 7
+end
+
+-- a RAW INSTRUCTION -- one CPU instruction, its operands bound to registers.
+-- `pure` says it has no side effects, so the compiler may fold or drop it.
+ones is pure assembly "popcnt %[source], %[result]"
+  source in register
+  result out register
+  clobbers cc                         -- popcnt writes the zero flag
+end
+
+-- a TEMPLATE GROUP -- spliced at each use, never called
+digitry is
+  -- how many decimal digits VALUE needs (at least one, for zero)
+  width (value, count) is
+    left is value
+    count is 1
+    step goes
+      left is left / 10
+      leave step when left == 0
+      count is count + 1
+      repeat step
+    end
+  end
+
+  -- a raw instruction needs a group to carry its `ensure`, so it lives here
+  -- rather than being called from the program
+  bits_set (source, result) is
+    ones (source is source, result is result)
+    ensure result >= 0
+  end
+end
+
+program (arguments) is
+  block is 4096 bytes
+  counts is 16 bytes
+  digits is 24 bytes
+  count is 0
+  i is 0
+  n is 0
+  seen is 0
+  run is 0
+  flags is 0
+  wide is 0
+  bit_count is 0
+
+  totals is counts as tally
+  bits is counts + 8 as shape
+
+  screen is already linux.file (descriptor is 1)
+
+  argc is arguments.count
+  ensure argc >= 2
+
+  source is linux.file (path is arguments.pointer + 1,
+                        flags is 0,             -- O_RDONLY
+                        mode is 0)
+
+  source.read (buffer is block, capacity is block.size, count is count)
+  ensure count >= 1
+
+  scan goes
+    leave scan when i >= count
+    n is [block + i : 1]
+    run is run + 1
+    n == 10 goes                      -- a newline closes a line
+      seen is seen + 1
+      run is 0
+    end
+    i is i + 1
+    repeat scan
+  end
+
+  totals.lines is seen
+  totals.last is run
+
+  -- a CROSSROAD: the common road inline, the exception moved past the merge
+  verdict likely goes
+    flags is 0b0000_0010              -- partial -- the last line has no newline
+  end
+
+  [counts + 8 : 8] is flags        -- the word `bits` is laid over
+  digitry.width (value is totals.lines, count is wide)
+  digitry.bits_set (source is count, result is bit_count)
+  ensure wide >= 1                 -- every number has a first digit
+  ensure bit_count >= 1            -- ...and any non-zero count has a bit
+  text.format (value is totals.lines, buffer is digits, length is n)
+
+  screen.write (buffer is digits, count is n)
+  screen.write (buffer is " line(s)", count is 8)
+
+  bits.partial == 1 goes
+    screen.write (buffer is ", ends short", count is 12)
+  end
+
+  screen.write (buffer is "\n", count is 1)
+
+  verdict when run == 0 goes
+    flags is 0x01                     -- empty -- the file ended on a newline
+  end
+end

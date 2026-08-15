@@ -1,0 +1,47 @@
+include "../linux.mereo"
+
+-- keys -- raw-mode echo. Open the controlling terminal, drop it into cbreak mode
+-- (no line buffering, no echo -- the program does the echoing itself), and print
+-- each keystroke back UPPERCASED, so you can watch the program drive the
+-- terminal. Quit on 'q'.
+--
+-- The point of the example is the exit: `linux.tty` layers the terminal's
+-- settings on top of `linux.file`'s descriptor, so the release tower restores
+-- the terminal and THEN closes the fd -- on a normal exit, on a failed check,
+-- and on a Ctrl-C. Nothing below says so.
+--
+--   ./keys      -- type; each key comes back upper-cased; `q` quits
+program is
+  key is 1 bytes
+  work is linux.terminal_settings
+  character is 0
+  got is 0
+
+  console is linux.tty (path is "/dev/tty",
+                        flags is 2,       -- O_RDWR
+                        mode is 0)
+
+  -- Edit a WORKING copy of the settings; the pristine copy the resource
+  -- snapshotted for itself is what the release tower restores on the way out.
+  console.snapshot (buffer is work)
+
+  terminal_mode is work + 12 as linux.local_mode       -- c_lflag sits at 12
+  terminal_mode.canonical is low                       -- no line buffering
+  terminal_mode.echo is low                            -- we echo, not the tty
+  work.read_timeout is 0                               -- VTIME: no timer
+  work.read_minimum is 1                               -- VMIN: block for 1 byte
+  console.apply (buffer is work)
+
+  serve goes
+    console.read (buffer is key, capacity is 1, count is got)
+    leave serve when got == 0            -- hangup: nothing arrived, so there is
+                                         -- nothing to echo -- the trailing test
+                                         -- used to notice only after echoing
+                                         -- whatever the previous pass left
+    character is [key : 1]
+    character is character - 32 when character >= 97 && character <= 122
+    [key : 1] is character
+    console.write (buffer is key, count is 1)
+    repeat serve when character != 113   -- 'q' quits
+  end
+end

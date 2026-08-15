@@ -1,0 +1,43 @@
+include "../../linux.mereo"
+
+-- PARTIAL construction of a layered resource. The stack is the same three layers
+-- as 19, but the TOP layer's acquire fails (a read on a never-open fd returns
+-- -EBADF, so its `ensure` takes the fail edge). The two layers that DID acquire
+-- must be released in reverse, and the failing layer's own release must NOT run
+-- -- it never acquired anything, so it has nothing to release.
+-- Expect close(102) close(101), and no close(103).
+
+chain_a is
+  fd_a is 101
+  acquire is
+    linux.close (descriptor is 201)
+  end
+  release is
+    linux.close (descriptor is fd_a)
+  end
+end
+
+chain_b extends chain_a is
+  fd_b is 102
+  acquire is
+    linux.close (descriptor is 202)
+  end
+  release is
+    linux.close (descriptor is fd_b)
+  end
+end
+
+chain_c extends chain_b is
+  fd_c is 103
+  probe is 0
+  acquire is
+    linux.read (descriptor is 199, buffer is fd_c, capacity is 1, count is probe)
+  end
+  release is
+    linux.close (descriptor is fd_c)
+  end
+end
+
+program is
+  stack is chain_c
+end

@@ -1,0 +1,37 @@
+include "../../core.mereo"
+include "../../linux.mereo"
+
+-- A CROSSROAD NESTED IN A COLD ROAD. `number text` (atoi) carries one of its
+-- own -- the leading `-` is an exception, so it is a road -- and this splices it
+-- into a `when` road, putting one crossroad inside another's cold tail.
+--
+-- That used to be refused, on the reading that a crossroad needs a hot path to
+-- put its dispatch on. The guarantee is really relative: the nested dispatch
+-- stays where its enclosing road is, and its own roads are emitted past it,
+-- still cold. mereocheck verifies both -- the outer against the spine, the
+-- nested against the cold region.
+--
+--   ./tmpl_road_nest      ->  -42   (argc 1: the cold road parses the text)
+--   ./tmpl_road_nest x    ->  7     (the hot road)
+program (arguments) is
+  argc is arguments.count
+  v is 0
+  digits is "-42"
+  text_out is 24 bytes
+  length is 0
+
+  terminal is already linux.file (descriptor is 1)
+
+  pick likely goes
+    v is 7
+  end
+
+  text.format (value is v, buffer is text_out, length is length)
+  terminal.write (buffer is text_out, count is length)
+
+  linux.exit
+
+  pick when argc == 1 goes
+    text.number (data is digits, length is 3, value is v)
+  end
+end

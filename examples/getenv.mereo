@@ -1,0 +1,64 @@
+include "../linux.mereo"
+include "../core.mereo"
+
+-- getenv -- print the value of an environment variable, or exit 1 if it is not
+-- set. The program this language could not write until now:
+--
+--   ./getenv PATH     ->  /usr/local/bin:/usr/bin:...
+--   ./getenv NOPE     ->  (nothing, exit 1)
+--
+-- `environment.pointer + i` takes a RUNTIME index. It used to take a literal
+-- only, so a program could read its first entry and nothing else -- which is
+-- why every example in the corpus took exactly one argument, and why there was
+-- no getenv. The loop below is the whole of what that unblocked.
+--
+-- Each entry is `NAME=VALUE`, NUL-terminated. A `span` names one, `until`
+-- trims it to its NUL, `find` locates the `=`, and `take`/`skip` cut the entry
+-- into the two halves -- no offset arithmetic anywhere.
+program (arguments, environment) is
+  argc is arguments.count
+  ensure argc >= 2
+
+  envc is environment.count
+  i is 0
+  at is 0
+  hit is 0
+  e is 0
+  key is 0
+  value_at is 0                      -- the answer, carried out of the loop:
+  value_len is 0                     -- a span belongs to the scope that names it
+
+  output is already linux.file (descriptor is 1)
+
+  key is arguments.pointer + 1
+  wanted is already span (data is key, length is 4096)
+  wanted.until (byte is 0)
+
+  search goes
+    leave search when i >= envc
+
+    e is environment.pointer + i
+    entry is already span (data is e, length is 4096)
+    entry.until (byte is 0)
+
+    entry.find (byte is 61, offset is at)      -- `=`
+    name is already span (data is entry.data, length is at)
+    name.equals (other is wanted.data,
+                 other_length is wanted.length,
+                 result is hit)
+
+    entry.skip (count is at + 1)     -- ...and now `entry` is the VALUE
+    value_at is entry.data
+    value_len is entry.length
+
+    leave search when hit == 1
+    i is i + 1
+    repeat search
+  end
+
+  ensure hit == 1                    -- not set: nothing printed, exit non-zero
+
+  output.write (buffer is value_at, count is value_len)
+  output.write (buffer is "\n", count is 1)
+
+end

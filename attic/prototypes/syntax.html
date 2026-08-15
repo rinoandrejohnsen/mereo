@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mereo &mdash; prose surface</title>
+<style>
+body { background: #141617; color: #d4be98; max-width: 62rem;
+       margin: 2.5rem auto; padding: 0 1.2rem;
+       font: 15px/1.55 "JetBrains Mono", "Fira Code", ui-monospace,
+             "Cascadia Mono", Menlo, Consolas, monospace; }
+h1 { color: #ddc7a1; font-size: 1.35rem; font-weight: 600; }
+h1 .sub { color: #928374; font-weight: 400; font-size: .95rem; margin-left: .6rem; }
+h2 { color: #d8a657; font-size: 1.02rem; font-weight: 600;
+     border-bottom: 1px solid #32302f; padding-bottom: .35rem; margin-top: 2.4rem; }
+pre.code { background: #1d2021; border: 1px solid #32302f; border-radius: 8px;
+           padding: 1rem 1.2rem; overflow-x: auto; counter-reset: line; }
+pre.code .l { display: block; }
+pre.code .l::before { counter-increment: line; content: counter(line);
+                      display: inline-block; width: 2.2em; margin-right: 1.3em;
+                      text-align: right; color: #504945; user-select: none; }
+.legend { background: #1d2021; border: 1px solid #32302f; border-radius: 8px;
+          padding: .9rem 1.2rem; font-size: .86rem; display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+          gap: .3rem 1.4rem; }
+.legend div { white-space: nowrap; }
+.legend .d { color: #928374; }
+.cmt { font-style: italic; }
+.kw { color: #928374; }
+.sect { color: #ddc7a1; font-weight: 600; }
+.cls { color: #d8a657; font-weight: 600; }
+.meth { color: #7daea3; }
+.prim { color: #89b482; }
+.role { color: #ea6962; }
+.ens { color: #d3869b; }
+.fail { color: #ea6962; }
+.failn { color: #ea6962; font-weight: 600; }
+.vin { color: #a9b665; }
+.vout { color: #e78a4e; }
+.vio { color: #d3869b; }
+.num { color: #d8a657; }
+.str { color: #89b482; }
+.name { color: #d4be98; }
+.op { color: #928374; }
+.cmt { color: #665c54; }
+
+</style>
+</head>
+<body>
+<h1>mereo<span class="sub">v3 prose surface &mdash; syntax reference</span></h1>
+<div class="legend">
+<div><span class="cls">file_descriptor</span> <span class="d">&mdash; resource class</span></div>
+<div><span class="meth">read</span> <span class="d">&mdash; mereo method</span></div>
+<div><span class="prim">open</span> <span class="d">&mdash; primitive (ABI floor)</span></div>
+<div><span class="role">initialize</span> / <span class="role">finalize</span> / <span class="role">already</span> <span class="d">&mdash; lifecycle &amp; ownership</span></div>
+<div><span class="ens">ensure</span> <span class="d">&mdash; the contract (postcondition)</span></div>
+<div><span class="fail">fails with</span> <span class="failn">2</span> <span class="d">&mdash; stage code (cold path)</span></div>
+<div><span class="vin">is</span> <span class="d">&mdash; binds a port to a value (direction is inferred)</span></div>
+<div><span class="vio">@</span><span class="name">buffer</span> <span class="d">&mdash; passes the address of a buffer</span></div>
+<div><span class="num">4096</span> <span class="str">"lorem_ipsum.txt"</span> <span class="d">&mdash; literals</span></div>
+</div>
+<h2>calls.mereo</h2>
+<pre class="code"><span class="l"><span class="cmt"># calls.mereo -- primitive declarations for the Linux x86-64 syscall ABI.</span></span>
+<span class="l"><span class="cmt"># The mereo equivalent of linux/calls.h++: names, numbers, and port shapes.</span></span>
+<span class="l"><span class="cmt"># Numbers verified against linux/calls.h++, the project's canonical table.</span></span>
+<span class="l"><span class="cmt">#</span></span>
+<span class="l"><span class="cmt"># A port is declared by its direction: `PORT in` = a value argument,</span></span>
+<span class="l"><span class="cmt"># `PORT out` = the caught return, `@PORT` = an address argument (a pointer</span></span>
+<span class="l"><span class="cmt"># to a buffer is passed). `final call` marks noreturn.</span></span>
+<span class="l"><span class="cmt">#</span></span>
+<span class="l"><span class="cmt"># Import this file with a use-line naming calls.mereo.</span></span>
+<span class="l"></span>
+<span class="l"><span class="prim">read</span> <span class="kw">is</span> <span class="kw">call</span> <span class="num">0</span> <span class="kw">where</span></span>
+<span class="l">  <span class="name">descriptor</span> <span class="vin">in</span></span>
+<span class="l">  <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">  <span class="name">capacity</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">count</span> <span class="vout">out</span></span>
+<span class="l"></span>
+<span class="l"><span class="prim">write</span> <span class="kw">is</span> <span class="kw">call</span> <span class="num">1</span> <span class="kw">where</span></span>
+<span class="l">  <span class="name">descriptor</span> <span class="vin">in</span></span>
+<span class="l">  <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">  <span class="name">count</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">written</span> <span class="vout">out</span></span>
+<span class="l"></span>
+<span class="l"><span class="prim">open</span> <span class="kw">is</span> <span class="kw">call</span> <span class="num">2</span> <span class="kw">where</span></span>
+<span class="l">  <span class="name">path</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">flags</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">mode</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">descriptor</span> <span class="vout">out</span></span>
+<span class="l"></span>
+<span class="l"><span class="prim">close</span> <span class="kw">is</span> <span class="kw">call</span> <span class="num">3</span> <span class="kw">where</span></span>
+<span class="l">  <span class="name">descriptor</span> <span class="vin">in</span></span>
+<span class="l"></span>
+<span class="l"><span class="prim">socket</span> <span class="kw">is</span> <span class="kw">call</span> <span class="num">41</span> <span class="kw">where</span></span>
+<span class="l">  <span class="name">domain</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">type</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">protocol</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">descriptor</span> <span class="vout">out</span></span>
+<span class="l"></span>
+<span class="l"><span class="prim">connect</span> <span class="kw">is</span> <span class="kw">call</span> <span class="num">42</span> <span class="kw">where</span></span>
+<span class="l">  <span class="name">descriptor</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">address</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">length</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">result</span> <span class="vout">out</span></span>
+<span class="l"></span>
+<span class="l"><span class="prim">accept</span> <span class="kw">is</span> <span class="kw">call</span> <span class="num">43</span> <span class="kw">where</span></span>
+<span class="l">  <span class="name">descriptor</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">address</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">length</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">connection</span> <span class="vout">out</span></span>
+<span class="l"></span>
+<span class="l"><span class="prim">bind</span> <span class="kw">is</span> <span class="kw">call</span> <span class="num">49</span> <span class="kw">where</span></span>
+<span class="l">  <span class="name">descriptor</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">address</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">length</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">result</span> <span class="vout">out</span></span>
+<span class="l"></span>
+<span class="l"><span class="prim">listen</span> <span class="kw">is</span> <span class="kw">call</span> <span class="num">50</span> <span class="kw">where</span></span>
+<span class="l">  <span class="name">descriptor</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">backlog</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">result</span> <span class="vout">out</span></span>
+<span class="l"></span>
+<span class="l"><span class="prim">lseek</span> <span class="kw">is</span> <span class="kw">call</span> <span class="num">8</span> <span class="kw">where</span></span>
+<span class="l">  <span class="name">descriptor</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">offset</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">whence</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">position</span> <span class="vout">out</span></span>
+<span class="l"></span>
+<span class="l"><span class="prim">mmap</span> <span class="kw">is</span> <span class="kw">call</span> <span class="num">9</span> <span class="kw">where</span></span>
+<span class="l">  <span class="name">hint</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">length</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">protection</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">flags</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">descriptor</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">offset</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">address</span> <span class="vout">out</span></span>
+<span class="l"></span>
+<span class="l"><span class="prim">munmap</span> <span class="kw">is</span> <span class="kw">call</span> <span class="num">11</span> <span class="kw">where</span></span>
+<span class="l">  <span class="name">address</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">length</span> <span class="vin">in</span></span>
+<span class="l"></span>
+<span class="l"><span class="prim">exit</span> <span class="kw">is</span> <span class="role">final</span> <span class="kw">call</span> <span class="num">60</span> <span class="kw">where</span></span>
+<span class="l">  <span class="name">status</span> <span class="vin">in</span></span>
+<span class="l"></span>
+<span class="l"><span class="prim">kill</span> <span class="kw">is</span> <span class="kw">call</span> <span class="num">62</span> <span class="kw">where</span></span>
+<span class="l">  <span class="name">pid</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">signal</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">result</span> <span class="vout">out</span></span>
+<span class="l"></span>
+<span class="l"><span class="prim">fsync</span> <span class="kw">is</span> <span class="kw">call</span> <span class="num">74</span> <span class="kw">where</span></span>
+<span class="l">  <span class="name">descriptor</span> <span class="vin">in</span></span>
+<span class="l">  <span class="name">result</span> <span class="vout">out</span></span></pre>
+<h2>asm.mereo</h2>
+<pre class="code"><span class="l"><span class="cmt"># asm.mereo -- raw inline-asm primitives, the general form of `call`.</span></span>
+<span class="l"><span class="cmt"># A `call N` is sugar for an `asm "syscall"`; here the template and the</span></span>
+<span class="l"><span class="cmt"># per-operand register constraints are written out. Directions are the</span></span>
+<span class="l"><span class="cmt"># same verbs as everywhere: is = input, into = output.</span></span>
+<span class="l"></span>
+<span class="l"><span class="role">use</span> <span class="str">"calls.mereo"</span></span>
+<span class="l"></span>
+<span class="l"><span class="cmt"># Pure computation: no side effects, so `pure` (non-volatile) lets GCC</span></span>
+<span class="l"><span class="cmt"># fold/hoist/eliminate it. popcnt reads one register, writes another.</span></span>
+<span class="l"><span class="prim">population_count</span> <span class="kw">is</span> <span class="role">pure</span> <span class="kw">asm</span> <span class="str">"popcnt %[source], %[result]"</span> <span class="kw">where</span></span>
+<span class="l">  <span class="name">source</span> <span class="vin">in</span> <span class="cls">register</span></span>
+<span class="l">  <span class="name">result</span> <span class="vout">out</span> <span class="cls">register</span></span>
+<span class="l"></span>
+<span class="l"><span class="cmt"># A full memory barrier: no operands, only the memory clobber. Volatile</span></span>
+<span class="l"><span class="cmt"># by default (a barrier that GCC could delete would be worthless).</span></span>
+<span class="l"><span class="prim">memory_fence</span> <span class="kw">is</span> <span class="kw">asm</span> <span class="str">"mfence"</span> <span class="kw">where</span></span>
+<span class="l">  <span class="role">clobbers</span> <span class="failn">memory</span></span>
+<span class="l"></span>
+<span class="l"><span class="cmt"># Hardware RNG into a register; the carry flag (cc) says whether the</span></span>
+<span class="l"><span class="cmt"># value is valid, so it is clobbered.</span></span>
+<span class="l"><span class="prim">random_word</span> <span class="kw">is</span> <span class="kw">asm</span> <span class="str">"rdrand %[result]"</span> <span class="kw">where</span></span>
+<span class="l">  <span class="name">result</span> <span class="vout">out</span> <span class="cls">register</span></span>
+<span class="l">  <span class="role">clobbers</span> <span class="failn">cc</span></span></pre>
+<h2>linux.mereo</h2>
+<pre class="code"><span class="l"><span class="cmt"># linux.mereo -- conceptual equivalents of linux.h++, in mereo.</span></span>
+<span class="l"><span class="cmt"># Imports its own primitive declarations; programs need only</span></span>
+<span class="l"><span class="cmt"># `use "linux.mereo"`.</span></span>
+<span class="l"><span class="cmt">#</span></span>
+<span class="l"><span class="cmt"># What ports directly (linux.h++ -&gt; here):</span></span>
+<span class="l"><span class="cmt">#   file_descriptor         -&gt;  file_descriptor   THE ACQUIRED RESOURCE:</span></span>
+<span class="l"><span class="cmt">#                                        its lifecycle is open (initialize)</span></span>
+<span class="l"><span class="cmt">#                                        and close (finalize), nothing else.</span></span>
+<span class="l"><span class="cmt">#                                        Ownable directly, adoptable, and</span></span>
+<span class="l"><span class="cmt">#                                        composable.</span></span>
+<span class="l"><span class="cmt">#   file                    -&gt;  file     what you DO with the resource: it</span></span>
+<span class="l"><span class="cmt">#                                        COMPOSES a file_descriptor part</span></span>
+<span class="l"><span class="cmt">#                                        (`handle is file_descriptor`) and</span></span>
+<span class="l"><span class="cmt">#                                        carries the I/O methods, reaching</span></span>
+<span class="l"><span class="cmt">#                                        the fd through the part path</span></span>
+<span class="l"><span class="cmt">#                                        `handle descriptor`. Its initialize</span></span>
+<span class="l"><span class="cmt">#                                        opens (a constructor chain to the</span></span>
+<span class="l"><span class="cmt">#                                        part); no finalize -- the part's</span></span>
+<span class="l"><span class="cmt">#                                        close is propagated. Construct one</span></span>
+<span class="l"><span class="cmt">#                                        to open (`f is file where path ...`)</span></span>
+<span class="l"><span class="cmt">#                                        or adopt a raw descriptor</span></span>
+<span class="l"><span class="cmt">#                                        (`f is already file where</span></span>
+<span class="l"><span class="cmt">#                                        descriptor is 1` -- the leaf name</span></span>
+<span class="l"><span class="cmt">#                                        addresses the composed slot).</span></span>
+<span class="l"><span class="cmt">#   mapping                 -&gt;  mapping  with a class-constant length: a</span></span>
+<span class="l"><span class="cmt">#                                        mereo constructor cannot yet</span></span>
+<span class="l"><span class="cmt">#                                        persist a parameter into state,</span></span>
+<span class="l"><span class="cmt">#                                        and munmap needs the length.</span></span>
+<span class="l"><span class="cmt">#                                        Declare a class per size, or</span></span>
+<span class="l"><span class="cmt">#                                        wait for param-to-state.</span></span>
+<span class="l"><span class="cmt">#   process (kill, running) -&gt;  process  adopted-only: wrap a known pid.</span></span>
+<span class="l"><span class="cmt">#</span></span>
+<span class="l"><span class="cmt"># Skipped, with reasons (each is a known design thread):</span></span>
+<span class="l"><span class="cmt">#   duplicate, accept, pidfd   factory methods returning a new owned</span></span>
+<span class="l"><span class="cmt">#                              instance (instance-valued ports)</span></span>
+<span class="l"><span class="cmt">#   release, detach            ownership transfer; mereo ownership is</span></span>
+<span class="l"><span class="cmt">#                              fixed at declaration</span></span>
+<span class="l"><span class="cmt">#   subprocess spawn           fork returns twice; needs the fused spawn</span></span>
+<span class="l"><span class="cmt">#                              pseudo-primitive or branches</span></span>
+<span class="l"><span class="cmt">#   socket                     the class would port, but using it needs</span></span>
+<span class="l"><span class="cmt">#                              sockaddr bytes the language cannot</span></span>
+<span class="l"><span class="cmt">#                              construct yet</span></span>
+<span class="l"><span class="cmt">#   app                        argv and env live in initial-stack pointer</span></span>
+<span class="l"><span class="cmt">#                              land; its status-then-exit-last design IS</span></span>
+<span class="l"><span class="cmt">#                              mereo already (the implicit status and the</span></span>
+<span class="l"><span class="cmt">#                              release tower)</span></span>
+<span class="l"><span class="cmt">#</span></span>
+<span class="l"><span class="cmt"># Contract caveat: mmap's true failure test is the [-4095,-1] window;</span></span>
+<span class="l"><span class="cmt"># `address &gt; 0` is correct for user mappings on x86-64 until an</span></span>
+<span class="l"><span class="cmt"># `ensure ok` form exists.</span></span>
+<span class="l"></span>
+<span class="l"><span class="role">use</span> <span class="str">"calls.mereo"</span></span>
+<span class="l"></span>
+<span class="l"><span class="cls">file_descriptor</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">descriptor</span> <span class="kw">is</span> <span class="num">-1</span></span>
+<span class="l"></span>
+<span class="l">  <span class="role">initialize</span> <span class="kw">with</span> <span class="name">path</span> <span class="kw">and</span> <span class="name">flags</span> <span class="kw">and</span> <span class="name">mode</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">open</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">path</span> <span class="vin">is</span> <span class="name">path</span></span>
+<span class="l">      <span class="name">flags</span> <span class="vin">is</span> <span class="name">flags</span></span>
+<span class="l">      <span class="name">mode</span> <span class="vin">is</span> <span class="name">mode</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">descriptor</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="role">finalize</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">close</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l"></span>
+<span class="l"><span class="cls">file</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">handle</span> <span class="kw">is</span> <span class="cls">file_descriptor</span></span>
+<span class="l"></span>
+<span class="l">  <span class="role">initialize</span> <span class="kw">with</span> <span class="name">path</span> <span class="kw">and</span> <span class="name">flags</span> <span class="kw">and</span> <span class="name">mode</span> <span class="kw">is</span></span>
+<span class="l">    <span class="role">initialize</span> <span class="name">handle</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">path</span> <span class="vin">is</span> <span class="name">path</span></span>
+<span class="l">      <span class="name">flags</span> <span class="vin">is</span> <span class="name">flags</span></span>
+<span class="l">      <span class="name">mode</span> <span class="vin">is</span> <span class="name">mode</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">read</span> <span class="kw">with</span> <span class="name">buffer</span> <span class="kw">and</span> <span class="name">capacity</span> <span class="kw">and</span> <span class="name">count</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">read</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">handle descriptor</span></span>
+<span class="l">      <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">      <span class="name">capacity</span> <span class="vin">is</span> <span class="name">capacity</span></span>
+<span class="l">      <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">count</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">write</span> <span class="kw">with</span> <span class="name">buffer</span> <span class="kw">and</span> <span class="name">count</span> <span class="kw">and</span> <span class="name">written</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">write</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">handle descriptor</span></span>
+<span class="l">      <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">      <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">      <span class="name">written</span> <span class="vin">is</span> <span class="name">written</span></span>
+<span class="l">    <span class="ens">ensure</span></span>
+<span class="l">      <span class="name">written</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l">      <span class="name">written</span> <span class="op">==</span> <span class="name">count</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">seek</span> <span class="kw">with</span> <span class="name">offset</span> <span class="kw">and</span> <span class="name">whence</span> <span class="kw">and</span> <span class="name">position</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">lseek</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">handle descriptor</span></span>
+<span class="l">      <span class="name">offset</span> <span class="vin">is</span> <span class="name">offset</span></span>
+<span class="l">      <span class="name">whence</span> <span class="vin">is</span> <span class="name">whence</span></span>
+<span class="l">      <span class="name">position</span> <span class="vin">is</span> <span class="name">position</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">position</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">sync</span> <span class="kw">with</span> <span class="name">result</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">fsync</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">handle descriptor</span></span>
+<span class="l">      <span class="name">result</span> <span class="vin">is</span> <span class="name">result</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">result</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l"><span class="cls">mapping</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">address</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l">  <span class="name">length</span> <span class="kw">is</span> <span class="num">4096</span></span>
+<span class="l"></span>
+<span class="l">  <span class="role">initialize</span> <span class="kw">with</span> <span class="name">protection</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">mmap</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">hint</span> <span class="vin">is</span> <span class="num">0</span></span>
+<span class="l">      <span class="name">length</span> <span class="vin">is</span> <span class="name">length</span></span>
+<span class="l">      <span class="name">protection</span> <span class="vin">is</span> <span class="name">protection</span></span>
+<span class="l">      <span class="name">flags</span> <span class="vin">is</span> <span class="num">34</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="num">-1</span></span>
+<span class="l">      <span class="name">offset</span> <span class="vin">is</span> <span class="num">0</span></span>
+<span class="l">      <span class="name">address</span> <span class="vin">is</span> <span class="name">address</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">address</span> <span class="op">&gt;</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="role">finalize</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">munmap</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">address</span> <span class="vin">is</span> <span class="name">address</span></span>
+<span class="l">      <span class="name">length</span> <span class="vin">is</span> <span class="name">length</span></span>
+<span class="l"></span>
+<span class="l"><span class="cls">process</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">pid</span> <span class="kw">is</span> <span class="num">-1</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">kill</span> <span class="kw">with</span> <span class="name">signal</span> <span class="kw">and</span> <span class="name">result</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">kill</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">pid</span> <span class="vin">is</span> <span class="name">pid</span></span>
+<span class="l">      <span class="name">signal</span> <span class="vin">is</span> <span class="name">signal</span></span>
+<span class="l">      <span class="name">result</span> <span class="vin">is</span> <span class="name">result</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">result</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">probe</span> <span class="kw">with</span> <span class="name">result</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">kill</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">pid</span> <span class="vin">is</span> <span class="name">pid</span></span>
+<span class="l">      <span class="name">signal</span> <span class="vin">is</span> <span class="num">0</span></span>
+<span class="l">      <span class="name">result</span> <span class="vin">is</span> <span class="name">result</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">result</span> <span class="op">&gt;=</span> <span class="num">0</span></span></pre>
+<h2>bits.mereo</h2>
+<pre class="code"><span class="l"><span class="role">use</span> <span class="str">"asm.mereo"</span></span>
+<span class="l"></span>
+<span class="l"><span class="cmt"># A class wrapping the asm primitives -- they compose with ensure and the</span></span>
+<span class="l"><span class="cmt"># rest of the machinery exactly like syscalls do.</span></span>
+<span class="l"><span class="cls">math</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">value</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">count</span> <span class="kw">with</span> <span class="name">source</span> <span class="kw">and</span> <span class="name">result</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">population_count</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">source</span> <span class="vin">is</span> <span class="name">source</span></span>
+<span class="l">      <span class="name">result</span> <span class="vin">is</span> <span class="name">result</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">result</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">barrier</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">memory_fence</span> <span class="kw">where</span></span>
+<span class="l"></span>
+<span class="l"><span class="sect">program</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">bits</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="name">cpu</span> <span class="kw">is</span> <span class="role">already</span> <span class="cls">math</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">value</span> <span class="vin">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">count</span> <span class="name">cpu</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">source</span> <span class="vin">is</span> <span class="num">255</span></span>
+<span class="l">    <span class="name">result</span> <span class="vin">is</span> <span class="name">bits</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">barrier</span> <span class="name">cpu</span> <span class="kw">where</span></span>
+<span class="l"></span>
+<span class="l">  <span class="prim">exit</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">status</span> <span class="vin">is</span> <span class="name">bits</span></span></pre>
+<h2>abc.mereo</h2>
+<pre class="code"><span class="l"><span class="role">use</span> <span class="str">"calls.mereo"</span></span>
+<span class="l"></span>
+<span class="l"><span class="cls">file_descriptor</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">descriptor</span> <span class="kw">is</span> <span class="num">-1</span></span>
+<span class="l"></span>
+<span class="l">  <span class="role">initialize</span> <span class="kw">with</span> <span class="name">path</span> <span class="kw">and</span> <span class="name">flags</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">open</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">path</span> <span class="vin">is</span> <span class="name">path</span></span>
+<span class="l">      <span class="name">flags</span> <span class="vin">is</span> <span class="name">flags</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">descriptor</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">read</span> <span class="kw">with</span> <span class="name">buffer</span> <span class="kw">and</span> <span class="name">capacity</span> <span class="kw">and</span> <span class="name">count</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">read</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">      <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">      <span class="name">capacity</span> <span class="vin">is</span> <span class="name">capacity</span></span>
+<span class="l">      <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">count</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">write</span> <span class="kw">with</span> <span class="name">buffer</span> <span class="kw">and</span> <span class="name">count</span> <span class="kw">and</span> <span class="name">written</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">write</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">      <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">      <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">      <span class="name">written</span> <span class="vin">is</span> <span class="name">written</span></span>
+<span class="l">    <span class="ens">ensure</span></span>
+<span class="l">      <span class="name">written</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l">      <span class="name">written</span> <span class="op">==</span> <span class="name">count</span></span>
+<span class="l"></span>
+<span class="l">  <span class="role">finalize</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">close</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l"></span>
+<span class="l"><span class="sect">program</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">capacity</span> <span class="kw">is</span> <span class="num">4096</span></span>
+<span class="l">  <span class="name">buffer</span> <span class="kw">is</span> <span class="name">capacity</span> <span class="kw">bytes</span></span>
+<span class="l">  <span class="name">count</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l">  <span class="name">written</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="name">terminal</span> <span class="kw">is</span> <span class="role">already</span> <span class="cls">file_descriptor</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">descriptor</span> <span class="vin">is</span> <span class="num">1</span></span>
+<span class="l"></span>
+<span class="l">  <span class="name">file</span> <span class="kw">is</span> <span class="cls">file_descriptor</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">path</span> <span class="vin">is</span> <span class="str">"lorem_ipsum.txt"</span></span>
+<span class="l">    <span class="name">flags</span> <span class="vin">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">read</span> <span class="name">file</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">    <span class="name">capacity</span> <span class="vin">is</span> <span class="name">capacity</span></span>
+<span class="l">    <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">write</span> <span class="name">terminal</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">    <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">    <span class="name">written</span> <span class="vin">is</span> <span class="name">written</span></span>
+<span class="l"></span>
+<span class="l">  <span class="prim">exit</span></span></pre>
+<h2>abc2.mereo</h2>
+<pre class="code"><span class="l"><span class="cmt"># abc2 -- the abc file-processor rebuilt on the full stack: a single</span></span>
+<span class="l"><span class="cmt"># `use "linux.mereo"` (which transitively imports calls.mereo), the</span></span>
+<span class="l"><span class="cmt"># owned file_descriptor resource, borrowing `file` views for I/O, and</span></span>
+<span class="l"><span class="cmt"># method delegation. It should lower to the same machine code as abc's</span></span>
+<span class="l"><span class="cmt"># flat local classes -- the abstractions are compile-time only.</span></span>
+<span class="l"></span>
+<span class="l"><span class="role">use</span> <span class="str">"linux.mereo"</span></span>
+<span class="l"></span>
+<span class="l"><span class="sect">program</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">capacity</span> <span class="kw">is</span> <span class="num">4096</span></span>
+<span class="l">  <span class="name">buffer</span> <span class="kw">is</span> <span class="name">capacity</span> <span class="kw">bytes</span></span>
+<span class="l">  <span class="name">count</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l">  <span class="name">written</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="name">terminal</span> <span class="kw">is</span> <span class="role">already</span> <span class="cls">file</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">descriptor</span> <span class="vin">is</span> <span class="num">1</span></span>
+<span class="l"></span>
+<span class="l">  <span class="name">file</span> <span class="kw">is</span> <span class="cls">file</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">path</span> <span class="vin">is</span> <span class="str">"lorem_ipsum.txt"</span></span>
+<span class="l">    <span class="name">flags</span> <span class="vin">is</span> <span class="num">0</span></span>
+<span class="l">    <span class="name">mode</span> <span class="vin">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">read</span> <span class="name">file</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">    <span class="name">capacity</span> <span class="vin">is</span> <span class="name">capacity</span></span>
+<span class="l">    <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">write</span> <span class="name">terminal</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">    <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">    <span class="name">written</span> <span class="vin">is</span> <span class="name">written</span></span>
+<span class="l"></span>
+<span class="l">  <span class="prim">exit</span></span></pre>
+<h2>copy.mereo</h2>
+<pre class="code"><span class="l"><span class="role">use</span> <span class="str">"calls.mereo"</span></span>
+<span class="l"></span>
+<span class="l"><span class="cls">file_descriptor</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">descriptor</span> <span class="kw">is</span> <span class="num">-1</span></span>
+<span class="l"></span>
+<span class="l">  <span class="role">initialize</span> <span class="kw">with</span> <span class="name">path</span> <span class="kw">and</span> <span class="name">flags</span> <span class="kw">and</span> <span class="name">mode</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">open</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">path</span> <span class="vin">is</span> <span class="name">path</span></span>
+<span class="l">      <span class="name">flags</span> <span class="vin">is</span> <span class="name">flags</span></span>
+<span class="l">      <span class="name">mode</span> <span class="vin">is</span> <span class="name">mode</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">descriptor</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">read</span> <span class="kw">with</span> <span class="name">buffer</span> <span class="kw">and</span> <span class="name">capacity</span> <span class="kw">and</span> <span class="name">count</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">read</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">      <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">      <span class="name">capacity</span> <span class="vin">is</span> <span class="name">capacity</span></span>
+<span class="l">      <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">count</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">write</span> <span class="kw">with</span> <span class="name">buffer</span> <span class="kw">and</span> <span class="name">count</span> <span class="kw">and</span> <span class="name">written</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">write</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">      <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">      <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">      <span class="name">written</span> <span class="vin">is</span> <span class="name">written</span></span>
+<span class="l">    <span class="ens">ensure</span></span>
+<span class="l">      <span class="name">written</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l">      <span class="name">written</span> <span class="op">==</span> <span class="name">count</span></span>
+<span class="l"></span>
+<span class="l">  <span class="role">finalize</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">close</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l"></span>
+<span class="l"><span class="sect">program</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">capacity</span> <span class="kw">is</span> <span class="num">4096</span></span>
+<span class="l">  <span class="name">buffer</span> <span class="kw">is</span> <span class="name">capacity</span> <span class="kw">bytes</span></span>
+<span class="l">  <span class="name">count</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l">  <span class="name">written</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="name">source</span> <span class="kw">is</span> <span class="cls">file_descriptor</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">path</span> <span class="vin">is</span> <span class="str">"lorem_ipsum.txt"</span></span>
+<span class="l">    <span class="name">flags</span> <span class="vin">is</span> <span class="num">0</span></span>
+<span class="l">    <span class="name">mode</span> <span class="vin">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="name">sink</span> <span class="kw">is</span> <span class="cls">file_descriptor</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">path</span> <span class="vin">is</span> <span class="str">"copy_out.txt"</span></span>
+<span class="l">    <span class="name">flags</span> <span class="vin">is</span> <span class="num">577</span></span>
+<span class="l">    <span class="name">mode</span> <span class="vin">is</span> <span class="num">420</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">read</span> <span class="name">source</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">    <span class="name">capacity</span> <span class="vin">is</span> <span class="name">capacity</span></span>
+<span class="l">    <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">write</span> <span class="name">sink</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">    <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">    <span class="name">written</span> <span class="vin">is</span> <span class="name">written</span></span>
+<span class="l"></span>
+<span class="l">  <span class="prim">exit</span></span></pre>
+<h2>soft.mereo</h2>
+<pre class="code"><span class="l"><span class="role">use</span> <span class="str">"calls.mereo"</span></span>
+<span class="l"></span>
+<span class="l"><span class="cmt"># or continue where -- recovery demo. The path is a directory, so read</span></span>
+<span class="l"><span class="cmt"># always fails with EISDIR; the repair turns that into an empty read and</span></span>
+<span class="l"><span class="cmt"># the program completes silently with exit 0. The only failure this</span></span>
+<span class="l"><span class="cmt"># program can still have is the construction itself.</span></span>
+<span class="l"></span>
+<span class="l"><span class="cls">file_descriptor</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">descriptor</span> <span class="kw">is</span> <span class="num">-1</span></span>
+<span class="l"></span>
+<span class="l">  <span class="role">initialize</span> <span class="kw">with</span> <span class="name">path</span> <span class="kw">and</span> <span class="name">flags</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">open</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">path</span> <span class="vin">is</span> <span class="name">path</span></span>
+<span class="l">      <span class="name">flags</span> <span class="vin">is</span> <span class="name">flags</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">descriptor</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">read</span> <span class="kw">with</span> <span class="name">buffer</span> <span class="kw">and</span> <span class="name">capacity</span> <span class="kw">and</span> <span class="name">count</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">read</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">      <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">      <span class="name">capacity</span> <span class="vin">is</span> <span class="name">capacity</span></span>
+<span class="l">      <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">    <span class="ens">ensure</span></span>
+<span class="l">      <span class="name">count</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">write</span> <span class="kw">with</span> <span class="name">buffer</span> <span class="kw">and</span> <span class="name">count</span> <span class="kw">and</span> <span class="name">written</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">write</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">      <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">      <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">      <span class="name">written</span> <span class="vin">is</span> <span class="name">written</span></span>
+<span class="l">    <span class="ens">ensure</span></span>
+<span class="l">      <span class="name">written</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l">      <span class="name">written</span> <span class="op">==</span> <span class="name">count</span></span>
+<span class="l"></span>
+<span class="l">  <span class="role">finalize</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">close</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l"></span>
+<span class="l"><span class="sect">program</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">capacity</span> <span class="kw">is</span> <span class="num">4096</span></span>
+<span class="l">  <span class="name">buffer</span> <span class="kw">is</span> <span class="name">capacity</span> <span class="kw">bytes</span></span>
+<span class="l">  <span class="name">count</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l">  <span class="name">written</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="name">terminal</span> <span class="kw">is</span> <span class="role">already</span> <span class="cls">file_descriptor</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">descriptor</span> <span class="vin">is</span> <span class="num">1</span></span>
+<span class="l"></span>
+<span class="l">  <span class="name">file</span> <span class="kw">is</span> <span class="cls">file_descriptor</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">path</span> <span class="vin">is</span> <span class="str">"."</span></span>
+<span class="l">    <span class="name">flags</span> <span class="vin">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">read</span> <span class="name">file</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">    <span class="name">capacity</span> <span class="vin">is</span> <span class="name">capacity</span></span>
+<span class="l">    <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">  <span class="role">or continue</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">count</span> <span class="vin">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">write</span> <span class="name">terminal</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">    <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">    <span class="name">written</span> <span class="vin">is</span> <span class="name">written</span></span>
+<span class="l"></span>
+<span class="l">  <span class="prim">exit</span></span></pre>
+<h2>fallback.mereo</h2>
+<pre class="code"><span class="l"><span class="role">use</span> <span class="str">"calls.mereo"</span></span>
+<span class="l"></span>
+<span class="l"><span class="cmt"># or where -- alternative bindings demo. The primary path does not</span></span>
+<span class="l"><span class="cmt"># exist, so the construction falls back to the second candidate and the</span></span>
+<span class="l"><span class="cmt"># program prints it normally. Run it in a directory with neither file</span></span>
+<span class="l"><span class="cmt"># and the record names every candidate it tried.</span></span>
+<span class="l"></span>
+<span class="l"><span class="cls">file_descriptor</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">descriptor</span> <span class="kw">is</span> <span class="num">-1</span></span>
+<span class="l"></span>
+<span class="l">  <span class="role">initialize</span> <span class="kw">with</span> <span class="name">path</span> <span class="kw">and</span> <span class="name">flags</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">open</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">path</span> <span class="vin">is</span> <span class="name">path</span></span>
+<span class="l">      <span class="name">flags</span> <span class="vin">is</span> <span class="name">flags</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">descriptor</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">read</span> <span class="kw">with</span> <span class="name">buffer</span> <span class="kw">and</span> <span class="name">capacity</span> <span class="kw">and</span> <span class="name">count</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">read</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">      <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">      <span class="name">capacity</span> <span class="vin">is</span> <span class="name">capacity</span></span>
+<span class="l">      <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">count</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">write</span> <span class="kw">with</span> <span class="name">buffer</span> <span class="kw">and</span> <span class="name">count</span> <span class="kw">and</span> <span class="name">written</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">write</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">      <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">      <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">      <span class="name">written</span> <span class="vin">is</span> <span class="name">written</span></span>
+<span class="l">    <span class="ens">ensure</span></span>
+<span class="l">      <span class="name">written</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l">      <span class="name">written</span> <span class="op">==</span> <span class="name">count</span></span>
+<span class="l"></span>
+<span class="l">  <span class="role">finalize</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">close</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l"></span>
+<span class="l"><span class="sect">program</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">capacity</span> <span class="kw">is</span> <span class="num">4096</span></span>
+<span class="l">  <span class="name">buffer</span> <span class="kw">is</span> <span class="name">capacity</span> <span class="kw">bytes</span></span>
+<span class="l">  <span class="name">count</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l">  <span class="name">written</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="name">terminal</span> <span class="kw">is</span> <span class="role">already</span> <span class="cls">file_descriptor</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">descriptor</span> <span class="vin">is</span> <span class="num">1</span></span>
+<span class="l"></span>
+<span class="l">  <span class="name">file</span> <span class="kw">is</span> <span class="cls">file_descriptor</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">path</span> <span class="vin">is</span> <span class="str">"missing.txt"</span></span>
+<span class="l">    <span class="name">flags</span> <span class="vin">is</span> <span class="num">0</span></span>
+<span class="l">  <span class="role">or</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">path</span> <span class="vin">is</span> <span class="str">"lorem_ipsum.txt"</span></span>
+<span class="l">    <span class="name">flags</span> <span class="vin">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">read</span> <span class="name">file</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">    <span class="name">capacity</span> <span class="vin">is</span> <span class="name">capacity</span></span>
+<span class="l">    <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">write</span> <span class="name">terminal</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">    <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">    <span class="name">written</span> <span class="vin">is</span> <span class="name">written</span></span>
+<span class="l"></span>
+<span class="l">  <span class="prim">exit</span></span></pre>
+<h2>catview.mereo</h2>
+<pre class="code"><span class="l"><span class="role">use</span> <span class="str">"linux.mereo"</span></span>
+<span class="l"></span>
+<span class="l"><span class="cmt"># Copy one file to another through linux.mereo's `file`: two owned file</span></span>
+<span class="l"><span class="cmt"># objects, each opening its own descriptor and closed by the derived</span></span>
+<span class="l"><span class="cmt"># release tower (sink then source, reverse acquisition order). abc2.mereo</span></span>
+<span class="l"><span class="cmt"># reads a file to the terminal; copy.mereo does file-to-file with local</span></span>
+<span class="l"><span class="cmt"># classes -- this shows the linux.mereo `file` abstraction doing it.</span></span>
+<span class="l"></span>
+<span class="l"><span class="sect">program</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">capacity</span> <span class="kw">is</span> <span class="num">4096</span></span>
+<span class="l">  <span class="name">buffer</span> <span class="kw">is</span> <span class="name">capacity</span> <span class="kw">bytes</span></span>
+<span class="l">  <span class="name">count</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l">  <span class="name">written</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="name">source</span> <span class="kw">is</span> <span class="cls">file</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">path</span> <span class="vin">is</span> <span class="str">"lorem_ipsum.txt"</span></span>
+<span class="l">    <span class="name">flags</span> <span class="vin">is</span> <span class="num">0</span></span>
+<span class="l">    <span class="name">mode</span> <span class="vin">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="name">sink</span> <span class="kw">is</span> <span class="cls">file</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">path</span> <span class="vin">is</span> <span class="str">"copy_out.txt"</span></span>
+<span class="l">    <span class="name">flags</span> <span class="vin">is</span> <span class="num">577</span></span>
+<span class="l">    <span class="name">mode</span> <span class="vin">is</span> <span class="num">420</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">read</span> <span class="name">source</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">    <span class="name">capacity</span> <span class="vin">is</span> <span class="name">capacity</span></span>
+<span class="l">    <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">write</span> <span class="name">sink</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">    <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">    <span class="name">written</span> <span class="vin">is</span> <span class="name">written</span></span>
+<span class="l"></span>
+<span class="l">  <span class="prim">exit</span></span></pre>
+<h2>socket.mereo</h2>
+<pre class="code"><span class="l"><span class="role">use</span> <span class="str">"linux.mereo"</span></span>
+<span class="l"></span>
+<span class="l"><span class="cmt"># Socket demo: connect a TCP socket to a local server, read the bytes it</span></span>
+<span class="l"><span class="cmt"># sends, and write them to the terminal. `connection` is a resource whose</span></span>
+<span class="l"><span class="cmt"># lifecycle is socket() to open and close() to release; `reach` runs</span></span>
+<span class="l"><span class="cmt"># connect(). Everything is a file descriptor, so once connected we read()</span></span>
+<span class="l"><span class="cmt"># it like any file.</span></span>
+<span class="l"><span class="cmt">#</span></span>
+<span class="l"><span class="cmt"># The one hard part is the peer address. mereo cannot build a struct, but</span></span>
+<span class="l"><span class="cmt"># a string literal IS a byte array in C, so the 16-byte sockaddr_in is</span></span>
+<span class="l"><span class="cmt"># spelled out as raw bytes below:</span></span>
+<span class="l"><span class="cmt">#   \x02\x00            AF_INET (family 2, little-endian)</span></span>
+<span class="l"><span class="cmt">#   \x30\x39            port 12345 (0x3039, network/big-endian)</span></span>
+<span class="l"><span class="cmt">#   \x7f\x00\x00\x01    address 127.0.0.1</span></span>
+<span class="l"><span class="cmt">#   \x00 * 8            padding</span></span>
+<span class="l"></span>
+<span class="l"><span class="cls">connection</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">descriptor</span> <span class="kw">is</span> <span class="num">-1</span></span>
+<span class="l">  <span class="name">status</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="role">initialize</span> <span class="kw">with</span> <span class="name">domain</span> <span class="kw">and</span> <span class="name">type</span> <span class="kw">and</span> <span class="name">protocol</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">socket</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">domain</span> <span class="vin">is</span> <span class="name">domain</span></span>
+<span class="l">      <span class="name">type</span> <span class="vin">is</span> <span class="name">type</span></span>
+<span class="l">      <span class="name">protocol</span> <span class="vin">is</span> <span class="name">protocol</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">descriptor</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">reach</span> <span class="kw">with</span> <span class="name">address</span> <span class="kw">and</span> <span class="name">length</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">connect</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">      <span class="name">address</span> <span class="vin">is</span> <span class="name">address</span></span>
+<span class="l">      <span class="name">length</span> <span class="vin">is</span> <span class="name">length</span></span>
+<span class="l">      <span class="name">result</span> <span class="vin">is</span> <span class="name">status</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">status</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">read</span> <span class="kw">with</span> <span class="name">buffer</span> <span class="kw">and</span> <span class="name">capacity</span> <span class="kw">and</span> <span class="name">count</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">read</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">      <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">      <span class="name">capacity</span> <span class="vin">is</span> <span class="name">capacity</span></span>
+<span class="l">      <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">count</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="role">finalize</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">close</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l"></span>
+<span class="l"><span class="sect">program</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">capacity</span> <span class="kw">is</span> <span class="num">4096</span></span>
+<span class="l">  <span class="name">buffer</span> <span class="kw">is</span> <span class="name">capacity</span> <span class="kw">bytes</span></span>
+<span class="l">  <span class="name">count</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l">  <span class="name">written</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="name">terminal</span> <span class="kw">is</span> <span class="role">already</span> <span class="cls">file</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">descriptor</span> <span class="vin">is</span> <span class="num">1</span></span>
+<span class="l"></span>
+<span class="l">  <span class="name">link</span> <span class="kw">is</span> <span class="cls">connection</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">domain</span> <span class="vin">is</span> <span class="num">2</span></span>
+<span class="l">    <span class="name">type</span> <span class="vin">is</span> <span class="num">1</span></span>
+<span class="l">    <span class="name">protocol</span> <span class="vin">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">reach</span> <span class="name">link</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">address</span> <span class="vin">is</span> <span class="str">"\x02\x00\x30\x39\x7f\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00"</span></span>
+<span class="l">    <span class="name">length</span> <span class="vin">is</span> <span class="num">16</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">read</span> <span class="name">link</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">    <span class="name">capacity</span> <span class="vin">is</span> <span class="name">capacity</span></span>
+<span class="l">    <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">write</span> <span class="name">terminal</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">    <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">    <span class="name">written</span> <span class="vin">is</span> <span class="name">written</span></span>
+<span class="l"></span>
+<span class="l">  <span class="prim">exit</span></span></pre>
+<h2>server.mereo</h2>
+<pre class="code"><span class="l"><span class="role">use</span> <span class="str">"linux.mereo"</span></span>
+<span class="l"></span>
+<span class="l"><span class="cmt"># Server demo: bind a TCP socket, listen, then loop, accepting</span></span>
+<span class="l"><span class="cmt"># connections, reading what each client sends, and writing it to the</span></span>
+<span class="l"><span class="cmt"># terminal. `accept` hands back a new fd; `client is adopted connection`</span></span>
+<span class="l"><span class="cmt"># takes ownership, and because it is acquired inside the `loop is` body it</span></span>
+<span class="l"><span class="cmt"># is closed at the end of every iteration -- the loop is liveness-neutral.</span></span>
+<span class="l"><span class="cmt"># The listening socket stays live across iterations; the tower closes it</span></span>
+<span class="l"><span class="cmt"># (and the current client) only if a syscall faults and the server exits.</span></span>
+<span class="l"><span class="cmt">#</span></span>
+<span class="l"><span class="cmt"># bind address = sockaddr_in: AF_INET, port 12346, 127.0.0.1</span></span>
+<span class="l"><span class="cmt">#   \x02\x00  family      \x30\x3a  port 12346      \x7f\x00\x00\x01  addr</span></span>
+<span class="l"></span>
+<span class="l"><span class="cls">connection</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">descriptor</span> <span class="kw">is</span> <span class="num">-1</span></span>
+<span class="l">  <span class="name">status</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="role">initialize</span> <span class="kw">with</span> <span class="name">domain</span> <span class="kw">and</span> <span class="name">type</span> <span class="kw">and</span> <span class="name">protocol</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">socket</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">domain</span> <span class="vin">is</span> <span class="name">domain</span></span>
+<span class="l">      <span class="name">type</span> <span class="vin">is</span> <span class="name">type</span></span>
+<span class="l">      <span class="name">protocol</span> <span class="vin">is</span> <span class="name">protocol</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">descriptor</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">bind</span> <span class="kw">with</span> <span class="name">address</span> <span class="kw">and</span> <span class="name">length</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">bind</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">      <span class="name">address</span> <span class="vin">is</span> <span class="name">address</span></span>
+<span class="l">      <span class="name">length</span> <span class="vin">is</span> <span class="name">length</span></span>
+<span class="l">      <span class="name">result</span> <span class="vin">is</span> <span class="name">status</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">status</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">listen</span> <span class="kw">with</span> <span class="name">backlog</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">listen</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">      <span class="name">backlog</span> <span class="vin">is</span> <span class="name">backlog</span></span>
+<span class="l">      <span class="name">result</span> <span class="vin">is</span> <span class="name">status</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">status</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">accept</span> <span class="kw">with</span> <span class="name">accepted</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">accept</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">      <span class="name">address</span> <span class="vin">is</span> <span class="num">0</span></span>
+<span class="l">      <span class="name">length</span> <span class="vin">is</span> <span class="num">0</span></span>
+<span class="l">      <span class="name">connection</span> <span class="vin">is</span> <span class="name">accepted</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">accepted</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">read</span> <span class="kw">with</span> <span class="name">buffer</span> <span class="kw">and</span> <span class="name">capacity</span> <span class="kw">and</span> <span class="name">count</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">read</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">      <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">      <span class="name">capacity</span> <span class="vin">is</span> <span class="name">capacity</span></span>
+<span class="l">      <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">count</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="role">finalize</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">close</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l"></span>
+<span class="l"><span class="sect">program</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">capacity</span> <span class="kw">is</span> <span class="num">4096</span></span>
+<span class="l">  <span class="name">buffer</span> <span class="kw">is</span> <span class="name">capacity</span> <span class="kw">bytes</span></span>
+<span class="l">  <span class="name">count</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l">  <span class="name">written</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l">  <span class="name">peer</span> <span class="kw">is</span> <span class="num">-1</span></span>
+<span class="l"></span>
+<span class="l">  <span class="name">terminal</span> <span class="kw">is</span> <span class="role">already</span> <span class="cls">file</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">descriptor</span> <span class="vin">is</span> <span class="num">1</span></span>
+<span class="l"></span>
+<span class="l">  <span class="name">server</span> <span class="kw">is</span> <span class="cls">connection</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">domain</span> <span class="vin">is</span> <span class="num">2</span></span>
+<span class="l">    <span class="name">type</span> <span class="vin">is</span> <span class="num">1</span></span>
+<span class="l">    <span class="name">protocol</span> <span class="vin">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">bind</span> <span class="name">server</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">address</span> <span class="vin">is</span> <span class="str">"\x02\x00\x30\x3a\x7f\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00"</span></span>
+<span class="l">    <span class="name">length</span> <span class="vin">is</span> <span class="num">16</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">listen</span> <span class="name">server</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">backlog</span> <span class="vin">is</span> <span class="num">1</span></span>
+<span class="l"></span>
+<span class="l">  <span class="role">loop</span> <span class="kw">is</span></span>
+<span class="l">    <span class="meth">accept</span> <span class="name">server</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">accepted</span> <span class="vin">is</span> <span class="name">peer</span></span>
+<span class="l"></span>
+<span class="l">    <span class="name">client</span> <span class="kw">is</span> <span class="role">adopted</span> <span class="cls">connection</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">peer</span></span>
+<span class="l"></span>
+<span class="l">    <span class="meth">read</span> <span class="name">client</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">      <span class="name">capacity</span> <span class="vin">is</span> <span class="name">capacity</span></span>
+<span class="l">      <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l"></span>
+<span class="l">    <span class="meth">write</span> <span class="name">terminal</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">      <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">      <span class="name">written</span> <span class="vin">is</span> <span class="name">written</span></span>
+<span class="l"></span>
+<span class="l">  <span class="prim">exit</span></span></pre>
+<h2>visit.mereo</h2>
+<pre class="code"><span class="l"><span class="role">use</span> <span class="str">"calls.mereo"</span></span>
+<span class="l"></span>
+<span class="l"><span class="cmt"># visit demo: read stdin, then branch on how many bytes arrived. Unlike the</span></span>
+<span class="l"><span class="cmt"># old switch (every case cold), a `visit` promotes its DEFAULT arm onto the C</span></span>
+<span class="l"><span class="cmt"># hot path -- `many` falls straight through, no jump -- while the guarded arms</span></span>
+<span class="l"><span class="cmt"># are cold detours that run and return to the same place. Every arm body is</span></span>
+<span class="l"><span class="cmt"># defined below `exit`; the compiler decides the layout.</span></span>
+<span class="l"><span class="cmt">#</span></span>
+<span class="l"><span class="cmt">#   printf ''    | ./visit_bin   -&gt; nothing</span></span>
+<span class="l"><span class="cmt">#   printf 'x'   | ./visit_bin   -&gt; one byte</span></span>
+<span class="l"><span class="cmt">#   printf 'xyz' | ./visit_bin   -&gt; many bytes   (the hot-path default)</span></span>
+<span class="l"></span>
+<span class="l"><span class="cls">file_descriptor</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">descriptor</span> <span class="kw">is</span> <span class="num">-1</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">read</span> <span class="kw">with</span> <span class="name">buffer</span> <span class="kw">and</span> <span class="name">capacity</span> <span class="kw">and</span> <span class="name">count</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">read</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">      <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">      <span class="name">capacity</span> <span class="vin">is</span> <span class="name">capacity</span></span>
+<span class="l">      <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">count</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">write</span> <span class="kw">with</span> <span class="name">buffer</span> <span class="kw">and</span> <span class="name">count</span> <span class="kw">and</span> <span class="name">written</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">write</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">      <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">      <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">      <span class="name">written</span> <span class="vin">is</span> <span class="name">written</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">written</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l"><span class="sect">program</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">capacity</span> <span class="kw">is</span> <span class="num">4096</span></span>
+<span class="l">  <span class="name">buffer</span> <span class="kw">is</span> <span class="name">capacity</span> <span class="kw">bytes</span></span>
+<span class="l">  <span class="name">count</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l">  <span class="name">written</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="name">input</span> <span class="kw">is</span> <span class="role">already</span> <span class="cls">file_descriptor</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">descriptor</span> <span class="vin">is</span> <span class="num">0</span></span>
+<span class="l">  <span class="name">terminal</span> <span class="kw">is</span> <span class="role">already</span> <span class="cls">file_descriptor</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">descriptor</span> <span class="vin">is</span> <span class="num">1</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">read</span> <span class="name">input</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">    <span class="name">capacity</span> <span class="vin">is</span> <span class="name">capacity</span></span>
+<span class="l">    <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l"></span>
+<span class="l">  <span class="role">visit</span> <span class="name">many</span> <span class="kw">or</span> <span class="name">nothing</span> <span class="kw">if</span> <span class="name">count</span> <span class="op">is</span> <span class="num">0</span> <span class="kw">or</span> <span class="name">single</span> <span class="kw">if</span> <span class="name">count</span> <span class="op">is</span> <span class="num">1</span></span>
+<span class="l"></span>
+<span class="l">  <span class="prim">exit</span></span>
+<span class="l"></span>
+<span class="l">  <span class="name">many</span> <span class="kw">is</span></span>
+<span class="l">    <span class="meth">write</span> <span class="name">terminal</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">buffer</span> <span class="vin">is</span> <span class="str">"many bytes\n"</span></span>
+<span class="l">      <span class="name">count</span> <span class="vin">is</span> <span class="num">11</span></span>
+<span class="l">      <span class="name">written</span> <span class="vin">is</span> <span class="name">written</span></span>
+<span class="l">  <span class="name">nothing</span> <span class="kw">is</span></span>
+<span class="l">    <span class="meth">write</span> <span class="name">terminal</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">buffer</span> <span class="vin">is</span> <span class="str">"nothing\n"</span></span>
+<span class="l">      <span class="name">count</span> <span class="vin">is</span> <span class="num">8</span></span>
+<span class="l">      <span class="name">written</span> <span class="vin">is</span> <span class="name">written</span></span>
+<span class="l">  <span class="name">single</span> <span class="kw">is</span></span>
+<span class="l">    <span class="meth">write</span> <span class="name">terminal</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">buffer</span> <span class="vin">is</span> <span class="str">"one byte\n"</span></span>
+<span class="l">      <span class="name">count</span> <span class="vin">is</span> <span class="num">9</span></span>
+<span class="l">      <span class="name">written</span> <span class="vin">is</span> <span class="name">written</span></span></pre>
+<h2>span.mereo</h2>
+<pre class="code"><span class="l"><span class="role">use</span> <span class="str">"calls.mereo"</span></span>
+<span class="l"></span>
+<span class="l"><span class="cmt"># span -- mereo's string_view: a transparent, non-owning view holding just a</span></span>
+<span class="l"><span class="cmt"># pointer (`data`) and a `length`. It owns nothing; it just names a region.</span></span>
+<span class="l"><span class="cmt"># Read stdin, view the bytes that arrived with a span, and write the span</span></span>
+<span class="l"><span class="cmt"># out -- the write takes ONE thing (a view) instead of a buffer and a count.</span></span>
+<span class="l"><span class="cmt">#</span></span>
+<span class="l"><span class="cmt">#   echo hello | ./span_bin   -&gt;  hello</span></span>
+<span class="l"><span class="cmt">#</span></span>
+<span class="l"><span class="cmt"># `data is @buffer` is the adoption tweak: a state slot set to a buffer's</span></span>
+<span class="l"><span class="cmt"># ADDRESS. `already` names the view from given values; being a pure</span></span>
+<span class="l"><span class="cmt"># value view (no resource), there is nothing for the tower to release.</span></span>
+<span class="l"></span>
+<span class="l"><span class="cls">span</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">data</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l">  <span class="name">length</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">show</span> <span class="kw">with</span> <span class="name">descriptor</span> <span class="kw">and</span> <span class="name">written</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">write</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">      <span class="name">buffer</span> <span class="vin">is</span> <span class="name">data</span> <span class="cmt"># a scalar holding the pointer -&gt; passed raw</span></span>
+<span class="l">      <span class="name">count</span> <span class="vin">is</span> <span class="name">length</span></span>
+<span class="l">      <span class="name">written</span> <span class="vin">is</span> <span class="name">written</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">written</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l"><span class="cls">file_descriptor</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">descriptor</span> <span class="kw">is</span> <span class="num">-1</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">read</span> <span class="kw">with</span> <span class="name">buffer</span> <span class="kw">and</span> <span class="name">capacity</span> <span class="kw">and</span> <span class="name">count</span> <span class="kw">is</span></span>
+<span class="l">    <span class="prim">read</span> <span class="kw">where</span></span>
+<span class="l">      <span class="name">descriptor</span> <span class="vin">is</span> <span class="name">descriptor</span></span>
+<span class="l">      <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">      <span class="name">capacity</span> <span class="vin">is</span> <span class="name">capacity</span></span>
+<span class="l">      <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l">    <span class="ens">ensure</span> <span class="name">count</span> <span class="op">&gt;=</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l"><span class="sect">program</span> <span class="kw">is</span></span>
+<span class="l">  <span class="name">capacity</span> <span class="kw">is</span> <span class="num">4096</span></span>
+<span class="l">  <span class="name">buffer</span> <span class="kw">is</span> <span class="name">capacity</span> <span class="kw">bytes</span></span>
+<span class="l">  <span class="name">count</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l">  <span class="name">written</span> <span class="kw">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="name">input</span> <span class="kw">is</span> <span class="role">already</span> <span class="cls">file_descriptor</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">descriptor</span> <span class="vin">is</span> <span class="num">0</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">read</span> <span class="name">input</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">buffer</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">    <span class="name">capacity</span> <span class="vin">is</span> <span class="name">capacity</span></span>
+<span class="l">    <span class="name">count</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l"></span>
+<span class="l">  <span class="name">view</span> <span class="kw">is</span> <span class="role">already</span> <span class="cls">span</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">data</span> <span class="vin">is</span> <span class="vio">@</span><span class="name">buffer</span></span>
+<span class="l">    <span class="name">length</span> <span class="vin">is</span> <span class="name">count</span></span>
+<span class="l"></span>
+<span class="l">  <span class="meth">show</span> <span class="name">view</span> <span class="kw">where</span></span>
+<span class="l">    <span class="name">descriptor</span> <span class="vin">is</span> <span class="num">1</span></span>
+<span class="l">    <span class="name">written</span> <span class="vin">is</span> <span class="name">written</span></span>
+<span class="l"></span>
+<span class="l">  <span class="prim">exit</span></span></pre>
+</body>
+</html>

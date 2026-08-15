@@ -1,0 +1,34 @@
+include "../../linux.mereo"
+
+-- SIBLING ownership. `extends A and B` composes two INDEPENDENT resources into
+-- one resource -- neither is built on the other, unlike the stack in 19. The bases
+-- acquire in declaration order and are released in reverse, so the composite
+-- behaves exactly like a C++ class with two bases (or two members).
+-- Expect close(102) close(101).
+
+sib_a is
+  fd_a is 101
+  acquire is
+    linux.close (descriptor is 201)
+  end
+  release is
+    linux.close (descriptor is fd_a)
+  end
+end
+
+sib_b is
+  fd_b is 102
+  acquire is
+    linux.close (descriptor is 202)
+  end
+  release is
+    linux.close (descriptor is fd_b)
+  end
+end
+
+sib_pair extends sib_a and sib_b is
+end
+
+program is
+  both is sib_pair
+end

@@ -1,0 +1,30 @@
+-- jsondemo.mereo -- pull fields out of a JSON object with a `json` reader.
+include "../linux.mereo"
+include "../core.mereo"
+
+program is
+  raw is constant "{\"name\":\"mereo\",\"port\":443,\"secure\":true}"
+  start is 0
+  vlen is 0
+  portnum is 0
+  digits is 8 bytes
+  dlen is 0
+
+  -- hand the bytes to a `json` (their address and length); read fields off `doc`
+  doc is already json (content is raw, length is raw.size)
+
+  terminal is already linux.file (descriptor is 1)
+
+  -- "name" -> a string value ("mereo")
+  doc.text (key is "name", keylen is "name".size, start is start, vlen is vlen)
+  field is raw + start
+  terminal.write (buffer is field, count is vlen)
+  terminal.write (buffer is "\n", count is 1)
+
+  -- "port" -> a number value (443)
+  doc.number (key is "port", keylen is "port".size, value is portnum)
+  text.format (value is portnum, buffer is digits, length is dlen)
+  terminal.write (buffer is digits, count is dlen)
+  terminal.write (buffer is "\n", count is 1)
+
+end

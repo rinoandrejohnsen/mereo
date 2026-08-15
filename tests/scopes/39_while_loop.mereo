@@ -1,0 +1,20 @@
+include "markers.mereo"
+
+-- A TOP-TESTED loop, which the generalisation makes expressible: the guard is
+-- the first step, so ZERO passes is sayable. A do-while never could -- its body
+-- always ran once, which is why `append` in tiny_http carries `ensure length >= 1`.
+--
+-- Here the bound is already met, so the body never runs and nothing but `keep`
+-- is ever released. Expect 103 alone.
+program (arguments) is
+  keep is adopted mark_c (descriptor is 103)
+  i is arguments.count           -- 1, and the bound is 1
+
+  scan goes
+    leave scan when i >= 1
+    t is adopted mark_a (descriptor is 101)
+    i is i + 1
+    repeat scan
+  end
+
+end

@@ -1,0 +1,18 @@
+include "../../../linux.mereo"
+
+-- THE release tower claim, at its smallest: one owned descriptor, closed on the
+-- way out and on every failure path, with nothing in the source saying so.
+
+program is
+  buffer is 64 bytes
+  count is 0
+
+  terminal is already linux.file (descriptor is 1)
+
+  source is linux.file (path is "lorem_ipsum.txt", flags is 0, mode is 0)
+
+  source.read (buffer is buffer, capacity is 11, count is count)
+
+  terminal.write (buffer is buffer, count is count)
+
+end

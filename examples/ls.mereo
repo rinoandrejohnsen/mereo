@@ -1,0 +1,70 @@
+-- ls -- list a directory, one name per line. `ls -U` really: the kernel hands
+-- entries back in whatever order the filesystem keeps them, and sorting them
+-- would need somewhere to put them, which a program with no heap has to be
+-- asked for rather than assume.
+--
+--   ls          ->  the current directory
+--   ls /etc     ->  that one
+--
+-- Two nested loops, and the reason for each is different. The OUTER one is
+-- there because getdents64 answers with as much as fits and no more, so a
+-- directory bigger than the buffer takes several calls; it stops on `count == 0`,
+-- which is the end of the directory and not a failure. The INNER one walks the
+-- bytes of one answer, which are variable-length records: each entry's `length`
+-- is how far to step to reach the next, which is why nothing here needs to know
+-- how many entries came back.
+--
+-- The record's fields are read with `[at + N : W]` rather than through a layout
+-- view, because a view is a lens at a compile-time offset into a named backing
+-- and these records are variable-length at a runtime cursor -- the one case a
+-- lens cannot name. linux.mereo's getdents64 comment carries the offset table.
+--
+-- `folder` is released by the scope, so the descriptor is closed on the way out
+-- of every path -- including the one where a name is too long to measure.
+
+include "../linux.mereo"
+include "../core.mereo"
+
+program (arguments) is
+  block is 32768 bytes
+  count is 0
+  at is 0
+  stop is 0
+  here is 0
+  namelen is 0
+  first is 0
+
+  output is already linux.file (descriptor is 1)
+
+  here_dot is "."                   -- a backing's name is its address, so this
+  where_to is here_dot              -- scalar can hold either path
+  argc is arguments.count
+  where_to is arguments.pointer + 1 when argc >= 2
+
+  folder is linux.directory (path is where_to)
+
+  page goes
+    folder.read (buffer is block, capacity is block.size, count is count)
+    leave page when count == 0        -- the end of the directory, not an error
+
+    at is block
+    stop is block + count
+    entries goes
+      entry is [at : 19] as linux.dirent   -- the record at the cursor
+      reclen is entry.length               -- the step to the next one
+      here is at + 19                 -- the name starts after the fixed head
+      text.measure (data is here, limit is reclen - 19, result is namelen)
+
+      first is [here : 1]
+      first != 46 goes                -- ...skip the dot files, as ls does
+        output.write (buffer is here, count is namelen)
+        output.write (buffer is "\n", count is 1)
+      end
+
+      at is at + reclen
+      repeat entries when at < stop
+    end
+
+    repeat page
+  end
+end

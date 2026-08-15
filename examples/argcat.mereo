@@ -1,0 +1,20 @@
+include "../linux.mereo"
+
+-- argcat: cat the file named by the first command-line argument to stdout.
+-- `program with arguments is` asks for a view over Linux's argument vector;
+-- `pointer from arguments + 1` is argv[1] (a char*), fed straight to open.
+
+program (arguments) is
+  capacity is 4096
+  buffer is capacity bytes
+  count is 0
+
+  terminal is already linux.file (descriptor is 1)
+
+  source is linux.file (path is arguments.pointer + 1, flags is 0, mode is 0)
+
+  source.read (buffer is buffer, capacity is capacity, count is count)
+
+  terminal.write (buffer is buffer, count is count)
+
+end

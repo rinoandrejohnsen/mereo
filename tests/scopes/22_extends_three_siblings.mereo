@@ -1,0 +1,43 @@
+include "../../linux.mereo"
+
+-- THREE independent bases in one resource. `extends A and B and C` is not limited
+-- to a pair -- the bases acquire left to right and are released right to left,
+-- so a composite owning three unrelated things comes apart in reverse just like
+-- a stack does. Expect close(103) close(102) close(101).
+
+sib_a is
+  fd_a is 101
+  acquire is
+    linux.close (descriptor is 201)
+  end
+  release is
+    linux.close (descriptor is fd_a)
+  end
+end
+
+sib_b is
+  fd_b is 102
+  acquire is
+    linux.close (descriptor is 202)
+  end
+  release is
+    linux.close (descriptor is fd_b)
+  end
+end
+
+sib_c is
+  fd_c is 103
+  acquire is
+    linux.close (descriptor is 203)
+  end
+  release is
+    linux.close (descriptor is fd_c)
+  end
+end
+
+sib_trio extends sib_a and sib_b and sib_c is
+end
+
+program is
+  all_three is sib_trio
+end

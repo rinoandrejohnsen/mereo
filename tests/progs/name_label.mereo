@@ -1,0 +1,15 @@
+include "../../linux.mereo"
+
+-- REFUSED: `release_NAME` is the label of a resource's release floor, so a SCOPE
+-- by that name gives two C labels with one name -- `error: duplicate label`.
+-- Only scopes, crossroads and templates are restricted: C keeps labels and
+-- variables in separate namespaces, so a SLOT called `release_doc` is fine.
+program (arguments) is
+  n is arguments.count
+  buf is 8 bytes
+  release_doc goes
+    n is n + 1
+    repeat release_doc when n < 0
+  end
+  [buf + 0 : 1] is 48 + n
+end

@@ -1,0 +1,496 @@
+include "../../core.mereo"
+include "../../linux.mereo"
+
+-- AF_ALG transform socket (socket/bind/setsockopt/accept), reused by the crypto
+-- ops. Each op opens its own transform + op fd, released at the procedure end.
+transform is
+  descriptor is 4 bytes as signed
+  status is 8 bytes as signed
+  -- opened AND bound in one acquisition, so a `transform` is never half-built:
+  -- there is no window in which one exists without its algorithm attached. The
+  -- socket is the one thing owned -- `acquired when` marks it, so a failed bind
+  -- still closes the fd.
+  acquire (domain, type, protocol, address, length) is
+    linux.socket (domain is domain,
+                  type is type,
+                  protocol is protocol,
+                  descriptor is descriptor)
+    acquired when descriptor >= 0
+    linux.bind (descriptor is descriptor,
+                address is address,
+                length is length,
+                result is status)
+  end
+  option (level, name, value, length) is
+    linux.setsockopt (descriptor is descriptor,
+                      level is level,
+                      optname is name,
+                      value is value,
+                      length is length,
+                      result is status)
+  end
+  reap (accepted) is
+    linux.accept (descriptor is descriptor,
+                  address is 0,
+                  length is 0,
+                  connection is accepted)
+  end
+  release is
+    linux.close (descriptor is descriptor)
+  end
+end
+
+-- HMAC-SHA256(key[keylen], data[datalen]) -> digest[32]. A procedure: opens a
+-- keyed hmac(sha256) transform, feeds data, reads the 32-byte mac; fds scoped.
+
+-- The AES-GCM AF_ALG socket: opened, bound, keyed and given its tag length in
+-- ONE acquisition, so it never exists unconfigured. The socket is the one thing
+-- owned -- `acquired when` marks it, so a failed bind or setsockopt still closes.
+aead_socket is
+  descriptor is 4 bytes as signed
+  status is 8 bytes as signed
+  acquire (key) is
+    linux.socket (domain is 38,
+                  type is 5,
+                  protocol is 0,
+                  descriptor is descriptor)
+    acquired when descriptor >= 0
+    linux.bind (descriptor is descriptor,
+                address is "&\x00aead\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00gcm(aes)\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+                length is 88,
+                result is status)
+    linux.setsockopt (descriptor is descriptor,
+                      level is 279,
+                      optname is 1,
+                      value is key,
+                      length is 16,
+                      result is status)
+    linux.setsockopt (descriptor is descriptor,
+                      level is 279,
+                      optname is 5,
+                      value is 0,
+                      length is 16,
+                      result is status)
+  end
+  release is
+    linux.close (descriptor is descriptor)
+  end
+end
+
+-- The operation endpoint, LAYERED on the socket above: accepting is its own
+-- acquisition, so the two fds are ONE object with one lifetime. Previously the
+-- accepted fd was handed out raw and adopted by the caller -- owned by nobody in
+-- between. Release order is derived: the connection, then the socket.
+duplex extends aead_socket is
+  connection is 4 bytes as signed
+  acquire is
+    linux.accept (descriptor is descriptor,
+                  address is 0,
+                  length is 0,
+                  connection is connection)
+    acquired when connection >= 0
+  end
+  send (message) is
+    linux.sendmsg (descriptor is connection,
+                   message is message,
+                   flags is 0,
+                   sent is status)
+  end
+  receive (message, got) is
+    linux.recvmsg (descriptor is connection,
+                   message is message,
+                   flags is 0,
+                   received is got)
+  end
+  release is
+    linux.close (descriptor is connection)
+  end
+end
+
+crypto is
+
+  -- SHA-256(data[datalen]) -> digest[32]
+  sha256 (data, datalen, digest) is
+    peer is -1
+    count is 0
+    written is 0
+    tfm is transform (domain is 38,
+                      type is 5,
+                      protocol is 0,
+                      address is "&\x00hash\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00sha256\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+                      length is 88)
+    tfm.reap (accepted is peer)
+    op is adopted linux.file (descriptor is peer)
+    op.write (buffer is data, count is datalen, written is written)
+    op.read (buffer is digest, capacity is 32, count is count)
+  end
+  hmac (key, keylen, data, datalen, digest) is
+    peer is -1
+    count is 0
+    written is 0
+    tfm is transform (domain is 38,
+                      type is 5,
+                      protocol is 0,
+                      address is "&\x00hash\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00hmac(sha256)\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+                      length is 88)
+    tfm.option (level is 279, name is 1, value is key, length is keylen)
+    tfm.reap (accepted is peer)
+    op is adopted linux.file (descriptor is peer)
+    op.write (buffer is data, count is datalen, written is written)
+    op.read (buffer is digest, capacity is 32, count is count)
+  end
+
+  -- HKDF-Expand, single output block (out_len <= 32 -- all TLS derivations):
+  -- out = HMAC(prk, info || 0x01)[0 .. out_len]
+  expand (prk, info, infolen, sink, outlen) is
+    t is 32 bytes
+    buf is 600 bytes
+    p is 0
+    i is 0
+    text.copy (source is info, target is buf, length is infolen)
+    [buf + infolen : 1] is 1
+    p is infolen + 1
+    crypto.hmac (key is prk,
+                 keylen is 32,
+                 data is buf,
+                 datalen is p,
+                 digest is t)
+    i is i - i
+    text.copy (source is t, target is sink, length is outlen)
+  end
+  -- AES-128-GCM AEAD. mode 1=encrypt (sink <- body||tag, outlen=bodylen+16),
+  -- 0=decrypt (sink <- plaintext, outlen=bodylen-16). aad is the record header.
+  aead (mode, key, iv, aad, aadlen, body, bodylen, sink, outlen) is
+    cbuf is 96 bytes
+    siov is 32 bytes
+    smsg is 56 bytes
+    riov is 32 bytes
+    rmsg is 56 bytes
+    scratch is 64 bytes
+    count is 0
+    op is duplex (key is key)
+    [cbuf + 0 : 8] is 20
+    [cbuf + 8 : 4] is 279
+    [cbuf + 12 : 4] is 3
+    [cbuf + 16 : 4] is mode
+    [cbuf + 24 : 8] is 32
+    [cbuf + 32 : 4] is 279
+    [cbuf + 36 : 4] is 2
+    [cbuf + 40 : 4] is 12
+    text.copy (source is iv, target is cbuf + 44, length is 12)
+    [cbuf + 56 : 8] is 20
+    [cbuf + 64 : 4] is 279
+    [cbuf + 68 : 4] is 4
+    [cbuf + 72 : 4] is aadlen
+    [siov + 0 : 8] is aad
+    [siov + 8 : 8] is aadlen
+    [siov + 16 : 8] is body
+    [siov + 24 : 8] is bodylen
+    [smsg + 0 : 8] is 0
+    [smsg + 8 : 8] is 0
+    [smsg + 16 : 8] is siov
+    [smsg + 24 : 8] is 2
+    [smsg + 32 : 8] is cbuf
+    [smsg + 40 : 8] is 80
+    [smsg + 48 : 8] is 0
+    op.send (message is smsg)
+    [riov + 0 : 8] is scratch
+    [riov + 8 : 8] is aadlen
+    [riov + 16 : 8] is sink
+    [riov + 24 : 8] is outlen
+    [rmsg + 0 : 8] is 0
+    [rmsg + 8 : 8] is 0
+    [rmsg + 16 : 8] is riov
+    [rmsg + 24 : 8] is 2
+    [rmsg + 32 : 8] is 0
+    [rmsg + 40 : 8] is 0
+    [rmsg + 48 : 8] is 0
+    op.receive (message is rmsg, got is count)
+  end
+
+  -- TLS 1.3 per-record nonce = static iv XOR the 8-byte big-endian sequence
+  -- number, right-aligned into the 12-byte iv.
+  record_nonce (iv, seq, nonce) is
+    ni is 0
+    v is 0
+    sh is 0
+    part is 0
+    idx is 0
+    text.copy (source is iv, target is nonce, length is 12)
+    ni is 0
+    xr goes
+      sh is ni * 8
+      part is seq >> sh
+      part is part & 255
+      idx is 11 - ni
+      v is [nonce + idx : 1]
+      v is v ^ part
+      [nonce + idx : 1] is v
+      ni is ni + 1
+      repeat xr when ni < 8
+    end
+  end
+
+  -- seal: sink <- TLSCiphertext record (5-byte header || ct || tag). The inner
+  -- plaintext is content || type (TLS 1.3 TLSInnerPlaintext), so the record is
+  -- always application_data(23) on the wire with the true `type` encrypted. aad
+  -- is the header. Total length = ptlen + 1 + 5 + 16.
+  seal (key, iv, seq, pt, ptlen, type, sink) is
+    nonce is 16 bytes
+    inbuf is 2048 bytes
+    ctlen is 0
+    plen is 0
+    dst is 0
+    plen is ptlen + 1
+    ctlen is plen + 16
+    [sink + 0 : 1] is 23
+    [sink + 1 : 1] is 3
+    [sink + 2 : 1] is 3
+    [sink + 3 : 2] as big is ctlen
+    text.copy (source is pt, target is inbuf, length is ptlen)
+    [inbuf + ptlen : 1] is type
+    crypto.record_nonce (iv is iv, seq is seq, nonce is nonce)
+    dst is sink + 5
+    crypto.aead (mode is 1,
+                 key is key,
+                 iv is nonce,
+                 aad is sink,
+                 aadlen is 5,
+                 body is inbuf,
+                 bodylen is plen,
+                 sink is dst,
+                 outlen is ctlen)
+  end
+
+  -- open: rec (header || ct || tag) -> sink (plaintext). aad is rec[0..5].
+  open (key, iv, seq, rec, reclen, sink) is
+    nonce is 16 bytes
+    src is 0
+    inner is 0
+    plain is 0
+    crypto.record_nonce (iv is iv, seq is seq, nonce is nonce)
+    src is rec + 5
+    inner is reclen - 5
+    plain is inner - 16
+    crypto.aead (mode is 0,
+                 key is key,
+                 iv is nonce,
+                 aad is rec,
+                 aadlen is 5,
+                 body is src,
+                 bodylen is inner,
+                 sink is sink,
+                 outlen is plain)
+  end
+
+  -- TLS 1.3 ClientHello writer. Offers TLS_AES_128_GCM_SHA256 + x25519 only.
+  -- rand/sid/pub are 32-byte buffers, host is the SNI hostname. sink gets the
+  -- whole record (5-byte header included); total length = 162 + hostlen.
+  client_hello (rand, sid, pub, host, hostlen, sink) is
+    c is 0
+    hl is 0
+    ext_total is 0
+    hs_len is 0
+    rec_len is 0
+    sni_data is 0
+    sni_list is 0
+    hl is hostlen
+    ext_total is 78 + hl
+    hs_len is 153 + hl
+    rec_len is 157 + hl
+    sni_data is 5 + hl
+    sni_list is 3 + hl
+    [sink + 0 : 1] is 22
+    [sink + 1 : 1] is 3
+    [sink + 2 : 1] is 1
+    [sink + 3 : 2] as big is rec_len
+    [sink + 5 : 1] is 1
+    [sink + 6 : 1] is 0
+    [sink + 7 : 2] as big is hs_len
+    [sink + 9 : 1] is 3
+    [sink + 10 : 1] is 3
+    c is 0
+    text.copy (source is rand, target is sink + 11, length is 32)
+    [sink + 43 : 1] is 32
+    c is 0
+    text.copy (source is sid, target is sink + 44, length is 32)
+    [sink + 76 : 1] is 0
+    [sink + 77 : 1] is 2
+    [sink + 78 : 1] is 19
+    [sink + 79 : 1] is 1
+    [sink + 80 : 1] is 1
+    [sink + 81 : 1] is 0
+    [sink + 82 : 2] as big is ext_total
+    [sink + 84 : 1] is 0
+    [sink + 85 : 1] is 0
+    [sink + 86 : 2] as big is sni_data
+    [sink + 88 : 2] as big is sni_list
+    [sink + 90 : 1] is 0
+    [sink + 91 : 2] as big is hl
+    c is 0
+    text.copy (source is host, target is sink + 93, length is hl)
+    c is 93 + hl
+    [sink + c : 1] is 0
+    c is c + 1
+    [sink + c : 1] is 10
+    c is c + 1
+    [sink + c : 1] is 0
+    c is c + 1
+    [sink + c : 1] is 4
+    c is c + 1
+    [sink + c : 1] is 0
+    c is c + 1
+    [sink + c : 1] is 2
+    c is c + 1
+    [sink + c : 1] is 0
+    c is c + 1
+    [sink + c : 1] is 29
+    c is c + 1
+    [sink + c : 1] is 0
+    c is c + 1
+    [sink + c : 1] is 13
+    c is c + 1
+    [sink + c : 1] is 0
+    c is c + 1
+    [sink + c : 1] is 8
+    c is c + 1
+    [sink + c : 1] is 0
+    c is c + 1
+    [sink + c : 1] is 6
+    c is c + 1
+    [sink + c : 1] is 4
+    c is c + 1
+    [sink + c : 1] is 3
+    c is c + 1
+    [sink + c : 1] is 8
+    c is c + 1
+    [sink + c : 1] is 4
+    c is c + 1
+    [sink + c : 1] is 4
+    c is c + 1
+    [sink + c : 1] is 1
+    c is c + 1
+    [sink + c : 1] is 0
+    c is c + 1
+    [sink + c : 1] is 43
+    c is c + 1
+    [sink + c : 1] is 0
+    c is c + 1
+    [sink + c : 1] is 3
+    c is c + 1
+    [sink + c : 1] is 2
+    c is c + 1
+    [sink + c : 1] is 3
+    c is c + 1
+    [sink + c : 1] is 4
+    c is c + 1
+    [sink + c : 1] is 0
+    c is c + 1
+    [sink + c : 1] is 51
+    c is c + 1
+    [sink + c : 1] is 0
+    c is c + 1
+    [sink + c : 1] is 38
+    c is c + 1
+    [sink + c : 1] is 0
+    c is c + 1
+    [sink + c : 1] is 36
+    c is c + 1
+    [sink + c : 1] is 0
+    c is c + 1
+    [sink + c : 1] is 29
+    c is c + 1
+    [sink + c : 1] is 0
+    c is c + 1
+    [sink + c : 1] is 32
+    c is c + 1
+    text.copy (source is pub, target is sink + c, length is 32)
+  end
+  -- HKDF-Expand-Label(secret, label, "", outlen) -- empty context (key/iv/fin).
+  -- HkdfLabel = uint16(outlen) | uint8(6+labellen) | "tls13 "+label | uint8(0)
+  expand_label_empty (secret, label, labellen, sink, outlen) is
+    info is 64 bytes
+    ilen is 0
+    v is 0
+    [info + 0 : 2] as big is outlen
+    v is 6 + labellen
+    [info + 2 : 1] is v
+    [info + 3 : 1] is 116
+    [info + 4 : 1] is 108
+    [info + 5 : 1] is 115
+    [info + 6 : 1] is 49
+    [info + 7 : 1] is 51
+    [info + 8 : 1] is 32
+    text.copy (source is label, target is info + 9, length is labellen)
+    ilen is 9 + labellen
+    [info + ilen : 1] is 0
+    ilen is ilen + 1
+    crypto.expand (prk is secret,
+                   info is info,
+                   infolen is ilen,
+                   sink is sink,
+                   outlen is outlen)
+  end
+
+  -- Derive-Secret(secret, label, msgs) = HKDF-Expand-Label(secret, label,
+  -- thash, 32); the caller passes the 32-byte transcript hash as context.
+  derive_secret (secret, label, labellen, thash, sink) is
+    info is 64 bytes
+    ilen is 0
+    v is 0
+    [info + 0 : 1] is 0
+    [info + 1 : 1] is 32
+    v is 6 + labellen
+    [info + 2 : 1] is v
+    [info + 3 : 1] is 116
+    [info + 4 : 1] is 108
+    [info + 5 : 1] is 115
+    [info + 6 : 1] is 49
+    [info + 7 : 1] is 51
+    [info + 8 : 1] is 32
+    text.copy (source is label, target is info + 9, length is labellen)
+    ilen is 9 + labellen
+    [info + ilen : 1] is 32
+    ilen is ilen + 1
+    text.copy (source is thash, target is info + ilen, length is 32)
+    ilen is ilen + 32
+    crypto.expand (prk is secret,
+                   info is info,
+                   infolen is ilen,
+                   sink is sink,
+                   outlen is 32)
+  end
+
+  -- ServerHello reader -> pub (server x25519 key_share). rec is the handshake
+  -- message (from type byte 02). Walks the extension list to the key_share and
+  -- stops there, then copies 32 B. `ks_off` stays 0 if the list has no key_share,
+  -- which is what the `ensure` on the caller's shared secret ends up catching.
+  server_hello (rec, pub) is
+    sidlen is 0
+    c is 0
+    et is 0
+    el is 0
+    ks_off is 0
+    endx is 0
+    v is 0
+    sidlen is [rec + 38 : 1]
+    c is 39 + sidlen
+    c is c + 3
+    endx is [rec + c : 2] as big
+    c is c + 2
+    endx is endx + c
+    walk goes
+      et is [rec + c : 2] as big
+      v is c + 2
+      el is [rec + v : 2] as big
+      et == 51 goes            -- key_share: what this walk came for
+        ks_off is c + 8
+        leave walk             -- ...and an extension appears at most once
+      end
+      c is c + 4
+      c is c + el
+      repeat walk when c < endx
+    end
+    text.copy (source is rec + ks_off, target is pub, length is 32)
+  end
+end

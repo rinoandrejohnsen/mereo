@@ -1,0 +1,30 @@
+include "markers.mereo"
+
+-- A fault raised in the INNER loop while BOTH levels hold something. The tower
+-- has to release this inner pass (t), then this outer pass (o), then keep --
+-- crossing two loop scopes on the way out. Every other loop scenario faults from
+-- one level or none.
+--
+-- n reaches the limit on the second outer pass, first inner pass.
+-- Expect 101 101 103   101 103 104.
+program (arguments) is
+  keep is adopted mark_d (descriptor is 104)
+  limit is arguments.count
+  i is 0
+  j is 0
+  n is 0
+
+  outer goes
+    o is adopted mark_c (descriptor is 103)
+    j is 0
+    inner goes
+      t is adopted mark_a (descriptor is 101)
+      n is n + 1
+      ensure n < limit + 2        -- argc is 1, so this fails when n reaches 3
+      j is j + 1
+      repeat inner when j < 2
+    end
+    i is i + 1
+    repeat outer when i < 3
+  end
+end

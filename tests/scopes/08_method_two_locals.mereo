@@ -1,0 +1,21 @@
+include "markers.mereo"
+
+-- run() acquires p then q; at return they release q, p -- before w at exit.
+-- Expect close(102) close(101) close(100).
+worker is
+  descriptor is 0
+
+  run is
+    p is adopted mark_a (descriptor is 101)
+    q is adopted mark_b (descriptor is 102)
+  end
+
+  release is
+    linux.close (descriptor is descriptor)
+  end
+end
+
+program is
+  w is adopted worker (descriptor is 100)
+  w.run
+end

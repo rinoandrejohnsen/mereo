@@ -1,0 +1,32 @@
+include "markers.mereo"
+
+-- A MULTI-STEP acquire whose CONFIGURATION fails. `staged` opens (the step
+-- marked `acquired when` -- ownership begins there) and then seeks. The seek is
+-- given a negative offset, so it fails AFTER the resource was acquired: the
+-- release must run. `keep` was acquired first, so it unwinds after.
+-- Expect close(101) close(102) -- staged released, then keep.
+
+staged is
+  handle is 0
+  status is 0
+  fd_mark is 101
+
+  acquire (path, spot) is
+    linux.open (path is path, flags is 0, mode is 0, descriptor is handle)
+    acquired when handle >= 0        -- <- ownership starts here
+    linux.lseek (descriptor is handle,
+                 offset is spot,
+                 whence is 0,
+                 position is status)
+  end
+
+  release is                         -- a multi-call release: both always run
+    linux.close (descriptor is handle)
+    linux.close (descriptor is fd_mark)
+  end
+end
+
+program is
+  keep is adopted mark_b (descriptor is 102)
+  thing is staged (path is "/dev/null", spot is -1)
+end

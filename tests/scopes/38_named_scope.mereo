@@ -1,0 +1,20 @@
+include "markers.mereo"
+
+-- `NAME goes` is a SCOPE, not specifically a loop -- a loop is the case whose
+-- body ends by repeating. This one never repeats: it bounds a lifetime and
+-- offers an end to leave to.
+--
+-- `leave setup` releases what the scope holds AT THE JUMP (t alone); the
+-- fall-through path would release u then t. argc is 1, so it leaves.
+-- Expect 101 103, not 102 101 103.
+program (arguments) is
+  keep is adopted mark_c (descriptor is 103)
+  n is arguments.count
+
+  setup goes
+    t is adopted mark_a (descriptor is 101)
+    leave setup when n == 1
+    u is adopted mark_b (descriptor is 102)
+  end
+
+end

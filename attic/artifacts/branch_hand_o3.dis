@@ -1,0 +1,115 @@
+
+die:
+    r8 = rsi;
+    // push %rbx
+    r10 = rdi;
+    r9d = 24;
+    rcx = -3689348814741910323;
+    r8 = -r8;
+    rdi = rsi;
+    if (< 0) r8 = rsi;
+L_401040:
+    rax = r8;
+    rsi = r9;
+    r9 -= 1;
+    rdx:rax = rax * rcx;
+    rdx u>>= 3;
+    rax = rdx + rdx*4;
+    rax += rax;
+    r8 -= rax;
+    r8d += 48;
+    [rsp + r9 - 32] = r8b;
+    r8 = rdx;
+    if (rdx != 0) goto L_401040;
+    if (rdi >= 0) goto L_40107b;
+    r9 = rsi - 2;
+    [rsp + r9 - 32] = 45;
+L_40107b:
+    eax = 1;
+    edi = 2;
+    edx = 8;
+    rsi = &"branch: ";
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // write
+    if ([r10] == 0) goto L_4010ab;
+L_4010a0:
+    r8 += 1;
+    if ([r10 + r8] != 0) goto L_4010a0;
+L_4010ab:
+    eax = 1;
+    edi = 2;
+    rsi = r10;
+    rdx = r8;
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // write
+    eax = 1;
+    rsi = &": ";
+    rdx = rdi;
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // write
+    edx = 24;
+    rsi = rsp + r9 - 32;
+    eax = 1;
+    rdx -= r9;
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // write
+    eax = 1;
+    rsi = &"\n";
+    edx = 1;
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // write
+    eax = 231;
+    edi = 1;
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // exit_group
+
+_start:
+    // push %rbp
+    eax = 13;
+    r10d = 8;
+    edx = 0;
+    rdi = rax;
+    rbp = rsp;
+    rsp &= -16;
+    rsp -= 4128;
+    // movdqa 0xf09(%rip),%xmm0
+    rsi = rsp;
+    // movaps %xmm0,(%rsp)
+    // pxor %xmm0,%xmm0
+    // movaps %xmm0,0x10(%rsp)
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // rt_sigaction
+    eax = 0;
+    edi = 0;
+    rsi = &buffer;
+    edx = 4096;
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // read
+    if (rax < 0) goto L_4011a6;
+    if (rax == 0) goto L_40118a;
+    rax -= 1;
+    if (je) goto L_401198;
+    edx = 11;
+    rsi = &"many bytes\n";
+L_401172:
+    eax = 1;
+    rdi = rax;
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // write
+    if (rdx != rax) goto L_4011c1;
+
+out:
+    eax = 231;
+    edi = 0;
+    rax = syscall(rax, rdi, rsi, rdx, r10, r8, r9);        // exit_group
+L_40118a:
+    edx = 8;
+    rsi = &"nothing\n";
+    goto L_401172;
+L_401198:
+    edx = 9;
+    rsi = &"one byte\n";
+    goto L_401172;
+L_4011a6:
+    if (rax == -4) goto out;
+    if (rax == -32) goto out;
+    rsi = rax;
+    rdi = &"read";
+    rax = die();
+L_4011c1:
+    if (rax == -4) goto out;
+    if (rax == -32) goto out;
+    rsi = rax;
+    rdi = &"write";
+    rax = die();

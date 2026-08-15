@@ -1,0 +1,21 @@
+include "markers.mereo"
+
+-- Nested loops each holding a resource: inner `it` released per inner iteration,
+-- outer `o` per outer iteration, keep at exit. 2 outer x 2 inner.
+-- Expect: 101 101 103  101 101 103  104
+program is
+  keep is adopted mark_d (descriptor is 104)
+  i is 0
+  j is 0
+  outer goes
+    o is adopted mark_c (descriptor is 103)
+    j is j - j
+    inner goes
+      it is adopted mark_a (descriptor is 101)
+      j is j + 1
+      repeat inner when j < 2
+    end
+    i is i + 1
+    repeat outer when i < 2
+  end
+end

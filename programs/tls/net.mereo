@@ -1,0 +1,52 @@
+include "../../linux.mereo"
+
+-- A TCP stream socket: connect, blocking write, blocking read (>=1 byte or the
+-- handshake is truncated -> fault), and setsockopt (for kTLS). The fd is owned,
+-- so the release tower closes it on every exit and every fault.
+stream is
+  descriptor is 4 bytes as signed
+  status is 8 bytes as signed
+
+  acquire (domain, type, protocol) is
+    linux.socket (domain is domain,
+                  type is type,
+                  protocol is protocol,
+                  descriptor is descriptor)
+  end
+
+  dial (address, length) is
+    linux.connect (descriptor is descriptor,
+                   address is address,
+                   length is length,
+                   result is status)
+  end
+
+  transmit (buffer, length) is
+    linux.write (descriptor is descriptor,
+                 buffer is buffer,
+                 count is length,
+                 written is status)
+    ensure status == length
+  end
+
+  receive (buffer, capacity, count) is
+    linux.read (descriptor is descriptor,
+                buffer is buffer,
+                capacity is capacity,
+                count is count)
+    ensure count >= 1
+  end
+
+  option (level, name, value, length) is
+    linux.setsockopt (descriptor is descriptor,
+                      level is level,
+                      optname is name,
+                      value is value,
+                      length is length,
+                      result is status)
+  end
+
+  release is
+    linux.close (descriptor is descriptor)
+  end
+end

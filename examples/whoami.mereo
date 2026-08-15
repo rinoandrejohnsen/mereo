@@ -1,0 +1,25 @@
+-- whoami, the coreutils shape: geteuid -> getpwuid -> print. The lookup lives
+-- in identity.getpwuid (a procedure method, inlined here): it opens, reads, and
+-- releases /etc/passwd itself, and GUARDS the result -- if the uid has no entry
+-- it fails into the release tower on its own (closing the file, exit non-zero).
+-- So this program is nothing but the happy path.
+
+include "../linux.mereo"
+include "../core.mereo"
+
+program is
+  uid is 0
+  name_ptr is 0
+  name_len is 0
+
+  output is already linux.file (descriptor is 1)
+
+  linux.identity.user (euid is uid)
+
+  linux.identity.getpwuid (uid is uid, name is name_ptr, length is name_len)
+
+  output.write (buffer is name_ptr, count is name_len)
+
+  output.write (buffer is "\n", count is 1)
+
+end

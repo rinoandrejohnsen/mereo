@@ -1,0 +1,27 @@
+include "../../../linux.mereo"
+include "../../../core.mereo"
+
+-- A `span` doing what a pointer and a length do: read a block, find the first
+-- `:`, narrow to what came before it, write that out. The question this case
+-- asks is whether naming the pair costs anything over carrying two variables.
+--
+--   printf 'alpha:beta:gamma' | ./span_scan   ->  alpha
+
+program is
+  block is 64 bytes
+  count is 0
+  n is 0
+
+  input is already linux.file (descriptor is 0)
+
+  terminal is already linux.file (descriptor is 1)
+
+  input.read (buffer is block, capacity is 64, count is count)
+
+  rest is already span (data is block, length is count)
+  rest.find (byte is 58, offset is n)
+  rest.take (count is n)
+
+  terminal.write (buffer is rest.data, count is rest.length)
+
+end

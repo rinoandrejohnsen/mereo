@@ -1,0 +1,27 @@
+-- upper -- read stdin, uppercase every ASCII lowercase letter IN PLACE, write
+-- it back. A dereference showcase: `byte at buffer + i` LOADS each byte, `put c
+-- at buffer + i` STORES it, and the lowercase test is branchless -- comparison-
+-- as-value ((c >= 97) & (c <= 122)) yields 0/1, so we just subtract 32 * that.
+-- No per-byte branch, no C helper: raw loads, stores, and arithmetic.
+--
+--   echo hello WORLD | ./upper_bin   ->  HELLO WORLD
+
+include "../linux.mereo"
+include "../core.mereo"
+
+program is
+  capacity is 65536
+  buffer is capacity bytes
+  count is 0
+
+  input is already linux.file (descriptor is 0)
+
+  output is already linux.file (descriptor is 1)
+
+  input.read (buffer is buffer, capacity is capacity, count is count)
+
+  text.upper (data is buffer, length is count)
+
+  output.write (buffer is buffer, count is count)
+
+end

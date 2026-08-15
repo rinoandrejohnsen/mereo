@@ -1,0 +1,314 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE language>
+<!--
+  Kate / KSyntaxHighlighting definition for mereo.
+
+  Install:  cp tools/mereo.xml ~/.local/share/org.kde.syntax-highlighting/syntax/
+  Kate caches by the `version` attribute below — BUMP IT or the editor keeps
+  showing the old rules, which is how version 14 survived three grammar
+  changes.
+
+  The token model is the one in tools/mereohl.py, so the editor and the
+  standalone highlighter agree, and it borrows the same three schemes:
+
+    Ada    reserved words bold, opener and `end` at one weight — dsKeyword
+    Ruby   an argument's LABEL gets its own colour — dsAttribute, which is
+           what Kate's ruby.xml uses for `key:`
+    Lua    restraint: a plain identifier stays dsNormal. Only what the grammar
+           gives a role is coloured.
+
+  The one thing a standalone scanner gets for free and Kate does not: an
+  argument list runs over several lines, so a label on a continuation line has
+  no `(` or `,` before it ON THAT LINE and a lookbehind cannot see one. That
+  is what the Args CONTEXT is for — it is entered at `(` and left at the
+  matching `)`, so both of these highlight identically:
+
+      source is linux.file (path is p, flags is 0, mode is 0)
+
+      input is linux.file (
+        path is p,
+        flags is 0,
+        mode is 0
+      )
+
+  The previous definition keyed every rule on `where` and on exact 2/4/6-space
+  indentation, so those two rendered nothing alike.
+-->
+<language name="Mereo" section="Sources" version="54" kateversion="5.62"
+          extensions="*.mereo" mimetype="text/x-mereo"
+          author="rino" license="MIT" casesensitive="1">
+  <highlighting>
+    <!-- the shape of a program: Ada bolds these -->
+    <list name="structure">
+      <item>goes</item>
+      <item>end</item>
+      <item>scope</item>
+      <item>contains</item>
+      <item>program</item>
+      <item>failures</item>
+      <item>include</item>
+      <item>extends</item>
+      <item>likely</item>
+    </list>
+    <!-- what moves, rather than what declares -->
+    <!-- `is` binds a name to a value, or a header to its body. It is on nearly
+         every line, often twice, so bolding it made a quarter of all visible
+         code bold. It is the one operator-shaped word in the language and is
+         coloured as one. -->
+    <list name="flow">
+      <item>leave</item>
+      <item>repeat</item>
+      <item>when</item>
+      <item>ensure</item>
+      <item>or</item>
+      <item>continue</item>
+      <item>acquire</item>
+      <item>release</item>
+      <item>fails</item>
+    </list>
+    <!-- readings and storage: how bits are to be taken -->
+    <list name="modifier">
+      <item>signed</item>
+      <item>unsigned</item>
+      <item>big</item>
+      <item>little</item>
+      <item>float</item>
+      <item>whole</item>
+      <item>volatile</item>
+      <item>constant</item>
+      <item>already</item>
+      <item>adopted</item>
+      <item>aligned</item>
+      <item>assembly</item>
+      <item>helper</item>
+      <item>pure</item>
+      <item>final</item>
+      <item>static</item>
+      <item>stack</item>
+      <item>register</item>
+      <item>noinline</item>
+      <item>cold</item>
+      <item>container</item>
+      <item>branchless</item>
+      <item>bit</item>
+      <item>bits</item>
+    </list>
+    <list name="keyword">
+      <item>bytes</item>
+      <item>as</item>
+      <item>to</item>
+      <item>and</item>
+      <item>in</item>
+      <item>out</item>
+      <item>clobbers</item>
+      <item>high</item>
+      <item>low</item>
+      <item>atomic</item>
+      <item>fence</item>
+    </list>
+    <!-- The Linux entry views. Reserved, but they never act as keywords: in
+         `program (arguments) is` one is a PARAMETER and in `arguments.count`
+         it is a receiver. Lua colours `function fib_iter(n)`'s `n` as a
+         variable, and these do the same job. -->
+    <list name="entry_views">
+      <item>arguments</item>
+      <item>environment</item>
+      <item>auxiliary</item>
+    </list>
+    <!-- Reached through a dot, never on their own: `linux.exit`, `buf.size`.
+         They are listed so the definition still knows every word the compiler
+         does, but they are styled as the members they are. -->
+    <list name="members">
+      <item>exit</item>
+      <item>size</item>
+    </list>
+    <list name="registers">
+      <item>rax</item><item>rbx</item><item>rcx</item><item>rdx</item>
+      <item>rsi</item><item>rdi</item><item>rbp</item><item>rsp</item>
+      <item>r8</item><item>r9</item><item>r10</item><item>r11</item>
+      <item>r12</item><item>r13</item><item>r14</item><item>r15</item>
+      <item>memory</item><item>cc</item>
+    </list>
+
+    <contexts>
+      <context name="Normal" attribute="Normal Text" lineEndContext="#stay">
+        <!-- The first word of an ASSIGNMENT is a name, whatever the word. mereo
+             lets a slot be called `bits` or `cold`, and `bits is meta + 28 as
+             shape` names a slot — it does not use the keyword. Anchored, so it
+             beats the word lists; `\s+is\s+\S` requires a value, so a header
+             ending in `is` still reads as a declaration. -->
+        <RegExpr String="^\s*\w+(?= is (?:(?:pure|final) )?assembly &quot;)" attribute="Declaration" context="#stay"/>
+        <RegExpr String="^\s*\w+(?= is helper \w+\s*(?:--.*)?$)" attribute="Declaration" context="#stay"/>
+        <RegExpr String="^\s*\w+(?=\s+is\s+(?!--)\S)" attribute="Identifier" context="#stay"/>
+        <IncludeRules context="Common"/>
+        <!-- a DECLARATION: the first word of a line ending in `is`, or a bare
+             `NAME goes` scope label. The reserved openers are excluded IN THE
+             PATTERN rather than by rule order: this rule is anchored, so it
+             starts at column 0 and consumes the indentation, which beats a
+             keyword rule that could only match further along the line.
+             `program is` declares nothing, and `acquire (path) is` declares a
+             fixed role, not a name. A TRAILING COMMENT is allowed for in the
+             lookahead: the standalone scanner strips comments before it tests
+             the line and Kate cannot, so `scan goes  # ...` lost its label. -->
+        <RegExpr String="^\s*(?!(?:program|namespace|failures|acquire|release|scope|end)\b)\w+(?=(?: \([^)]*\))? is\s*(?:--.*)?$)" attribute="Declaration" context="#stay"/>
+        <RegExpr String="^\s*(?!(?:scope|end)\b)\w+(?= (?:likely )?goes\s*(?:--.*)?$)" attribute="Declaration" context="#stay"/>
+        <!-- `linux contains` names a namespace, and the name is coloured the
+             same here as at every use of it -->
+        <RegExpr String="^\w+(?= contains\s*(?:--.*)?$)" attribute="NamespaceDecl" context="#stay"/>
+        <!-- ...and a scope NAME keeps that formatting wherever it is named:
+             after `leave` or `repeat`, and on the road header that reopens a
+             crossroad. Placed after the word lists, so `leave program` leaves
+             `program` looking like the keyword it is at `program is`. -->
+        <RegExpr String="(?&lt;=\bleave )\w+" attribute="Declaration" context="#stay"/>
+        <RegExpr String="(?&lt;=\brepeat )\w+" attribute="Declaration" context="#stay"/>
+        <RegExpr String="^\s*\w+(?= when .+ goes\s*(?:--.*)?$)" attribute="Declaration" context="#stay"/>
+        <!-- a PRIMITIVE declaration: its header ends in the asm template or the
+             C helper's name, not in `is` -->
+        <IncludeRules context="Tail"/>
+      </context>
+
+      <!-- Rules shared by the top level and an argument list. The word lists
+           come first so a reserved word is never taken for a name. -->
+      <context name="Common" attribute="Normal Text" lineEndContext="#stay">
+        <RegExpr String="--.*$" attribute="Comment" context="#stay"/>
+        <DetectChar char="&quot;" attribute="String" context="StringLit"/>
+        <!-- Ahead of the word lists on purpose.
+
+             Lua does NOT merge a dotted call because of the dot: it merges
+             `string.format` because that whole name is a listed BUILT-IN, and
+             a user's own `t.go(1)` keeps its parts with `t` blue. So only a
+             call into a shipped LIBRARY is one unit here. `folder.read` is the
+             `t.go` case and reads as a receiver and a call.
+
+             The heads are listed because Kate cannot follow an `include`.
+             tools/mereohl.py derives them, by reading the top-level names out
+             of the included files.
+
+             The HEAD of any other dotted name is a name, even when the word is
+             also a keyword: mereo lets a slot be called `bits`, and
+             `bits.kind` reads it. -->
+        <RegExpr String="\b(?:linux|text|json)(?=\.\w)" attribute="Namespace" context="#stay"/>
+        <RegExpr String="\b\w+(?=\.\w)" attribute="Identifier" context="#stay"/>
+        <!-- Bold is spent on what OPENS a block, what CLOSES one, and the two
+             jumps. Every other reserved word is italic: vocabulary, not
+             structure.
+
+             Kate cannot look at a line before it reaches a token, so "this
+             line opens a block" is a LOOKAHEAD to the line's end. The
+             declaration headers (`X is assembly "..."`, `X is helper y`) put
+             their marker BEHIND the word instead, and a lookahead cannot see
+             backwards, so those take a fixed-width lookbehind of their own. -->
+        <RegExpr String="\b(?:end|leave|repeat|goes|contains|scope|likely|include)\b" attribute="Structure" context="#stay"/>
+        <RegExpr String="(?&lt;= is )(?:pure |final )?(?:assembly|helper)\b" attribute="Structure" context="#stay"/>
+        <RegExpr String="\bis(?= (?:(?:pure|final) )?(?:assembly|helper)\b)" attribute="Opener" context="#stay"/>
+        <RegExpr String="\b(?:branchless|container|assembly|clobbers|constant|contains|continue|failures|noinline|register|unsigned|volatile|acquire|adopted|aligned|already|extends|include|program|release|atomic|ensure|helper|likely|little|repeat|signed|static|bytes|fails|fence|final|float|leave|scope|stack|whole|bits|cold|goes|high|pure|when|and|big|bit|end|low|out|as|in|or|to)\b(?=(?:(?!--)[^&quot;])*(?: is| goes| contains)\s*(?:--.*)?$)" attribute="Structure" context="#stay"/>
+        <keyword String="structure" attribute="Inside" context="#stay"/>
+        <!-- `is` does two jobs and the position says which. At the END of a
+             line it opens a body, exactly as `goes` does, and carries the same
+             weight. Anywhere else it binds a name to a value, and recedes. -->
+        <RegExpr String="\bis(?=\s*(?:--.*)?$)" attribute="Opener" context="#stay"/>
+        <RegExpr String="\bis\b" attribute="Bind" context="#stay"/>
+        <keyword String="flow" attribute="Inside" context="#stay"/>
+        <keyword String="modifier" attribute="Inside" context="#stay"/>
+        <keyword String="entry_views" attribute="Identifier" context="#stay"/>
+        <keyword String="members" attribute="Member" context="#stay"/>
+        <keyword String="registers" attribute="Register" context="#stay"/>
+        <keyword String="keyword" attribute="Inside" context="#stay"/>
+      </context>
+
+      <!-- Everything after the declaration test: members, calls, literals. -->
+      <context name="Tail" attribute="Normal Text" lineEndContext="#stay">
+        <RegExpr String="\b\w+(?=\s*\()" attribute="Function" context="#stay"/>
+        <RegExpr String="(?&lt;=\.)\w+" attribute="Member" context="#stay"/>
+        <RegExpr String="\b(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|\d[\d_]*)\b" attribute="Number" context="#stay"/>
+        <!-- `(` opens an ARGUMENT LIST, which may run over several lines —
+             this is the whole reason labels need a context and not a
+             lookbehind -->
+        <DetectChar char="(" attribute="Operator" context="Args"/>
+        <RegExpr String="==|!=|&lt;=|&gt;=|&amp;&amp;|\|\||&lt;&lt;|&gt;&gt;|[-+*/%&amp;|^~&lt;&gt;\[\]:,.]" attribute="Operator" context="#stay"/>
+        <!-- ...and everything else that is a name. Lua colours its identifiers
+             and leaves only the declared one plain; this is that rule. -->
+        <RegExpr String="\b[A-Za-z_]\w*\b" attribute="Identifier" context="#stay"/>
+      </context>
+
+      <!-- Inside `( ... )`. Survives a line end, so the style does not matter. -->
+      <context name="Args" attribute="Normal Text" lineEndContext="#stay">
+        <DetectChar char=")" attribute="Operator" context="#pop"/>
+        <!-- BEFORE the word lists: inside an argument list `NAME is` is a
+             label whatever the word is, and `bit is 1` really does occur -->
+        <RegExpr String="\b\w+(?=\s+is\b)" attribute="Label" context="#stay"/>
+        <IncludeRules context="Common"/>
+        <IncludeRules context="Tail"/>
+      </context>
+
+      <context name="StringLit" attribute="String" lineEndContext="#pop">
+        <RegExpr String="\\." attribute="String" context="#stay"/>
+        <DetectChar char="&quot;" attribute="String" context="#pop"/>
+      </context>
+    </contexts>
+
+    <itemDatas>
+      <!-- Modelled on how Kate draws LUA, which is the reference: keywords
+           bold in the text colour, identifiers blue, a call purple, symbols
+           magenta, numbers gold, comments grey. Every style below is the one
+           lua.xml uses for the same job, so a mereo file and a Lua file sit
+           beside each other without arguing.
+
+           Two deliberate departures, both asked for:
+
+             A DECLARED NAME keeps `dsFunction` and bold. Lua leaves
+             `function fib_iter` plain and colours only built-in calls, but
+             `page goes` reading as a scope at a glance is worth the ink.
+
+             `is` is NOT magenta, though it is mereo's `=` and Lua puts `=` on
+             dsOperator. Lua's `=` is one character; mereo's `is` is a word,
+             5063 times in this corpus, and at that frequency the same colour
+             stops being punctuation and becomes a texture. It carries the
+             comment grey instead. One line to change if that reads wrong. -->
+      <itemData name="Normal Text"  defStyleNum="dsNormal"/>
+      <itemData name="Structure"    defStyleNum="dsKeyword"/>
+      <itemData name="Inside"       defStyleNum="dsKeyword" bold="0" italic="1"/>
+      <itemData name="Declaration"  defStyleNum="dsFunction" bold="1"/>
+      <itemData name="Function"     defStyleNum="dsFunction" bold="0"/>
+      <!-- A NAMESPACE takes the NUMBER colour, so `linux` and the thing
+           reached through it are not one flat run. It shares that colour with
+           a literal, which is a real collision and an accepted one: both are
+           fixed, both are looked past. -->
+      <itemData name="Namespace"    defStyleNum="dsDecVal" bold="0"/>
+      <!-- A namespace's own name AT ITS DECLARATION is bold, like the name in
+           every other block opener: `file is`, `scan goes`. It keeps the gold,
+           so it still reads as a namespace rather than as a resource. At its
+           USES it is plain — `linux.` is one of the most frequent tokens
+           there is, and bolding all of those would be the `is` mistake again. -->
+      <itemData name="NamespaceDecl" defStyleNum="dsDecVal" bold="1"/>
+      <itemData name="Member"       defStyleNum="dsVariable" bold="0"/>
+      <itemData name="Identifier"   defStyleNum="dsNormal" bold="0"/>
+      <!-- The PORT NAME on the left of an argument, in blue. That colour is
+           free now that an ordinary identifier is the text colour, and this is
+           what it is worth spending on: a port belongs to the thing being
+           called, not to the caller, and the same blue marks a MEMBER for the
+           same reason. Both are names that belong to something else. -->
+      <itemData name="Label"        defStyleNum="dsVariable" bold="0"/>
+      <itemData name="Register"     defStyleNum="dsSpecialChar" bold="0"/>
+      <itemData name="Number"       defStyleNum="dsDecVal" bold="0"/>
+      <itemData name="String"       defStyleNum="dsString" bold="0"/>
+      <itemData name="Operator"     defStyleNum="dsOperator" bold="0"/>
+      <itemData name="Opener"       defStyleNum="dsKeyword" bold="1" italic="0"/>
+      <!-- `is` binding a value is drawn as the OPERATOR it is, beside `+`
+           and `,` and `==`. That is what Lua does with `=`, and it is what
+           `is` means here. The one that ENDS a line is not an operator at all
+           though: it opens a body, so it keeps the weight `goes` has. -->
+      <itemData name="Bind"         defStyleNum="dsOperator" bold="0" italic="0"/>
+      <!-- Italic, which Lua's own scheme does not do; asked for, and it
+           suits a language whose comments are 38% of the source. -->
+      <itemData name="Comment"      defStyleNum="dsComment" italic="1"/>
+    </itemDatas>
+  </highlighting>
+
+  <general>
+    <comments>
+      <comment name="singleLine" start="--"/>
+    </comments>
+    <keywords casesensitive="1" additionalDeliminator="."/>
+  </general>
+</language>

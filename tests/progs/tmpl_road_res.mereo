@@ -1,0 +1,38 @@
+include "../../linux.mereo"
+
+-- A template that ACQUIRES, spliced into a cold `when` road. The file it opens
+-- is road-local: released before the road rejoins, and released by the tower on
+-- every fault inside it. mereoraii checks both on the binary, injecting a
+-- failure at the open, the read and the write in turn.
+--
+-- Run from the repo root (the path is relative), with no arguments so the cold
+-- road is the one that runs.
+dump (path, screen) is
+  cap is 4096
+  buf is cap bytes
+  n is 0
+
+  source is linux.file (path is path, flags is 0, mode is 0)
+
+  source.read (buffer is buf, capacity is cap, count is n)
+
+  screen.write (buffer is buf, count is n)
+end
+
+program (arguments) is
+  argc is arguments.count
+  n is 0
+
+  terminal is already linux.file (descriptor is 1)
+
+  pick likely goes
+    n is 1
+  end
+
+  ensure n >= 0
+  linux.exit
+
+  pick when argc == 1 goes
+    dump (path is "lorem_ipsum.txt", screen is terminal)
+  end
+end

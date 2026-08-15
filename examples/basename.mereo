@@ -1,0 +1,62 @@
+-- basename -- print the final component of a path (coreutils). We scan argv[1]
+-- for its slashes; the LAST component the walk records is the answer, and any
+-- trailing slashes fall out for free (the empty component after them is never
+-- reached). A standalone `ensure` guards the missing-operand case -- the tower
+-- is empty (nothing owned), so a bad call just reports and exits 1.
+--
+--   basename /usr/bin/gcc   ->  gcc
+--   basename /usr/lib/      ->  lib
+--   basename /              ->  /
+--   basename foo            ->  foo
+
+include "../linux.mereo"
+include "../core.mereo"
+
+program (arguments) is
+  off is 0        -- written by find's out-port, and read before it advances,
+  out_ptr is 0    -- so it can't be a first-mention declaration
+  out_len is 0    -- what to print, chosen by the roads
+
+  output is already linux.file (descriptor is 1)
+
+  argc is arguments.count
+  ensure argc >= 2
+
+  arg is arguments.pointer + 1
+
+  -- the operand, up to its NUL, with 4096 bounding the scan
+  path is already span (data is arg, length is 4096)
+  path.until (byte is 0)
+
+  rest is already span (data is path.data, length is path.length)
+
+  walk goes
+    rest.find (byte is 47, offset is off)
+    off > 0 goes          -- a non-empty component: remember it. Runs of slashes
+      comp_at is rest.data -- (and trailing ones) never clobber the last real one.
+      comp_len is off
+    end
+    rest.skip (count is off + 1)   -- past the slash; clamped, so the last
+    repeat walk when rest.length > 0   -- component (which has none) ends it
+  end
+
+  name likely goes            -- every road SELECTS; the spine writes once
+    out_ptr is comp_at
+    out_len is comp_len
+  end
+
+  output.write (buffer is out_ptr, count is out_len)
+  output.write (buffer is "\n", count is 1)
+
+  linux.exit
+
+  name when path.length == 0 goes   -- no argument bytes at all: just the newline
+    out_ptr is arg
+    out_len is 0
+  end
+
+  name when comp_len == 0 goes   -- nothing but slashes: the root
+    out_ptr is "/"
+    out_len is 1
+  end
+end

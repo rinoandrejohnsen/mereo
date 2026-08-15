@@ -1,0 +1,10 @@
+include "../../linux.mereo"
+
+-- REFUSED: a mereo name becomes a C identifier as written, so a slot called
+-- `int` used to emit `long int = 5;` and fail in GCC with a message about
+-- generated code the author never saw. mereo says it in its own words now.
+program is
+  int is 5
+  buf is 8 bytes
+  [buf + 0 : 1] is 48 + int
+end

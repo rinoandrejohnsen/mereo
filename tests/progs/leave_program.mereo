@@ -1,0 +1,26 @@
+include "../../linux.mereo"
+
+-- `leave program` -- release everything and exit 0, from the middle. There was
+-- no way to say this before: a bare `exit` must be the final step (it is the raw
+-- primitive at the BOTTOM of the release tower, so putting it mid-program would
+-- skip every release above it), and `ensure` exits non-zero with a diagnostic.
+--
+-- It costs one instruction: `goto release_<the floor for what is live here>`.
+--
+--   ./leave_program      ->  (nothing)   argc 1: leaves before reading
+--   ./leave_program x    ->  L           reads the first byte
+program (arguments) is
+  argc is arguments.count
+  buf is 8 bytes
+  n is 0
+
+  terminal is already linux.file (descriptor is 1)
+
+  held is linux.file (path is "lorem_ipsum.txt", flags is 0, mode is 0)
+
+  leave program when argc == 1
+
+  held.read (buffer is buf, capacity is 1, count is n)
+
+  terminal.write (buffer is buf, count is n)
+end

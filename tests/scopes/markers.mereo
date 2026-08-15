@@ -1,0 +1,52 @@
+include "../../linux.mereo"
+
+-- RAII parity markers: each release CLOSES a distinct sentinel fd, so
+-- `strace -e trace=close` on the run yields the exact release order (the fds
+-- aren't open, so the close fails harmlessly -- only the order/number matter).
+-- Acquire: `NAME is adopted mark_x where descriptor is <sentinel>`.
+--   mark_a -> 101   mark_b -> 102   mark_c -> 103   mark_d -> 104
+--   mark_e -> 105
+
+mark_a is
+  descriptor is 101
+  probe is 0
+  -- a fallible method for fault-injection tests: reads the (never-open) sentinel
+  -- fd, so it returns -EBADF and the ensure fails -> the release tower.
+  boom is
+    linux.read (descriptor is descriptor,
+          buffer is descriptor,
+          capacity is 1,
+          count is probe)
+  end
+  release is
+    linux.close (descriptor is descriptor)
+  end
+end
+
+mark_b is
+  descriptor is 102
+  release is
+    linux.close (descriptor is descriptor)
+  end
+end
+
+mark_c is
+  descriptor is 103
+  release is
+    linux.close (descriptor is descriptor)
+  end
+end
+
+mark_d is
+  descriptor is 104
+  release is
+    linux.close (descriptor is descriptor)
+  end
+end
+
+mark_e is
+  descriptor is 105
+  release is
+    linux.close (descriptor is descriptor)
+  end
+end

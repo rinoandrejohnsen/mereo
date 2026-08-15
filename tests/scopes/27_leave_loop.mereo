@@ -1,0 +1,28 @@
+include "markers.mereo"
+
+-- `leave` is C++'s `break`, and the question is whether it releases what the
+-- iteration holds on the way out. `o` is adopted each outer iteration, `t` each
+-- inner one; `leave outer` from inside the inner loop must release t, then o,
+-- then land past the outer loop -- leaving `keep` for exit.
+--
+-- argc=1 run bare, so the leave fires on the first inner iteration.
+-- Expect close(101) close(103) close(104).
+program (arguments) is
+  keep is adopted mark_d (descriptor is 104)
+  n is arguments.count
+  i is 0
+  j is 0
+
+  outer goes
+    o is adopted mark_c (descriptor is 103)
+    j is 0
+    inner goes
+      t is adopted mark_a (descriptor is 101)
+      leave outer when n == 1
+      j is j + 1
+      repeat inner when j < 2
+    end
+    i is i + 1
+    repeat outer when i < 3
+  end
+end

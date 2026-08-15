@@ -1,0 +1,23 @@
+include "markers.mereo"
+
+-- scope_example.txt, in mereo: three scopes deep, jumping OUTWARD two levels.
+-- The note there says code in a deeper scope may jump to any ancestor's start or
+-- end -- and the reason it is safe is the release order this checks: grandchild,
+-- then child, then parent, before landing past `parent`.
+--
+-- argc is 1, so the jump is taken. Expect 103 102 101 104.
+program (arguments) is
+  keep is adopted mark_d (descriptor is 104)
+  n is arguments.count
+
+  parent goes
+    p is adopted mark_a (descriptor is 101)
+    child goes
+      c is adopted mark_b (descriptor is 102)
+      grandchild goes
+        g is adopted mark_c (descriptor is 103)
+        leave parent when n == 1          -- OK: jumps outward
+      end
+    end
+  end
+end

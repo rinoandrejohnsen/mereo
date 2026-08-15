@@ -1,0 +1,110 @@
+// =========================================================
+// 1. ATOMS & FUSIONS (The State Structure)
+// =========================================================
+atom FileDescriptor: Int
+atom Buffer: ByteArray[4096]
+atom ByteCount: Int
+atom ExitCode: Int
+
+// The stage tracks the current lifecycle phase
+atom Stage: Enum { INIT, OPENED, READ_DONE, WRITTEN, ERROR, CLOSE_PENDING, EXIT }
+
+// The Application is the holistic fusion of all its state parts
+part FileProcessor = FileDescriptor + Buffer + ByteCount + ExitCode + Stage
+
+
+// =========================================================
+// 2. RULES (ASM Transitions)
+// =========================================================
+// These rules are continuously evaluated. The engine executes them 
+// only when their structural and state conditions are met.
+
+rule OpenFile(target) {
+    require Parthood(FileProcessor, target)
+    if Stage(target) == INIT {
+        let fd = sys_open("lorem_ipsum.txt", O_RDONLY)
+        transition {
+            FileDescriptor(target) := fd
+            if fd < 0 {
+                ExitCode(target) := 1
+                Stage(target) := EXIT           // Skip to exit
+            } else {
+                Stage(target) := OPENED
+            }
+        }
+    }
+}
+
+rule ReadFile(target) {
+    require Parthood(FileProcessor, target)
+    if Stage(target) == OPENED {
+        let fd = FileDescriptor(target)
+        let buf = Buffer(target)
+        let count = sys_read(fd, buf, sizeof(buf))
+        transition {
+            ByteCount(target) := count
+            if count < 0 {
+                ExitCode(target) := 2
+                Stage(target) := CLOSE_PENDING
+            } else {
+                Stage(target) := READ_DONE
+            }
+        }
+    }
+}
+
+rule WriteStdout(target) {
+    require Parthood(FileProcessor, target)
+    if Stage(target) == READ_DONE {
+        let res = sys_write(1, Buffer(target), ByteCount(target))
+        transition {
+            if res < 0 {
+                ExitCode(target) := 3
+            } else {
+                ExitCode(target) := 0
+            }
+            Stage(target) := CLOSE_PENDING
+        }
+    }
+}
+
+rule Cleanup(target) {
+    require Parthood(FileProcessor, target)
+    if Stage(target) == CLOSE_PENDING {
+        sys_close(FileDescriptor(target))
+        transition {
+            Stage(target) := EXIT
+        }
+    }
+}
+
+rule Terminate(target) {
+    require Parthood(FileProcessor, target)
+    if Stage(target) == EXIT {
+        sys_exit(ExitCode(target))
+    }
+}
+
+// =========================================================
+// 3. EXECUTION ENGINE
+// =========================================================
+program Main {
+    // Construct the initial state fusion
+    let app = FileProcessor(
+        FileDescriptor(-1), 
+        Buffer(), 
+        ByteCount(0), 
+        ExitCode(0), 
+        Stage(INIT)
+    )
+    
+    // The ASM Engine continuously applies rules.
+    // The execution flow is entirely data-driven rather than sequential.
+    par {
+        OpenFile(app)
+        ReadFile(app)
+        WriteStdout(app)
+        Cleanup(app)
+        Terminate(app)
+    }
+}

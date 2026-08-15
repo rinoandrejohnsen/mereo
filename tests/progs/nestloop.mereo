@@ -1,0 +1,20 @@
+include "../../linux.mereo"
+
+-- 3 outer x 3 inner, one '.' per inner iteration -> "........."
+program is
+  i is 0
+  k is 0
+  written is 0
+  terminal is already linux.file (descriptor is 1)
+
+  outer goes
+    k is k - k
+    inner goes
+      terminal.write (buffer is ".", count is 1, written is written)
+      k is k + 1
+      repeat inner when k < 3
+    end
+    i is i + 1
+    repeat outer when i < 3
+  end
+end

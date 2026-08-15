@@ -1,0 +1,40 @@
+include "../../linux.mereo"
+
+-- Nested loops each OWNING a real descriptor, so mereoraii can inject a failure
+-- at every syscall in turn and check the fds on each path -- not one hand-picked
+-- fault the way a scopes scenario does.
+--
+-- Per outer pass: open `a`, then twice { open `b`, read, write, close b },
+-- then close a. Six descriptors over the run, none of which may outlive its
+-- pass on any path.
+--
+-- Run from the repo root (the path is relative). Prints "LLLL".
+program is
+  cap is 64
+  buf is cap bytes
+  n is 0
+  i is 0
+  j is 0
+
+  terminal is already linux.file (descriptor is 1)
+
+  outer goes
+    a is linux.file (path is "lorem_ipsum.txt", flags is 0, mode is 0)
+
+    j is 0
+    inner goes
+      b is linux.file (path is "lorem_ipsum.txt", flags is 0, mode is 0)
+
+      b.read (buffer is buf, capacity is 1, count is n)
+
+      terminal.write (buffer is buf, count is n)
+
+      j is j + 1
+      repeat inner when j < 2
+    end
+
+    i is i + 1
+    repeat outer when i < 2
+  end
+
+end

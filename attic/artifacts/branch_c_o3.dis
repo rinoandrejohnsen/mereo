@@ -1,0 +1,195 @@
+
+_init:
+    rsp -= 8;
+    rax = [rip + 12225 : 8];
+    if (rax == 0) goto L_1016;
+    rax = *rax();
+L_1016:
+    rsp += 8;
+    return;
+
+__errno_location@plt-0x10:
+    // push 0x2fca(%rip)
+    goto *[rip + 12236 : 8];
+
+__errno_location@plt:
+    goto *[rip + 12234 : 8];
+    // push $0x0
+    goto __errno_location@plt-0x10;
+
+write@plt:
+    goto *[rip + 12226 : 8];
+    // push $0x1
+    goto __errno_location@plt-0x10;
+
+strlen@plt:
+    goto *[rip + 12218 : 8];
+    // push $0x2
+    goto __errno_location@plt-0x10;
+
+__stack_chk_fail@plt:
+    goto *[rip + 12210 : 8];
+    // push $0x3
+    goto __errno_location@plt-0x10;
+
+read@plt:
+    goto *[rip + 12202 : 8];
+    // push $0x4
+    goto __errno_location@plt-0x10;
+
+signal@plt:
+    goto *[rip + 12194 : 8];
+    // push $0x5
+    goto __errno_location@plt-0x10;
+
+fprintf@plt:
+    goto *[rip + 12186 : 8];
+    // push $0x6
+    goto __errno_location@plt-0x10;
+
+strerror@plt:
+    goto *[rip + 12178 : 8];
+    // push $0x7
+    goto __errno_location@plt-0x10;
+
+main:
+    rsp -= 4136;
+    edi = 13;
+    rsi = fs:0x28;
+    rsp+4104 = rsi;
+    esi = 1;
+    rax = signal();
+    edi = 0;
+    rsi = rsp;
+    edx = 4096;
+    rax = read();
+    if (rax < 0) goto L_11dc;
+    rsp+4128 = rbp;
+    rbp = &"nothing\n";
+    rsp+4120 = rbx;
+    if (rax != 0) goto L_118d;
+L_110c:
+    rdi = rbp;
+    rax = strlen();
+    rbx = rax;
+L_1120:
+    rdx = rbx;
+    rsi = rbp;
+    edi = 1;
+    rax = write();
+    if (rax < 0) goto L_1140;
+    rbx -= rax;
+    if (je) goto L_1160;
+    rbp += rax;
+    goto L_1120;
+L_1140:
+    rax = __errno_location();
+    if ([rax : 4] == 4) goto L_1120;
+    rax = __errno_location();
+    edi = [rax : 4];
+    if (edi != 32) goto L_11a8;
+L_1160:
+    rbx = rsp+4120;
+    rbp = rsp+4128;
+    eax = 0;
+L_1172:
+    rdx = rsp+4104;
+    rdx -= fs:0x28;
+    if (jne) goto L_1202;
+    rsp += 4136;
+    return;
+L_118d:
+    rax -= 1;
+    rbp = &"many bytes\n";
+    rax = &"one byte\n";
+    if (== 0) rbp = rax;
+    goto L_110c;
+L_11a8:
+    rax = strerror();
+    rdi = [rip + 11948 : 8];
+    rsi = &"branch: write: %s\n";
+    rdx = rax;
+    eax = 0;
+    rax = fprintf();
+    rbx = rsp+4120;
+    rbp = rsp+4128;
+L_11d5:
+    eax = 1;
+    goto L_1172;
+L_11dc:
+    rax = __errno_location();
+    edi = [rax : 4];
+    rax = strerror();
+    rdi = [rip + 11889 : 8];
+    rsi = &"branch: read: %s\n";
+    rdx = rax;
+    eax = 0;
+    rax = fprintf();
+    goto L_11d5;
+L_1202:
+    rsp+4120 = rbx;
+    rsp+4128 = rbp;
+    rax = __stack_chk_fail();
+
+_start:
+    ebp = 0;
+    r9 = rdx;
+    // pop %rsi
+    rdx = rsp;
+    rsp &= -16;
+    // push %rax
+    // push %rsp
+    r8d = 0;
+    ecx = 0;
+    rdi = &4272;
+    rax = *[rip + 11643 : 8]();
+    // hlt 
+
+deregister_tm_clones:
+    rdi = &16464;
+    rax = &16464;
+    if (rax == rdi) goto L_1278;
+    rax = [rip + 11614 : 8];
+    if (rax == 0) goto L_1278;
+    goto *rax;
+L_1278:
+    return;
+
+register_tm_clones:
+    rdi = &16464;
+    rsi = &16464;
+    rsi -= rdi;
+    rax = rsi;
+    rsi u>>= 63;
+    rax >>= 3;
+    rsi += rax;
+    rsi >>= 1;
+    if (je) goto L_12b8;
+    rax = [rip + 11565 : 8];
+    if (rax == 0) goto L_12b8;
+    goto *rax;
+L_12b8:
+    return;
+
+__do_global_dtors_aux:
+    if ([rip + 11677] != 0) goto L_1300;
+    // push %rbp
+    rbp = rsp;
+    if ([rip + 11530 : 8] == 0) goto L_12e8;
+    rdi = [rip + 11622 : 8];
+    rax = *[rip + 11512 : 8]();
+L_12e8:
+    rax = deregister_tm_clones();
+    [rip + 11636] = 1;
+    // pop %rbp
+    return;
+L_1300:
+    return;
+
+frame_dummy:
+    goto register_tm_clones;
+
+_fini:
+    rsp -= 8;
+    rsp += 8;
+    return;

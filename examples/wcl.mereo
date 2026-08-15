@@ -1,0 +1,50 @@
+include "../linux.mereo"
+include "../core.mereo"
+
+-- wc -l: count the newlines on stdin and print the total.
+--
+-- The shape every streaming coreutils program has: a fixed buffer, an outer loop
+-- that refills it, an inner loop that walks what arrived. Both are top-tested,
+-- so a short read and an empty stream fall out without a special case. Nothing
+-- is allocated and nothing grows -- the working set is `capacity` bytes whatever
+-- the input size, which is the property mereo's no-heap rule buys.
+--
+--   ./wcl < lorem_ipsum.txt
+program is
+  capacity is 65536
+  buffer is capacity bytes
+  count is 0
+  lines is 0
+  i is 0
+  c is 0
+  hit is 0
+  digits is 24 bytes
+  length is 0
+
+  input is already linux.file (descriptor is 0)
+
+  terminal is already linux.file (descriptor is 1)
+
+  fill goes
+    input.read (buffer is buffer, capacity is capacity, count is count)
+    leave fill when count == 0          -- end of stream
+
+    i is 0
+    scan goes                           -- BRANCHLESS: no data-dependent exit, so
+      c is [buffer + i : 1]             -- GCC vectorises it (49 SSE2
+      hit is c == 10                    -- instructions). A `find`-per-line loop
+      lines is lines + hit              -- reads the same but is 2x slower --
+      i is i + 1                        -- memchr cannot vectorise, its exit
+      repeat scan when i < count        -- depends on the data.
+    end
+
+    repeat fill
+  end
+
+  text.format (value is lines, buffer is digits, length is length)
+  [digits + length : 1] is 10
+  length is length + 1
+
+  terminal.write (buffer is digits, count is length)
+
+end

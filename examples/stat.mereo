@@ -1,0 +1,115 @@
+-- stat -- the first four fields of `ls -ldn`, for the path named:
+--
+--   $ ./build/stat examples/ls.mereo
+--   -rw-r--r-- 1 1000 2891 examples/ls.mereo
+--
+-- The point of the program is the two views over statx's answer, which between
+-- them mean no offset and no octal constant appears anywhere below.
+--
+--   file_status  a LAYOUT view -- `length of info`, `links of info`, the byte
+--                fields of the 256-byte block the kernel filled
+--   file_mode    a FLAG view over the two bytes of that block's `mode` field --
+--                `kind of bits` is the top four bits, which everyone else
+--                writes as a comparison against 0040000 and friends
+--
+-- The nine permission characters are a LOOP over the low bits rather than nine
+-- reads through the flag view, because that is what they are: one table, one
+-- shift, no naming. A flag view earns its place for `kind` -- a four-bit field
+-- in the middle of a word -- and for the odd bit asked about on its own.
+--
+-- `flags is 256` is AT_SYMLINK_NOFOLLOW, so a symlink reports on itself, which
+-- is what `ls -l` shows.
+--
+-- One path, not several: `pointer of arguments + N` takes a literal N, so the
+-- argument vector cannot be walked with a counter yet.
+
+include "../linux.mereo"
+include "../core.mereo"
+
+program (arguments) is
+  meta is 256 bytes
+  line is 512 bytes
+  kinds is constant "?pc?d?b?-?l?s"      -- d_type/kind -> the ls -l first column
+  perms is constant "rwxrwxrwx"
+
+  info is meta as linux.file_status
+  bits is meta + 28 as linux.file_mode         -- the mode field's two bytes
+
+  j is 0
+  at is 0
+  b is 0
+  c is 0
+  m is 0
+  k is 0
+  name is 0
+
+  output is already linux.file (descriptor is 1)
+
+  argc is arguments.count
+  ensure argc >= 2
+
+  name is arguments.pointer + 1
+  linux.files.inspect (name is name,
+                 buffer is meta,
+                 mask is 2047,         -- STATX_BASIC_STATS
+                 flags is 256)         -- AT_SYMLINK_NOFOLLOW
+
+  k is bits.kind
+  m is info.mode
+  [line : 1] is [kinds + k : 1]
+  at is 1
+
+  j is 8
+  build goes                           -- bit 8 is owner-read, bit 0 other-execute
+    b is m >> j
+    b is b & 1
+    c is 45                            -- '-'
+    c is [perms + 8 - j : 1] when b == 1
+    [line + at : 1] is c
+    at is at + 1
+    j is j - 1
+    repeat build when j >= 0
+  end
+
+  -- ...and the three odd bits, which `ls` shows by REPLACING an execute
+  -- character rather than adding a column: setuid over the owner's x, setgid
+  -- over the group's, sticky over the other's -- lower case when that x is
+  -- there, upper case when it is not. Three bits asked about one at a time,
+  -- which is the other thing a flag view is for.
+  c is 83                                -- 'S'
+  c is 115 when bits.owner_execute == 1
+  [line + 3 : 1] is c when bits.setuid == 1
+  c is 83
+  c is 115 when bits.group_execute == 1
+  [line + 6 : 1] is c when bits.setgid == 1
+  c is 84                                -- 'T'
+  c is 116 when bits.other_execute == 1
+  [line + 9 : 1] is c when bits.sticky == 1
+
+  -- The permission columns are done: they need positional patching (the odd
+  -- bits REPLACE a character already written), which is a buffer's job, not a
+  -- builder's. From here the line only ever grows, so it becomes a `builder`
+  -- picked up at `at` -- four fields that were six lines each are now two, and
+  -- every one of them checks that it fits, which none of them used to.
+  page is already builder (data is line, count is at, limit is 512)
+
+  page.byte (value is 32)
+  page.number (value is info.links)
+
+  page.byte (value is 32)
+  page.number (value is info.uid)
+
+  page.byte (value is 32)
+  page.number (value is info.length)
+
+  -- the operand, up to its NUL, with 4096 bounding the scan
+  page.byte (value is 32)
+  operand is already span (data is name, length is 4096)
+  operand.until (byte is 0)
+  page.add (source is operand.data, length is operand.length)
+
+  page.byte (value is 10)
+
+  output.write (buffer is page.data, count is page.count)
+
+end

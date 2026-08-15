@@ -1,0 +1,9 @@
+{
+    "servers": {
+        "mereo": {
+            "command": ["python3", "/home/rino/Projects/mereo/mereolsp.py"],
+            "highlightingModeRegex": "^Mereo$",
+            "rootIndicationFileNames": ["build.sh"]
+        }
+    }
+}

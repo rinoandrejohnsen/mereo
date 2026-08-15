@@ -1,0 +1,27 @@
+include "markers.mereo"
+
+-- MULTI-LEVEL REPEAT, which is what naming the loop buys: `repeat outer` from
+-- inside `inner` starts the OUTER loop's next pass, releasing what both passes
+-- hold -- t first, then o -- on the way.
+--
+-- argc=1 run bare, so the very first inner pass takes that jump; after that `i`
+-- has moved on and the loops run to their bounds.
+program (arguments) is
+  keep is adopted mark_d (descriptor is 104)
+  n is arguments.count
+  i is 0
+  j is 0
+
+  outer goes
+    o is adopted mark_c (descriptor is 103)
+    j is 0
+    inner goes
+      t is adopted mark_a (descriptor is 101)
+      j is j + 1
+      i is i + 1
+      repeat outer when i == n         -- the first pass only
+      repeat inner when j < 2
+    end
+    repeat outer when i < 5
+  end
+end

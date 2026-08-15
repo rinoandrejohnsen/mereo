@@ -1,0 +1,7 @@
+main goes
+  x == 2 goes
+    print hello
+
+    leave main
+
+  print goodbye

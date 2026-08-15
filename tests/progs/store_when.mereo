@@ -1,0 +1,38 @@
+include "../../linux.mereo"
+
+-- A CONDITIONAL STORE: `[ADDR : N] is VALUE when COND`, and the same on a named
+-- field. The write happens or it does not -- which is the one thing a value
+-- cascade cannot express, since a cascade always ends in a store.
+--
+-- A32 has this in the instruction set (`STRNE`); x86-64 and A64 have no
+-- conditional store at all, so here it is one `if` around the store. `when`
+-- states the dependence and lets the target lower it however it can -- which is
+-- why `branchless`, a REQUIREMENT of no branch, is refused on a store.
+--
+--   ./store_when        ->  A.C     (byte 1 unwritten, byte 2 written)
+--   ./store_when x      ->  AB.     (byte 1 written, byte 2 unwritten)
+record is
+  tag is 1 bytes
+  span is 2 bytes as big
+end
+
+program (arguments) is
+  argc is arguments.count
+  buf is 8 bytes
+  view is buf as record
+
+  [buf + 0 : 1] is 46                -- '.' everywhere first, so an unwritten
+  [buf + 1 : 1] is 46                -- byte is visible as itself
+  [buf + 2 : 1] is 46
+
+  [buf + 0 : 1] is 65                -- unconditional
+  [buf + 1 : 1] is 66 when argc > 1  -- only with an argument
+  [buf + 2 : 1] is 67 when argc == 1  -- only without
+
+  view.tag is 90 when argc > 99      -- a FIELD store, never taken
+  t is view.tag
+  ensure t == 65                     -- so byte 0 is still 'A'
+
+  terminal is already linux.file (descriptor is 1)
+  terminal.write (buffer is buf, count is 3)
+end

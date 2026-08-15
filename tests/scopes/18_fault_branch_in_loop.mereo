@@ -1,0 +1,25 @@
+include "markers.mereo"
+
+-- On iteration 1: adopt o (loop body), the likely road adopts h, then boom
+-- faults. The tower releases h, then o, then keep -- reverse. Expect: 101 103 104
+program (arguments) is
+  keep is adopted mark_d (descriptor is 104)
+  argc is arguments.count
+  i is argc - 1
+  -- 1 when run bare -- and unknowable at compile time, so the crossroad
+  -- survives into the binary instead of folding away. With a constant
+  -- guard the compiler decides the branch and the road stops being a
+  -- road, which is not what this scenario means to be testing.
+  serve goes
+    o is adopted mark_c (descriptor is 103)
+    pick likely goes
+      h is adopted mark_a (descriptor is 101)
+      h.boom
+    end
+    i is i + 1
+    repeat serve when i < 2
+  end
+  pick when i == 100 goes
+    c is adopted mark_b (descriptor is 102)
+  end
+end

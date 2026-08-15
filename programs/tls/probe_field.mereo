@@ -1,0 +1,46 @@
+include "../../linux.mereo"
+
+-- de-risk: a gf field op as a procedure method over 16-limb buffers (each limb
+-- a signed 8-byte word at [buf + i*8]). add: o[i] = a[i] + b[i].
+field is
+  add (o, a, b) is
+    i is 0
+    off is 0
+    va is 0
+    vb is 0
+    sum is 0
+    step goes
+      off is i * 8
+      va is [a + off : 8]
+      vb is [b + off : 8]
+      sum is va + vb
+      [o + off : 8] is sum
+      i is i + 1
+      repeat step when i < 16
+    end
+  end
+end
+
+program is
+  av is 128 bytes
+  bv is 128 bytes
+  res is 128 bytes
+  i is 0
+  off is 0
+
+  -- a[i] = i, b[i] = 1000
+  fill goes
+    off is i * 8
+    [av + off : 8] is i
+    [bv + off : 8] is 1000
+    i is i + 1
+    repeat fill when i < 16
+  end
+
+  field.add (o is res, a is av, b is bv)
+
+  -- res[5] must be 5 + 1000 = 1005
+  check is [res + 40 : 8]
+  ensure check == 1005
+
+end

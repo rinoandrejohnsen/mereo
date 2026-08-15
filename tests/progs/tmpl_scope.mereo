@@ -1,0 +1,48 @@
+include "../../linux.mereo"
+
+-- A TEMPLATE IS A SCOPE with the template's name. That gives it the two things
+-- every other scope has: an end to `leave` to, and a start to `repeat` to.
+--
+--   leave NAME    -- an early return, the guard clause a template could not write
+--   repeat NAME   -- "call it again", so a template is self-recursive in TAIL
+--                    position, lowered to a jump. What drives it must arrive
+--                    through a PORT: the body's locals are reset on every
+--                    restart, exactly as they are on every call.
+--
+--   ./tmpl_scope       ->  A5     (clamped to 0, then 1+2+3+4+5 = 15 -> 'A' + ...)
+clamp (v, sink) is
+  sink is 0
+  leave clamp when v < 0           -- early return
+  sink is v
+end
+
+sum_to (limit, total, i) is
+  scratch is 0                     -- a local: reset on every restart
+  scratch is i + 1
+  i is scratch
+  total is total + i
+  repeat sum_to when i < limit     -- a port drives it, so it terminates
+end
+
+program is
+  a is 0
+  b is 0
+  n is 0
+  acc is 0
+  cell is 2 bytes
+
+  clamp (v is 0 - 7, sink is a)
+  clamp (v is 4, sink is b)
+  ensure a == 0                    -- the early return left the default
+  ensure b == 4
+
+  sum_to (limit is 5, total is acc, i is n)
+  ensure acc == 15                 -- 1+2+3+4+5
+  ensure n == 5
+
+  [cell + 0 : 1] is 65 + b - 4     -- 'A'
+  [cell + 1 : 1] is 48 + n         -- '5'
+
+  terminal is already linux.file (descriptor is 1)
+  terminal.write (buffer is cell, count is 2)
+end

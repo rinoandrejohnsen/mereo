@@ -1,0 +1,39 @@
+include "../../linux.mereo"
+
+-- The twin of tmpl_alone.mereo, written the long way round: the same template
+-- inside a group, so the call site names the group as well. Same work, same
+-- instructions -- `same` in the suite compares the two .text sections.
+--
+-- The name must stay 10 characters -- see tmpl_alone.mereo.
+letters is
+  shout (area, length) is
+    i is 0
+    scan goes
+      c is [area + i]
+      lo is c >= 97
+      hi is c <= 122
+      drop is lo & hi
+      drop is drop * 32
+      c is c - drop
+      [area + i] is c
+      i is i + 1
+      repeat scan when i < length
+    end
+  end
+end
+
+program is
+  capacity is 4096
+  buffer is capacity bytes
+  count is 0
+
+  input is already linux.file (descriptor is 0)
+  output is already linux.file (descriptor is 1)
+
+  input.read (buffer is buffer, capacity is capacity, count is count)
+
+  letters.shout (area is buffer, length is count)
+
+  output.write (buffer is buffer, count is count)
+
+end

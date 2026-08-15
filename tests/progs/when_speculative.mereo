@@ -1,0 +1,23 @@
+include "../../linux.mereo"
+
+-- REJECTED on purpose: a conditional move computes BOTH arms, so `branchless`
+-- here would read through `p` before testing `p != 0` -- the guard would guard
+-- nothing. Without `branchless` the same line is fine: GCC will not speculate a
+-- load that could fault, so it emits the branch, and the branch is what makes
+-- the guard real.
+--
+-- The old forced-cmov path took the value as an ordinary asm input operand, so
+-- it computed the load unconditionally with nothing to say about it.
+program is
+  raw is 16 bytes
+  n is 0
+  p is 0
+  x is 0
+
+  input is already linux.file (descriptor is 0)
+  input.read (buffer is raw, capacity is 8, count is n)
+
+  p is [raw + 0 : 8]                     -- an address no compiler can know
+  x is [p + 0 : 1] when p != 0 branchless
+  ensure x >= 0
+end

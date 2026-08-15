@@ -1,0 +1,39 @@
+include "../../linux.mereo"
+
+-- A TEMPLATE STANDING ALONE -- declared at the top level, with no group around
+-- it, and called by its own name with no group to name either. The twin
+-- tmpl_group.mereo writes the same work inside a group; the suite asserts the
+-- two binaries are byte-identical, so the short form costs nothing.
+--
+-- The name must stay 10 characters -- an error record embeds the program name,
+-- so a longer one would shift the string and show up as a false difference.
+shout (area, length) is
+  i is 0
+  scan goes
+    c is [area + i]
+    lo is c >= 97
+    hi is c <= 122
+    drop is lo & hi
+    drop is drop * 32
+    c is c - drop                  -- the write reaches the CALLER's buffer:
+    [area + i] is c                -- a template is spliced, so there is no copy
+    i is i + 1
+    repeat scan when i < length
+  end
+end
+
+program is
+  capacity is 4096
+  buffer is capacity bytes
+  count is 0
+
+  input is already linux.file (descriptor is 0)
+  output is already linux.file (descriptor is 1)
+
+  input.read (buffer is buffer, capacity is capacity, count is count)
+
+  shout (area is buffer, length is count)
+
+  output.write (buffer is buffer, count is count)
+
+end

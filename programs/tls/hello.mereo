@@ -1,0 +1,23 @@
+include "client.mereo"
+
+program is
+  host is "localhost"
+  request is "GET / HTTP/1.0\r\nHost: localhost\r\n\r\n"
+  page is 16384 bytes
+  got is 0
+
+  terminal is already linux.file (descriptor is 1)
+
+  endpoint is linux.sockaddr_in (family is 2, port is 4443, address is 0x7f000001)
+
+  client.secure_fetch (address is endpoint,
+                       host is host,
+                       hostlen is 9,
+                       request is request,
+                       reqlen is 35,
+                       sink is page,
+                       received is got)
+
+  terminal.write (buffer is page, count is got)
+
+end

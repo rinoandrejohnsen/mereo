@@ -1,0 +1,30 @@
+include "../linux.mereo"
+
+-- abc: read a file to the terminal, using linux.mereo's `file` view
+-- (own one to open it, borrow fd 1 for the terminal).
+
+program is
+  buffer is 4096 bytes
+  count is 0
+
+  input is linux.file (
+    path is "lorem_ipsum.txt",
+    flags is 0,
+    mode is 0
+  )
+
+  output is already linux.file (
+    descriptor is 1
+  )
+
+  input.read (
+    buffer is buffer,
+    capacity is buffer.size,
+    count is count
+  )
+
+  output.write (
+    buffer is buffer,
+    count is count
+  )
+end

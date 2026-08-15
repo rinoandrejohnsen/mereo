@@ -1,0 +1,152 @@
+include "../../core.mereo"
+include "field.mereo"
+
+-- X25519(scalar, point) via the Montgomery ladder (crypto.h++). Writes the
+-- 32-byte shared secret to stdout. Test input = RFC 7748 s5.2.
+program is
+  z is 32 bytes
+  pt is 128 bytes
+  la is 128 bytes
+  lb is 128 bytes
+  lc is 128 bytes
+  ld is 128 bytes
+  le is 128 bytes
+  lf is 128 bytes
+  k1 is 128 bytes
+  sec is 32 bytes
+  scalar is 32 bytes
+  point is 32 bytes
+  written is 0
+  i is 0
+  byteidx is 0
+  bitidx is 0
+  zb is 0
+  r is 0
+  terminal is already linux.file (descriptor is 1)
+
+  [scalar + 0 : 1] is 165
+  [scalar + 1 : 1] is 70
+  [scalar + 2 : 1] is 227
+  [scalar + 3 : 1] is 107
+  [scalar + 4 : 1] is 240
+  [scalar + 5 : 1] is 82
+  [scalar + 6 : 1] is 124
+  [scalar + 7 : 1] is 157
+  [scalar + 8 : 1] is 59
+  [scalar + 9 : 1] is 22
+  [scalar + 10 : 1] is 21
+  [scalar + 11 : 1] is 75
+  [scalar + 12 : 1] is 130
+  [scalar + 13 : 1] is 70
+  [scalar + 14 : 1] is 94
+  [scalar + 15 : 1] is 221
+  [scalar + 16 : 1] is 98
+  [scalar + 17 : 1] is 20
+  [scalar + 18 : 1] is 76
+  [scalar + 19 : 1] is 10
+  [scalar + 20 : 1] is 193
+  [scalar + 21 : 1] is 252
+  [scalar + 22 : 1] is 90
+  [scalar + 23 : 1] is 24
+  [scalar + 24 : 1] is 80
+  [scalar + 25 : 1] is 106
+  [scalar + 26 : 1] is 34
+  [scalar + 27 : 1] is 68
+  [scalar + 28 : 1] is 186
+  [scalar + 29 : 1] is 68
+  [scalar + 30 : 1] is 154
+  [scalar + 31 : 1] is 196
+  [point + 0 : 1] is 230
+  [point + 1 : 1] is 219
+  [point + 2 : 1] is 104
+  [point + 3 : 1] is 103
+  [point + 4 : 1] is 88
+  [point + 5 : 1] is 48
+  [point + 6 : 1] is 48
+  [point + 7 : 1] is 219
+  [point + 8 : 1] is 53
+  [point + 9 : 1] is 148
+  [point + 10 : 1] is 193
+  [point + 11 : 1] is 164
+  [point + 12 : 1] is 36
+  [point + 13 : 1] is 177
+  [point + 14 : 1] is 95
+  [point + 15 : 1] is 124
+  [point + 16 : 1] is 114
+  [point + 17 : 1] is 102
+  [point + 18 : 1] is 36
+  [point + 19 : 1] is 236
+  [point + 20 : 1] is 38
+  [point + 21 : 1] is 179
+  [point + 22 : 1] is 53
+  [point + 23 : 1] is 59
+  [point + 24 : 1] is 16
+  [point + 25 : 1] is 169
+  [point + 26 : 1] is 3
+  [point + 27 : 1] is 166
+  [point + 28 : 1] is 208
+  [point + 29 : 1] is 171
+  [point + 30 : 1] is 28
+  [point + 31 : 1] is 76
+
+  text.copy (source is scalar, target is z, length is 32)
+  v is [z + 31 : 1]
+  v is v & 127
+  v is v | 64
+  [z + 31 : 1] is v
+  v is [z + 0 : 1]
+  v is v & 248
+  [z + 0 : 1] is v
+
+  field.unpack (o is pt, n is point)
+
+  field.dup (o is lb, a is pt)
+  field.blank (o is la)
+  field.blank (o is lc)
+  field.blank (o is ld)
+  [la + 0 : 8] is 1
+  [ld + 0 : 8] is 1
+  field.blank (o is k1)
+  [k1 + 0 : 8] is 56129
+  [k1 + 8 : 8] is 1
+
+  i is 254
+  ladder goes
+    byteidx is i >> 3
+    bitidx is i & 7
+    zb is [z + byteidx : 1]
+    r is zb >> bitidx
+    r is r & 1
+    field.swap (p is la, q is lb, bit is r)
+    field.swap (p is lc, q is ld, bit is r)
+    field.add (o is le, a is la, b is lc)
+    field.sub (o is la, a is la, b is lc)
+    field.add (o is lc, a is lb, b is ld)
+    field.sub (o is lb, a is lb, b is ld)
+    field.mul (o is ld, a is le, b is le)
+    field.mul (o is lf, a is la, b is la)
+    field.mul (o is la, a is lc, b is la)
+    field.mul (o is lc, a is lb, b is le)
+    field.add (o is le, a is la, b is lc)
+    field.sub (o is la, a is la, b is lc)
+    field.mul (o is lb, a is la, b is la)
+    field.sub (o is lc, a is ld, b is lf)
+    field.mul (o is la, a is lc, b is k1)
+    field.add (o is la, a is la, b is ld)
+    field.mul (o is lc, a is lc, b is la)
+    field.mul (o is la, a is ld, b is lf)
+    field.mul (o is ld, a is lb, b is pt)
+    field.mul (o is lb, a is le, b is le)
+    field.swap (p is la, q is lb, bit is r)
+    field.swap (p is lc, q is ld, bit is r)
+    i is i - 1
+    repeat ladder when i >= 0
+  end
+
+  field.invert (o is lc, a is lc)
+  field.mul (o is la, a is la, b is lc)
+  field.pack (o is sec, n is la)
+
+  terminal.write (buffer is sec, count is 32, written is written)
+
+end

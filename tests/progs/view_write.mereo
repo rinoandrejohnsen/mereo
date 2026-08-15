@@ -1,0 +1,35 @@
+include "../../linux.mereo"
+
+-- A BYTE layout whose template writes its own fields by bare name. Reading a
+-- field inside a template always worked (the name substitutes into an
+-- expression); writing one did not, because the substitution lands in the
+-- target of an assign, where a view access is not a scalar slot. The write is
+-- re-shaped into the store the program level would have emitted for that text.
+record is
+  tag is 1 bytes
+  span is 2 bytes as big
+
+  fill (a, b) is
+    tag is a                   -- a plain byte field
+    span is b                  -- ... and a big-endian one, so byte order holds
+  end
+end
+
+program is
+  buf is 8 bytes
+  h is buf as record
+  h.fill (a is 5,
+          b is 4660)           -- 0x1234, stored big-endian by the layout
+
+  t is h.tag
+  n is h.span
+  hi is [buf + 1 : 1]
+  ensure t == 5
+  ensure n == 4660
+  ensure hi == 18              -- 0x12 first -> the store kept network order
+
+  letter is 1 bytes
+  [letter : 1] is 64 + t
+  terminal is already linux.file (descriptor is 1)
+  terminal.write (buffer is letter, count is 1)
+end

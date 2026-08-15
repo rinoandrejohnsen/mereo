@@ -1,0 +1,23 @@
+include "../linux.mereo"
+
+-- or where -- alternative bindings demo. The primary path does not
+-- exist, so the construction falls back to the second candidate and the
+-- program prints it normally. Run it in a directory with neither file
+-- and the record names every candidate it tried.
+
+program is
+  capacity is 4096
+  buffer is capacity bytes
+  count is 0
+  written is 0
+
+  terminal is already linux.file (descriptor is 1)
+
+  file is linux.file (path is "missing.txt", flags is 0, mode is 0)
+  or (path is "lorem_ipsum.txt", flags is 0, mode is 0)
+
+  linux.file.read (buffer is buffer, capacity is capacity, count is count)
+
+  terminal.write (buffer is buffer, count is count, written is written)
+
+end

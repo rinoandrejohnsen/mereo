@@ -1,0 +1,13 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- A `builder` checks that the bytes fit BEFORE it writes them. The 39
+-- hand-written `text.copy` calls this replaces checked nothing: the copy would
+-- run, and the damage would show up somewhere else entirely.
+
+program is
+  room is 8 bytes
+  page is already builder (data is room, count is 0, limit is room.size)
+
+  page.add (source is "far too long for eight bytes", length is 28)
+end

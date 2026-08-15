@@ -1,0 +1,35 @@
+include "../../linux.mereo"
+
+-- `leave NAME` -- the other way out of a loop. `again when COND` tests at the
+-- bottom; `leave` gets out from the middle, which is the thing that had no
+-- spelling before.
+--
+-- Counts bytes up to the first 'x', or all of them if there is none.
+--
+--   printf abxde | ./loop_leave   ->  2
+--   printf abcde | ./loop_leave   ->  5
+--   printf xyz   | ./loop_leave   ->  0
+program is
+  capacity is 64
+  buffer is capacity bytes
+  count is 0
+  i is 0
+  c is 0
+  found is 0
+
+  input is already linux.file (descriptor is 0)
+  terminal is already linux.file (descriptor is 1)
+
+  input.read (buffer is buffer, capacity is capacity, count is count)
+
+  scan goes
+    c is [buffer + i : 1]
+    leave scan when c == 120           -- 'x'
+    found is found + 1
+    i is i + 1
+    repeat scan when i < count
+  end
+
+  [buffer + 0 : 1] is 48 + found
+  terminal.write (buffer is buffer, count is 1)
+end

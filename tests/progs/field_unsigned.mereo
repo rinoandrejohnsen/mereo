@@ -1,0 +1,38 @@
+include "../../linux.mereo"
+
+-- AN 8-BYTE FIELD'S READING IS HONOURED. At widths 1/2/4 the reading picks the
+-- extension instruction, so it is plainly load-bearing. At width 8 there is no
+-- extension to choose -- and `width_type` once concluded from that that the
+-- reading did not matter, mapping BOTH rows to `long`. So `as unsigned` was
+-- accepted and then contradicted: the field divided and shifted SIGNED.
+--
+-- It does matter. Extension is not the only thing signedness decides: `div` vs
+-- `idiv` and `shr` vs `sar` read the same bits and disagree about them. Both
+-- fields below hold the identical word; only the declared reading differs.
+pair is
+  u is 8 bytes as unsigned
+  s is 8 bytes as signed
+end
+
+program is
+  buf is 32 bytes
+  h is buf as pair
+
+  h.u is 0 - 8                   -- the same bits in both fields:
+  h.s is 0 - 8                   -- 0xFFFF_FFFF_FFFF_FFF8
+
+  qu is h.u / 4                  -- unsigned: (2^64 - 8) / 4, a huge positive
+  qs is h.s / 4                  -- signed:   -8 / 4
+  ensure qs == 0 - 2             -- `idiv` -- the signed reading
+  ensure qu > 0                  -- `div`  -- the unsigned reading
+
+  ru is h.u >> 2                 -- the same split for the shift
+  rs is h.s >> 2
+  ensure rs == 0 - 2             -- `sar`, dragging the sign bit down
+  ensure ru > 0                  -- `shr`, feeding zeros in
+
+  letter is 1 bytes
+  [letter : 1] is 85             -- 'U'
+  terminal is already linux.file (descriptor is 1)
+  terminal.write (buffer is letter, count is 1)
+end

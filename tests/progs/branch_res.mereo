@@ -1,0 +1,45 @@
+include "../../linux.mereo"
+
+-- BOTH roads of a crossroad own a real descriptor, so mereoraii can inject a
+-- failure at every syscall on each path. A road-local resource is released
+-- before the road rejoins the merge, and by the tower on any fault inside the
+-- road -- neither of which the scopes scenarios reached until scenarios 34-37,
+-- because every cold road there sat on a path that never ran.
+--
+-- The open goes through a template because a road body accepts `NAME is adopted
+-- CLASS where` but not a direct construction -- the planner handles one (this
+-- file is the proof), the road grammar just has no rule for it.
+--
+-- Which road ran is visible in the output: the cold one reads lorem_ipsum.txt
+-- ('L'), the hot one reads linux.mereo ('--').
+--
+--   ./branch_res      ->  L    (argc 1, the cold road)
+--   ./branch_res x    ->  --    (the hot road)
+peek (path, area, count) is
+  source is linux.file (path is path, flags is 0, mode is 0)
+
+  source.read (buffer is area, capacity is 1, count is count)
+end
+
+program (arguments) is
+  argc is arguments.count
+  cap is 64
+  buf is cap bytes
+  n is 0
+
+  terminal is already linux.file (descriptor is 1)
+
+  keep is linux.file (path is "lorem_ipsum.txt", flags is 0, mode is 0)  -- held across the crossroad
+
+  pick likely goes
+    peek (path is "linux.mereo", area is buf, count is n)  -- road-local: released at the merge
+  end
+
+  terminal.write (buffer is buf, count is n)
+
+  linux.exit
+
+  pick when argc == 1 goes
+    peek (path is "lorem_ipsum.txt", area is buf, count is n)  -- road-local: released before it rejoins
+  end
+end

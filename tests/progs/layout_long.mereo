@@ -1,0 +1,36 @@
+include "../../linux.mereo"
+
+-- THE LONG FORM: a backing, then a view laid over it. Its twin is
+-- layout_bare.mereo, which names the layout on its own and lets it own the
+-- block. Both write the same three fields and hand the same 24 bytes to the same
+-- syscall, so they must compile to the SAME CODE -- the suite compares their
+-- .text byte for byte.
+--
+-- The two file names must stay the SAME LENGTH: an error record embeds the
+-- program name (`layout_long: 1: write terminal: `), so a longer name is a
+-- longer string and one `mov $LEN,%edx` differs -- a diff that says nothing
+-- about codegen. `layout_long` and `layout_bare` are both 11.
+--
+-- The bare form's block is zero-filled, which the long form's is not; but every
+-- byte is overwritten before anything reads it, so that zeroing is dead and must
+-- cost nothing. It did cost 14 bytes once: the `= {0}` was emitted ABOVE the
+-- rt_sigaction prologue, whose "memory" clobber made the dead stores observable
+-- and pinned them. The prologue now goes first.
+structure is
+  a is 8 bytes
+  b is 8 bytes
+  c is 8 bytes
+end
+
+program is
+  buffer is 24 bytes
+  data is buffer as structure
+
+  data.a is 4702111234474983745         -- 'AAAAAAAA'
+  data.b is 4774451407313060418         -- 'BBBBBBBB'
+  data.c is 4846791580151137091         -- 'CCCCCCCC'
+
+  terminal is already linux.file (descriptor is 1)
+  written is 0
+  terminal.write (buffer is buffer, count is 24, written is written)
+end

@@ -1,0 +1,88 @@
+include "../linux.mereo"
+
+-- Server demo: bind a TCP socket, listen, then loop, accepting
+-- connections, reading what each client sends, and writing it to the
+-- terminal. `accept` hands back a new fd; `client is adopted connection`
+-- takes ownership, and because it is acquired inside the `serve goes` body
+-- it is closed at the end of every iteration -- the loop is liveness-neutral.
+-- The listening socket stays live across iterations; the tower closes it
+-- (and the current client) only if a syscall faults and the server exits.
+--
+-- The bind address is linux.mereo's `sockaddr_in` laid over 16 bytes -- the
+-- fields carry their own byte order, so there is no htons and no hex to check.
+
+connection is
+  descriptor is -1
+  status is 0
+
+  acquire (domain, type, protocol) is
+    linux.socket (domain is domain,
+                  type is type,
+                  protocol is protocol,
+                  descriptor is descriptor)
+  end
+
+  bind (address, length) is
+    linux.bind (descriptor is descriptor,
+                address is address,
+                length is length,
+                result is status)
+  end
+
+  listen (backlog) is
+    linux.listen (descriptor is descriptor,
+                  backlog is backlog,
+                  result is status)
+  end
+
+  accept (accepted) is
+    linux.accept (descriptor is descriptor,
+                  address is 0,
+                  length is 0,
+                  connection is accepted)
+  end
+
+  read (buffer, capacity, count) is
+    linux.read (descriptor is descriptor,
+                buffer is buffer,
+                capacity is capacity,
+                count is count)
+  end
+
+  release is
+    linux.close (descriptor is descriptor)
+  end
+end
+
+program is
+  capacity is 4096
+  buffer is capacity bytes
+  count is 0
+  peer is -1
+
+  host is 16 bytes
+  bound is host as linux.sockaddr_in
+  bound.family is 2                    -- AF_INET
+  bound.port is 12346                  -- `2 bytes as big` -- network order, free
+  bound.address is 2130706433          -- 127.0.0.1
+
+  terminal is already linux.file (descriptor is 1)
+
+  server is connection (domain is 2, type is 1, protocol is 0)
+
+  server.bind (address is host, length is host.size)
+
+  server.listen (backlog is 1)
+
+  serve goes
+    server.accept (accepted is peer)
+
+    client is adopted connection (descriptor is peer)
+
+    client.read (buffer is buffer, capacity is capacity, count is count)
+
+    terminal.write (buffer is buffer, count is count)
+
+    repeat serve
+  end
+end

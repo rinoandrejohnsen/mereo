@@ -1,0 +1,19 @@
+include "../../linux.mereo"
+
+program is
+  n is 0
+  written is 0
+  terminal is already linux.file (descriptor is 1)
+
+  serve goes
+    report likely goes
+      terminal.write (buffer is "L", count is 1, written is written)
+    end
+    n is n + 1
+    repeat serve when n < 3
+  end
+
+  report when n == 0 goes
+    terminal.write (buffer is "Z", count is 1, written is written)
+  end
+end

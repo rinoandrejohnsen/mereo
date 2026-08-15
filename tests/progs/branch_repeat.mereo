@@ -1,0 +1,20 @@
+include "../../linux.mereo"
+
+-- REFUSED: `repeat LABEL` where LABEL is a crossroad. A road has an end (the
+-- merge) but no start -- it is entered by the dispatch, not from its own top --
+-- so there is nothing for `repeat` to go back to. Re-testing the guards is a
+-- loop, and mereo already has one.
+program (arguments) is
+  n is arguments.count
+
+  pick likely goes
+    n is n + 1
+    repeat pick when n < 3
+  end
+
+  linux.exit
+
+  pick when n == 1 goes
+    n is 7
+  end
+end

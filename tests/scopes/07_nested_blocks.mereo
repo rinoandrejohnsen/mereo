@@ -1,0 +1,13 @@
+include "markers.mereo"
+
+-- Blocks nest: inner releases at its dedent, then outer, then keep at exit.
+-- Expect close(101) close(102) close(103).
+program is
+  keep is adopted mark_c (descriptor is 103)
+  scope
+    outer is adopted mark_b (descriptor is 102)
+    scope
+      inner is adopted mark_a (descriptor is 101)
+    end
+  end
+end

@@ -1,0 +1,20 @@
+include "markers.mereo"
+
+-- A GUARDED SCOPE -- `GUARD goes` -- is mereo's `if`: an anonymous scope with an
+-- entry condition. It is a scope like any other, so what it takes is released at
+-- its end, which is exactly what C++ does with an object declared in an `if`'s
+-- substatement (that substatement is a block scope even without braces).
+--
+-- The guard holds here (`n` is 1 on a bare run), so both markers open and close
+-- in reverse order at the block's end, before the program's own.
+-- Expect 101 102 103.
+program (arguments) is
+  keep is adopted mark_c (descriptor is 103)
+  n is arguments.count
+
+  n == 1 goes
+    c is adopted mark_b (descriptor is 102)
+    a is adopted mark_a (descriptor is 101)
+  end
+
+end

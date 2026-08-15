@@ -1,0 +1,358 @@
+include "../../linux.mereo"
+
+-- GF(2^255-19) field arithmetic, 16 limbs of radix 2^16 in signed 8-byte words
+-- ([buf + i*8 : 8]). A direct port of crypto.h++ detail:: (TweetNaCl). Each op is
+-- a procedure method (inlined); they call each other (mul->carry, sqr->mul,
+-- invert->sqr/mul), which the fixpoint procedure expander splices.
+
+field is
+
+  -- o = 0 (16 limbs)
+  blank (o) is
+    bi is 0
+    off is 0
+    step goes
+      off is bi * 8
+      [o + off : 8] is 0
+      bi is bi + 1
+      repeat step when bi < 16
+    end
+  end
+
+  -- o = a (16 limbs)
+  dup (o, a) is
+    di is 0
+    off is 0
+    v is 0
+    step goes
+      off is di * 8
+      v is [a + off : 8]
+      [o + off : 8] is v
+      di is di + 1
+      repeat step when di < 16
+    end
+  end
+
+  -- o[i] = a[i] + b[i]
+  add (o, a, b) is
+    i is 0
+    off is 0
+    va is 0
+    vb is 0
+    s is 0
+    step goes
+      off is i * 8
+      va is [a + off : 8]
+      vb is [b + off : 8]
+      s is va + vb
+      [o + off : 8] is s
+      i is i + 1
+      repeat step when i < 16
+    end
+  end
+
+  -- o[i] = a[i] - b[i]
+  sub (o, a, b) is
+    i is 0
+    off is 0
+    va is 0
+    vb is 0
+    s is 0
+    step goes
+      off is i * 8
+      va is [a + off : 8]
+      vb is [b + off : 8]
+      s is va - vb
+      [o + off : 8] is s
+      i is i + 1
+      repeat step when i < 16
+    end
+  end
+
+  -- constant-time conditional swap of p and q when bit==1 (mask = -bit)
+  swap (p, q, bit) is
+    c is 0
+    i is 0
+    off is 0
+    vp is 0
+    vq is 0
+    t is 0
+    c is 0 - bit
+    step goes
+      off is i * 8
+      vp is [p + off : 8]
+      vq is [q + off : 8]
+      t is vp ^ vq
+      t is t & c
+      vp is vp ^ t
+      vq is vq ^ t
+      [p + off : 8] is vp
+      [q + off : 8] is vq
+      i is i + 1
+      repeat step when i < 16
+    end
+  end
+
+  -- radix-2^16 carry: o[i]+=1<<16; c=o[i]>>16; o[(i+1)%16 or 0]+=c-1(+37c-1 at 15);
+  -- o[i]-=c<<16
+  carry (o) is
+    i is 0
+    off is 0
+    v is 0
+    cc is 0
+    lt is 0
+    eq is 0
+    idx is 0
+    ioff is 0
+    cm is 0
+    t1 is 0
+    term is 0
+    ov is 0
+    sh is 0
+    step goes
+      off is i * 8
+      v is [o + off : 8]
+      v is v + 65536
+      cc is v >> 16
+      lt is i < 15
+      idx is i + 1
+      idx is idx * lt
+      eq is i == 15
+      cm is cc - 1
+      t1 is 37 * cm
+      t1 is t1 * eq
+      term is cm + t1
+      ioff is idx * 8
+      ov is [o + ioff : 8]
+      ov is ov + term
+      [o + ioff : 8] is ov
+      sh is cc << 16
+      v is v - sh
+      [o + off : 8] is v
+      i is i + 1
+      repeat step when i < 16
+    end
+  end
+
+  -- o = a * b  (schoolbook 16x16, fold high half by 38, carry twice). Uses a
+  -- separate counter per loop; that was once required, because a bare `X is 0`
+  -- only declared and so never reset. It now assigns as well, so the counters
+  -- could be shared -- left as they are since the code is correct either way.
+  mul (o, a, b) is
+    t is 248 bytes
+    zi is 0
+    mi is 0
+    mj is 0
+    fi is 0
+    vi is 0
+    off is 0
+    aoff is 0
+    ai is 0
+    boff is 0
+    bj is 0
+    prod is 0
+    ij is 0
+    toff is 0
+    tv is 0
+    hi is 0
+    hioff is 0
+    thi is 0
+    added is 0
+    zero goes
+      off is zi * 8
+      [t + off : 8] is 0
+      zi is zi + 1
+      repeat zero when zi < 31
+    end
+    outer goes
+      aoff is mi * 8
+      ai is [a + aoff : 8]
+      mj is mj - mj
+      inner goes
+        boff is mj * 8
+        bj is [b + boff : 8]
+        prod is ai * bj
+        ij is mi + mj
+        toff is ij * 8
+        tv is [t + toff : 8]
+        tv is tv + prod
+        [t + toff : 8] is tv
+        mj is mj + 1
+        repeat inner when mj < 16
+      end
+      mi is mi + 1
+      repeat outer when mi < 16
+    end
+    fold goes
+      off is fi * 8
+      hi is fi + 16
+      hioff is hi * 8
+      thi is [t + hioff : 8]
+      added is 38 * thi
+      tv is [t + off : 8]
+      tv is tv + added
+      [t + off : 8] is tv
+      fi is fi + 1
+      repeat fold when fi < 15
+    end
+    move goes
+      off is vi * 8
+      tv is [t + off : 8]
+      [o + off : 8] is tv
+      vi is vi + 1
+      repeat move when vi < 16
+    end
+    field.carry (o is o)
+    field.carry (o is o)
+  end
+
+  -- (square = `mul field where o is X  a is Y  b is Y`; no separate op, since a
+  -- single-call method would be parsed as a delegate, not a procedure call)
+
+  -- o = a^(2^255-21) = 1/a. The TweetNaCl chain squares 254 times and multiplies
+  -- by a except at bit positions 2 and 4 -- unrolled here (no conditional call).
+  invert (o, a) is
+    c is 128 bytes
+    ci is 0
+    off is 0
+    v is 0
+    copy goes
+      off is ci * 8
+      v is [a + off : 8]
+      [c + off : 8] is v
+      ci is ci + 1
+      repeat copy when ci < 16
+    end
+    k is 253
+    chain goes
+      field.mul (o is c, a is c, b is c)
+      field.mul (o is c, a is c, b is a)
+      k is k - 1
+      repeat chain when k >= 5
+    end
+    field.mul (o is c, a is c, b is c)
+    field.mul (o is c, a is c, b is c)
+    field.mul (o is c, a is c, b is a)
+    field.mul (o is c, a is c, b is c)
+    field.mul (o is c, a is c, b is c)
+    field.mul (o is c, a is c, b is a)
+    field.mul (o is c, a is c, b is c)
+    field.mul (o is c, a is c, b is a)
+    ci is ci - ci
+    give goes
+      off is ci * 8
+      v is [c + off : 8]
+      [o + off : 8] is v
+      ci is ci + 1
+      repeat give when ci < 16
+    end
+  end
+
+  -- o (gf) from 32 little-endian bytes; clear the top bit of the last limb
+  unpack (o, n) is
+    ui is 0
+    off is 0
+    noff is 0
+    v is 0
+    step goes
+      off is ui * 8
+      noff is ui + ui
+      v is [n + noff : 2]
+      [o + off : 8] is v
+      ui is ui + 1
+      repeat step when ui < 16
+    end
+    v is [o + 120 : 8]
+    v is v & 32767
+    [o + 120 : 8] is v
+  end
+
+  -- 32 bytes from o (gf): freeze mod 2^255-19 (two conditional subtractions),
+  -- then emit little-endian.
+  pack (o, n) is
+    t is 128 bytes
+    m is 128 bytes
+    pi is 0
+    off is 0
+    v is 0
+    j is 0
+    t0 is 0
+    m0 is 0
+    ii is 0
+    poff is 0
+    mp is 0
+    borrow is 0
+    ti is 0
+    mi is 0
+    m14 is 0
+    t15 is 0
+    m15 is 0
+    b is 0
+    onemb is 0
+    fi is 0
+    ooff is 0
+    lo is 0
+    hi is 0
+    hioff is 0
+    copy goes
+      off is pi * 8
+      v is [n + off : 8]
+      [t + off : 8] is v
+      pi is pi + 1
+      repeat copy when pi < 16
+    end
+    field.carry (o is t)
+    field.carry (o is t)
+    field.carry (o is t)
+    round goes
+      t0 is [t + 0 : 8]
+      m0 is t0 - 65517
+      [m + 0 : 8] is m0
+      ii is 1
+      inner goes
+        off is ii * 8
+        poff is off - 8
+        mp is [m + poff : 8]
+        borrow is mp >> 16
+        borrow is borrow & 1
+        ti is [t + off : 8]
+        mi is ti - 65535
+        mi is mi - borrow
+        [m + off : 8] is mi
+        mp is mp & 65535
+        [m + poff : 8] is mp
+        ii is ii + 1
+        repeat inner when ii < 15
+      end
+      m14 is [m + 112 : 8]
+      borrow is m14 >> 16
+      borrow is borrow & 1
+      t15 is [t + 120 : 8]
+      m15 is t15 - 32767
+      m15 is m15 - borrow
+      [m + 120 : 8] is m15
+      b is m15 >> 16
+      b is b & 1
+      m14 is m14 & 65535
+      [m + 112 : 8] is m14
+      onemb is 1 - b
+      field.swap (p is t, q is m, bit is onemb)
+      j is j + 1
+      repeat round when j < 2
+    end
+    fi is 0
+    emit goes
+      off is fi * 8
+      ti is [t + off : 8]
+      lo is ti & 255
+      ooff is fi + fi
+      [o + ooff : 1] is lo
+      hi is ti >> 8
+      hi is hi & 255
+      hioff is ooff + 1
+      [o + hioff : 1] is hi
+      fi is fi + 1
+      repeat emit when fi < 16
+    end
+  end
+end

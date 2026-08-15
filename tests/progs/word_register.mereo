@@ -1,0 +1,48 @@
+include "../../linux.mereo"
+
+-- `N bytes in register` is a backing with no address: one word, reached by the
+-- same `[NAME + k : w]` a stack buffer takes, lowered to shift-and-mask. This
+-- program builds the same bytes both ways and asserts they agree, byte for byte
+-- and through every view -- so `in register` and `in stack` really do read alike.
+program is
+  mem is 8 bytes in stack
+  reg is 8 bytes in register
+
+  [mem + 0 : 1] is 72          -- 'H'
+  [reg + 0 : 1] is 72
+  [mem + 1 : 2] is 4660        -- 0x1234, little-endian
+  [reg + 1 : 2] is 4660
+  [mem + 3 : 2] as big is 4660  -- ... and the same bytes network order
+  [reg + 3 : 2] as big is 4660
+  [mem + 5 : 1] is 255         -- -1 read signed
+  [reg + 5 : 1] is 255
+
+  a is [mem + 0 : 1]
+  b is [reg + 0 : 1]
+  ensure a == b
+
+  c is [mem + 1 : 2]
+  d is [reg + 1 : 2]
+  ensure c == d
+  ensure d == 4660
+
+  e is [mem + 3 : 2] as big
+  f is [reg + 3 : 2] as big
+  ensure e == f
+  ensure f == 4660
+
+  g is [mem + 5 : 1] as signed
+  h is [reg + 5 : 1] as signed
+  ensure g == h
+  ensure h == 0 - 1
+
+  -- the whole word, and a byte the writes never touched
+  i is [mem + 7 : 1]
+  j is [reg + 7 : 1]
+  ensure i == j                -- a masked write leaves its neighbours alone
+
+  emit is 1 bytes
+  [emit : 1] is b
+  terminal is already linux.file (descriptor is 1)
+  terminal.write (buffer is emit, count is 1)
+end

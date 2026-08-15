@@ -1,0 +1,93 @@
+-- Coverage for what core.mereo's byte layer gained: last, upper, lower, the
+-- three ctype questions, and the hex pair. Every claim is an `ensure`, so
+-- reaching the end is the assertion; what it prints is only proof it ran.
+--
+--   prints:  8 ABC abc 1 1 1 ff 2a00 deadbeef 48656c6c6f 3735928559
+
+include "../../linux.mereo"
+include "../../core.mereo"
+
+program is
+  line is 128 bytes
+  work is 32 bytes
+  digest is constant bytes 0x48, 0x65, 0x6c, 0x6c, 0x6f
+  at is 0
+  n is 0
+  v is 0
+
+  screen is already linux.file (descriptor is 1)
+
+  -- last: the final slash of a path, where `find` gives the first
+  path is "/usr/lib/x"
+  text.last (data is path, length is 10, byte is 47, offset is at)
+  ensure at == 8
+  text.format (value is at, buffer is line, length is n)
+  screen.write (buffer is line, count is n)
+
+  -- ...and LENGTH when the byte is not there, exactly as `find` answers
+  text.last (data is path, length is 10, byte is 63, offset is at)
+  ensure at == 10
+
+  -- upper and lower, in place
+  text.copy (source is "abc", target is work, length is 3)
+  text.upper (data is work, length is 3)
+  ensure [work] == 65 & [work + 2] == 67
+  screen.write (buffer is " ", count is 1)
+  screen.write (buffer is work, count is 3)
+  text.lower (data is work, length is 3)
+  ensure [work] == 97 & [work + 2] == 99
+  screen.write (buffer is " ", count is 1)
+  screen.write (buffer is work, count is 3)
+
+  -- the ctype three
+  text.digit (byte is 53, result is v)
+  ensure v == 1
+  text.digit (byte is 65, result is n)
+  ensure n == 0
+  screen.write (buffer is " 1", count is 2)
+
+  text.space (byte is 9, result is v)
+  ensure v == 1
+  text.space (byte is 65, result is n)
+  ensure n == 0
+  screen.write (buffer is " 1", count is 2)
+
+  text.alpha (byte is 122, result is v)
+  ensure v == 1
+  text.alpha (byte is 53, result is n)
+  ensure n == 0
+  screen.write (buffer is " 1", count is 2)
+
+  -- hex, shortest form
+  text.hex (value is 255, buffer is line, length is n)
+  ensure n == 2
+  screen.write (buffer is " ", count is 1)
+  screen.write (buffer is line, count is n)
+
+  text.hex (value is 10752, buffer is line, length is n)
+  ensure n == 4
+  screen.write (buffer is " ", count is 1)
+  screen.write (buffer is line, count is n)
+
+  text.hex (value is 3735928559, buffer is line, length is n)
+  ensure n == 8
+  screen.write (buffer is " ", count is 1)
+  screen.write (buffer is line, count is n)
+
+  -- hexbytes keeps the leading zero of every byte, so a run lines up
+  text.hexbytes (data is digest, count is 5, buffer is line, length is n)
+  ensure n == 10
+  screen.write (buffer is " ", count is 1)
+  screen.write (buffer is line, count is n)
+
+  -- unhex is hex's inverse
+  text.unhex (data is "deadbeef", length is 8, value is v)
+  ensure v == 3735928559
+  text.unhex (data is "DEADBEEF", length is 8, value is n)
+  ensure n == 3735928559
+  text.format (value is v, buffer is line, length is n)
+  screen.write (buffer is " ", count is 1)
+  screen.write (buffer is line, count is n)
+
+  screen.write (buffer is "\n", count is 1)
+end

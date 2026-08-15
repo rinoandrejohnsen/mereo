@@ -1,0 +1,55 @@
+include "../../linux.mereo"
+
+-- `GUARD goes` -- a conditional scope, which is mereo's `if`. It is an anonymous
+-- scope with an entry condition, so everything else about it is already defined:
+-- it releases what it takes at its end, `leave` and `repeat` name the scopes
+-- around it, and it nests wherever a scope nests.
+--
+-- This one nests four deep on purpose -- a guarded scope inside a guarded scope
+-- inside a loop, plus one inside a template and one inside a crossroad road.
+--
+--   ./guarded_scope        ->  7    (argc 1: the road's guard holds)
+--   ./guarded_scope x      ->  1
+clamp (value) is
+  value > 5 goes
+    value is 5
+  end
+end
+
+program (arguments) is
+  argc is arguments.count
+  buf is 8 bytes
+  i is 0
+  k is 1
+  tally is 0
+
+  terminal is already linux.file (descriptor is 1)
+
+  scan goes
+    i == 3 goes
+      k > 0 goes
+        tally is tally + 1
+      end
+      leave scan                      -- out of the loop from inside two blocks
+    end
+    i is i + 1
+    repeat scan when i < 9
+  end
+
+  clamp (value is tally)              -- a guarded scope inside a template
+
+  pick likely goes
+    argc == 1 goes                    -- ...and inside a crossroad road
+      tally is tally + 6
+    end
+  end
+
+  [buf + 0 : 1] is 48 + tally
+  terminal.write (buffer is buf, count is 1)
+
+  linux.exit
+
+  pick when argc == 9 goes
+    tally is 0
+  end
+end

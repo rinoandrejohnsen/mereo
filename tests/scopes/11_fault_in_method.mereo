@@ -1,0 +1,22 @@
+include "markers.mereo"
+
+-- A fault while a method-local resource is live releases it, then the caller's.
+-- Expect close(101) close(100).
+worker is
+  descriptor is 0
+
+  run is
+    tmp is adopted mark_a (descriptor is 101)
+    g is 0
+    ensure g >= 1
+  end
+
+  release is
+    linux.close (descriptor is descriptor)
+  end
+end
+
+program is
+  w is adopted worker (descriptor is 100)
+  w.run
+end

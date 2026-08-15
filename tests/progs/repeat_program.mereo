@@ -1,0 +1,38 @@
+include "../../linux.mereo"
+
+-- `repeat program` -- back to the program's first step.
+--
+-- It was refused for a while on the grounds that a program has no start to go
+-- back to. It has one: the point after the entry views and the signal
+-- dispositions, which are settled once and are not part of what repeats. The
+-- label sits there, and only when something jumps to it.
+--
+-- The releases are the interesting half. `repeat program` cannot enter the
+-- release tower the way `leave program` does, because the tower ends at the
+-- exit and this has somewhere else to go -- so it releases inline, exactly as
+-- `repeat NAME` does for every other scope. The program's entry set is empty,
+-- so what it releases is everything live: the file below is opened and closed
+-- once per pass, and the descriptor is reused rather than leaked.
+--
+-- A scalar keeps its value across the jump, because a declaration is not a
+-- step. That is what lets the loop end.
+--
+--   prints:  LoremLoremLorem
+
+program is
+  buffer is 64 bytes
+  count is 0
+  i is 0
+
+  terminal is already linux.file (descriptor is 1)
+
+  source is linux.file (path is "lorem_ipsum.txt", flags is 0, mode is 0)
+
+  source.read (buffer is buffer, capacity is 5, count is count)
+
+  terminal.write (buffer is buffer, count is count)
+
+  i is i + 1
+
+  repeat program when i < 3
+end

@@ -1,0 +1,19 @@
+include "markers.mereo"
+
+-- A `scope` block INSIDE a loop body, each holding something. Two releases per
+-- pass, in two different ways: the block's at its dedent, the loop's at the
+-- bottom. Every other block scenario has the block at program or template level.
+-- Expect 101 103   101 103   104.
+program is
+  keep is adopted mark_d (descriptor is 104)
+  n is 0
+
+  serve goes
+    o is adopted mark_c (descriptor is 103)
+    scope
+      t is adopted mark_a (descriptor is 101)
+    end
+    n is n + 1
+    repeat serve when n < 2
+  end
+end

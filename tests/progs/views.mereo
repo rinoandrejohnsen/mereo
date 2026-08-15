@@ -1,0 +1,135 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- Every method of `span` and `builder`, each with an answer that is wrong in a
+-- visible way if the method is. The program prints one line per group and the
+-- black-box suite pins the whole of it, so a change to either view that alters
+-- an answer fails here rather than in whatever program noticed first.
+
+program is
+  room is 512 bytes
+  page is already builder (data is room, count is 0, limit is room.size)
+
+  line is "hello world hello"
+  v is already span (data is line, length is 17)
+
+  n is 0
+  b is 0
+  r is 0
+
+  -- find / last / search: the offset, or `length` when absent
+  v.find (byte is 32, offset is n)
+  page.number (value is n)                 -- 5
+  page.byte (value is 32)
+  v.last (byte is 32, offset is n)
+  page.number (value is n)                 -- 11
+  page.byte (value is 32)
+  v.find (byte is 122, offset is n)
+  page.number (value is n)                 -- 17: absent answers `length`
+  page.byte (value is 32)
+  v.search (needle is "world", needle_length is 5, offset is n)
+  page.number (value is n)                 -- 6
+  page.byte (value is 32)
+  v.search (needle is "zebra", needle_length is 5, offset is n)
+  page.number (value is n)                 -- 17: absent again
+  page.byte (value is 10)
+
+  -- at: bounds-checked indexing
+  v.at (offset is 0, byte is b)
+  page.number (value is b)                 -- 104 'h'
+  page.byte (value is 32)
+  v.at (offset is 16, byte is b)
+  page.number (value is b)                 -- 111 'o', the last byte
+  page.byte (value is 10)
+
+  -- equals / starts / ends, including the short cases that must not read past
+  v.equals (other is "hello world hello", other_length is 17, result is r)
+  page.number (value is r)                 -- 1
+  v.equals (other is "hello", other_length is 5, result is r)
+  page.number (value is r)                 -- 0: lengths differ
+  v.starts (other is "hello", other_length is 5, result is r)
+  page.number (value is r)                 -- 1
+  v.starts (other is "world", other_length is 5, result is r)
+  page.number (value is r)                 -- 0
+  v.ends (other is "hello", other_length is 5, result is r)
+  page.number (value is r)                 -- 1
+  v.ends (other is "hello world hello and more", other_length is 26, result is r)
+  page.number (value is r)                 -- 0: longer than the view
+  page.byte (value is 10)
+
+  -- skip / trim, both clamped
+  v.skip (count is 6)
+  page.add (source is v.data, length is v.length)   -- world hello
+  page.byte (value is 10)
+  v.trim (count is 6)
+  page.add (source is v.data, length is v.length)   -- world
+  page.byte (value is 10)
+  v.skip (count is 999)                             -- clamps to empty
+  page.number (value is v.length)                   -- 0
+  page.byte (value is 10)
+
+  -- take: `first(n)`, on a fresh view of the first 11 bytes ("hello world").
+  -- Taking 5 must give the same bytes trimming 6 would, which is the whole
+  -- claim that it is `trim`'s complement.
+  w is already span (data is line, length is 11)
+  w.take (count is 5)
+  page.add (source is w.data, length is w.length)   -- hello
+  page.byte (value is 32)
+  w.take (count is 999)                             -- clamps: keeps what is left
+  page.add (source is w.data, length is w.length)   -- hello
+  page.byte (value is 32)
+  w.take (count is 0)                               -- ...and 0 keeps nothing
+  page.number (value is w.length)                   -- 0
+  page.byte (value is 32)
+  t is already span (data is line, length is 11)
+  t.trim (count is 6)                               -- the complement, asserted
+  page.add (source is t.data, length is t.length)   -- hello
+  page.byte (value is 10)
+
+  -- until: narrow to what comes before a byte -- `find` and `take` fused.
+  -- `until (byte is 0)` is the GSL's czstring, with the view's own length as
+  -- the bound the GSL does not carry.
+  zterm is 9 bytes
+  text.copy (source is "abc", target is zterm, length is 3)
+  [zterm + 3 : 1] is 0                              -- the terminator
+  text.copy (source is "defgh", target is zterm + 4, length is 5)
+  z is already span (data is zterm, length is 9)
+  z.until (byte is 0)
+  page.add (source is z.data, length is z.length)   -- abc
+  page.byte (value is 32)
+  page.number (value is z.length)                   -- 3
+  page.byte (value is 32)
+  u is already span (data is line, length is 11)
+  u.until (byte is 0)                               -- no NUL inside the bound
+  page.number (value is u.length)                   -- 11: left alone
+  page.byte (value is 10)
+
+  -- number over a view, and the builder's own formatting
+  digits is "  -4096rest"
+  d is already span (data is digits, length is 11)
+  d.number (value is n)
+  page.number (value is n)                 -- -4096: spaces and sign handled
+  page.byte (value is 32)
+  page.hex (value is 48879)                -- beef
+  page.byte (value is 32)
+  page.pad (value is 46, times is 3)       -- ...
+  page.byte (value is 10)
+
+  -- the scan loop the two views exist for: split on a byte, no hand offsets
+  text is "alpha:beta:gamma"
+  rest is already span (data is text, length is 16)
+  fields goes
+    leave fields when rest.length == 0
+    rest.find (byte is 58, offset is n)
+    part is already span (data is rest.data, length is n)
+    page.byte (value is 91)                -- [
+    page.add (source is part.data, length is part.length)
+    page.byte (value is 93)                -- ]
+    rest.skip (count is n + 1)
+    repeat fields
+  end
+  page.byte (value is 10)
+
+  terminal is already linux.file (descriptor is 1)
+  terminal.write (buffer is page.data, count is page.count)
+end

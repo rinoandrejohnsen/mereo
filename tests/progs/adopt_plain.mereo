@@ -1,0 +1,81 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- Values handed to `already` must be STORED, whether or not the definition
+-- happens to carry a method.
+--
+-- They were not. The wiring that turns `field is VALUE` into a store sat under
+-- `if defn["methods"]`, so a layout or flag view with no methods took every
+-- value in SILENCE: the block stayed zero, the adopt step emitted nothing, and
+-- the program read back 0 with no diagnostic anywhere. Adding an unused method
+-- made the same code work, which is not a rule anyone could have guessed.
+--
+-- A flag view was worse in a different way: it DID emit a store, as a plain
+-- cell assignment (`m_echo = 1`) to a name that was never declared, so the
+-- generated C would not compile. A flag view is a word whose bits are named, so
+-- the store has to be the masked read-modify-write `m.echo is 1` already uses.
+--
+-- Both shapes are checked here, with and without a method, because the method
+-- is exactly what used to make the difference.
+
+plain is
+  small is 2 bytes
+  wide is 8 bytes
+end
+
+withmethod is
+  small is 2 bytes
+  wide is 8 bytes
+
+  total (result) is
+    r is small + wide
+    result is r
+  end
+end
+
+flags is
+  echo is bit 3
+  level is bits 1 to 2
+end
+
+flags_withmethod is
+  echo is bit 3
+  level is bits 1 to 2
+
+  lit (result) is
+    r is echo
+    result is r
+  end
+end
+
+program is
+  room is 128 bytes
+  page is already builder (data is room, count is 0, limit is 128)
+
+  a is already plain (small is 1000, wide is 70000)
+  b is already withmethod (small is 1000, wide is 70000)
+  c is already flags (echo is 1, level is 2)
+  d is already flags_withmethod (echo is 1, level is 2)
+
+  t is 0
+
+  page.number (value is a.small)      -- 1000
+  page.byte (value is 32)
+  page.number (value is a.wide)       -- 70000
+  page.byte (value is 32)
+  page.number (value is b.small)      -- 1000
+  page.byte (value is 32)
+  b.total (result is t)
+  page.number (value is t)            -- 71000
+  page.byte (value is 32)
+  page.number (value is c.echo)       -- 1
+  page.byte (value is 32)
+  page.number (value is c.level)      -- 2
+  page.byte (value is 32)
+  d.lit (result is t)
+  page.number (value is t)            -- 1
+  page.byte (value is 10)
+
+  terminal is already linux.file (descriptor is 1)
+  terminal.write (buffer is page.data, count is page.count)
+end

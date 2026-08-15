@@ -1,0 +1,35 @@
+include "../../linux.mereo"
+
+-- `NAME goes` is a SCOPE. A loop is the case whose body ends by repeating; a
+-- scope that never repeats is a named block with an end to leave to.
+--
+-- This replaces a test that asserted "a loop body must end with `repeat`" --
+-- that rule is gone, because it was the only thing making a scope and a loop
+-- two constructs instead of one.
+--
+--   ./scope_named      ->  =    (leaves `setup` early: 10 + 3)
+--   ./scope_named x    ->  G    (runs it through:      20 + 3)
+program (arguments) is
+  argc is arguments.count
+  i is 0
+  n is 0
+  cell is 1 bytes
+
+  terminal is already linux.file (descriptor is 1)
+
+  setup goes                       -- a named scope: no repeat, just an end
+    n is 10
+    leave setup when argc == 1
+    n is 20
+  end
+
+  scan goes                        -- a TOP-tested loop -- zero passes sayable
+    leave scan when i >= 3
+    n is n + 1
+    i is i + 1
+    repeat scan
+  end
+
+  [cell : 1] is 48 + n
+  terminal.write (buffer is cell, count is 1)
+end

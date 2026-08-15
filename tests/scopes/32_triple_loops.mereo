@@ -1,0 +1,29 @@
+include "markers.mereo"
+
+-- Three loops deep, one resource per level. 15_nested_loops_raii goes two deep;
+-- this checks the tower keeps a floor per level rather than per loop-or-not.
+-- 2 x 2 x 2. Expect (103 103 102) x2 then 101, twice, then 104.
+program is
+  keep is adopted mark_d (descriptor is 104)
+  i is 0
+  j is 0
+  k is 0
+
+  a goes
+    x is adopted mark_a (descriptor is 101)
+    j is 0
+    b goes
+      y is adopted mark_b (descriptor is 102)
+      k is 0
+      c goes
+        z is adopted mark_c (descriptor is 103)
+        k is k + 1
+        repeat c when k < 2
+      end
+      j is j + 1
+      repeat b when j < 2
+    end
+    i is i + 1
+    repeat a when i < 2
+  end
+end

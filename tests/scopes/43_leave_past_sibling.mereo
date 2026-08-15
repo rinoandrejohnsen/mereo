@@ -1,0 +1,30 @@
+include "markers.mereo"
+
+-- `leave program` when a SIBLING scope has already run and closed its own.
+--
+-- The tower is ordered by acquisition, so `release_a` sits physically BETWEEN
+-- `release_b` and `release_keep`. But `a` is already gone -- `before` closed it
+-- at its own end -- so falling straight through would close it twice. The floor
+-- for `b` chains to its ENCLOSING floor rather than the next one down:
+--
+--   release_b:  close b;  goto release_keep;     <- over release_a
+--
+-- which is "clean up my own, then hand off to my parent" written out.
+--
+-- `late` is acquired AFTER the leaving scope, so on this path it never exists.
+-- argc is 1, so it leaves. Expect 101 102 104 -- 101 exactly once, no 103.
+program (arguments) is
+  n is arguments.count
+  keep is adopted mark_d (descriptor is 104)
+
+  before goes                        -- the sibling: acquires and closes first
+    a is adopted mark_a (descriptor is 101)
+  end
+
+  here goes                          -- the one that leaves
+    b is adopted mark_b (descriptor is 102)
+    leave program when n == 1
+  end
+
+  late is adopted mark_c (descriptor is 103)  -- never reached on the leaving path
+end

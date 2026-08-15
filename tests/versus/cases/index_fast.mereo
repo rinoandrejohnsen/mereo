@@ -1,0 +1,36 @@
+include "../../../linux.mereo"
+include "../../../core.mereo"
+
+-- The FAST way to index: straight through the address, no bounds check, the
+-- programmer holding the invariant. C++ spells it `v[i]`; mereo spells it
+-- `[v.data + i]`. This case asks whether mereo's fast path is as fast as C's.
+
+program is
+  block is 4096 bytes
+  word is 8 bytes
+  total is 0
+  i is 0
+  b is 0
+  count is 0
+
+  input is already linux.file (descriptor is 0)
+
+  terminal is already linux.file (descriptor is 1)
+
+  input.read (buffer is block, capacity is 4096, count is count)
+
+  v is already span (data is block, length is count)
+
+  step goes
+    leave step when i >= 4000
+    b is [v.data + i]
+    total is total + b
+    i is i + 1
+    repeat step
+  end
+
+  [word : 8] is total
+
+  terminal.write (buffer is word, count is 8)
+
+end

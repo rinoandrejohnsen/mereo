@@ -1,0 +1,24 @@
+include "markers.mereo"
+
+-- Branch in a loop: the likely road adopts `h`, released at the merge each of 3
+-- iterations; keep at exit. when-road (m=5, never 0) not taken.
+-- Expect: 101 101 101 104
+program (arguments) is
+  keep is adopted mark_d (descriptor is 104)
+  i is 0
+  m is arguments.count
+  -- 1 when run bare -- and unknowable at compile time, so the crossroad
+  -- survives into the binary instead of folding away. With a constant
+  -- guard the compiler decides the branch and the road stops being a
+  -- road, which is not what this scenario means to be testing.
+  serve goes
+    pick likely goes
+      h is adopted mark_a (descriptor is 101)
+    end
+    i is i + 1
+    repeat serve when i < 3
+  end
+  pick when m == 0 goes
+    c is adopted mark_b (descriptor is 102)
+  end
+end

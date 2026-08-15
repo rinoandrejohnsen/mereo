@@ -1,0 +1,37 @@
+scope_a_start:
+  open resource_a
+  ...
+
+  scope_b_start:
+    open resource_b
+    ...
+
+    if x goto close_resource_b_and_a_goto_scope_a_start # repeat scope_a
+
+    if y goto scope_b_end # leave scope_b
+
+    if z goto close_resource_b_goto_scope_a_end # leave scope_a
+
+    ...
+
+  scope_b_end:
+
+  close resource_b
+  ...
+
+scope_a_end:
+
+close resource_a
+
+exit # halt program
+
+close_resource_b_and_a_goto_scope_a_start {
+  close resource_b
+  close resource_a
+  goto scope_a_start
+}
+
+close_resource_b_goto_scope_a_end {
+  close resource_b
+  goto scope_a_end
+}

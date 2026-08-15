@@ -1,0 +1,19 @@
+include "../../linux.mereo"
+
+-- REJECTED on purpose. A template is spliced, not called, so a `leave` naming a
+-- loop the template does not open would jump out of whatever program used it --
+-- and bind to that program's loop by name alone, which no renaming can make
+-- hygienic. The template must leave a loop it opens itself, or hand the decision
+-- back through a port.
+bail (v) is
+  leave serve when v > 2
+end
+
+program is
+  i is 0
+  serve goes
+    bail (v is i)
+    i is i + 1
+    repeat serve when i < 5
+  end
+end

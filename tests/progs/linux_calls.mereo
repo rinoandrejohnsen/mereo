@@ -1,0 +1,197 @@
+-- Coverage for everything linux.mereo gained beyond the original 21 syscalls.
+-- Not a demonstration -- examples/ls.mereo and examples/stat.mereo are that --
+-- but a program that CALLS each one, so no declaration ships unexercised.
+--
+-- There are almost no explicit checks below, and that is the point: every one
+-- of these steps carries an `ensure` from its primitive, so a wrong syscall
+-- number, a swapped register or a bad argument fails the step, releases what is
+-- open, prints the stage, and exits non-zero. Reaching the end IS the assertion.
+-- Where a value is worth pinning down rather than merely obtaining, there is an
+-- `ensure` of its own.
+--
+-- It works in /tmp/mereo_linux_calls, and every path after `enter` is RELATIVE,
+-- so each one silently re-checks that the chdir happened.
+--
+--   prints:  linux ok
+
+include "../../linux.mereo"
+include "../../core.mereo"
+
+program is
+  meta is 256 bytes
+  block is 4096 bytes
+  utsname is 400 bytes
+  started is 16 bytes
+  ended is 16 bytes
+  nap is 16 bytes
+  slot is 8 bytes
+  pair is 8 bytes
+  count is 0
+  n is 0
+  uid is 0
+  euid is 0
+  pid is 0
+  ready is 0
+  written is 0
+
+  info is meta as linux.file_status
+  before is started as linux.timespec
+  after is ended as linux.timespec
+  naptime is nap as linux.timespec
+  watched is slot as linux.poll_entry
+
+  output is already linux.file (descriptor is 1)
+
+  -- ---- leftovers from an earlier run, if any. Each `or continue` says the
+  -- ---- absence is fine; without them a second run would fail at the mkdir.
+  linux.files.remove (name is "/tmp/mereo_linux_calls/sample", flags is 0)
+  or continue (result is 0)
+
+  linux.files.remove (name is "/tmp/mereo_linux_calls/renamed", flags is 0)
+  or continue (result is 0)
+
+  linux.files.remove (name is "/tmp/mereo_linux_calls/pointer", flags is 0)
+  or continue (result is 0)
+
+  linux.files.remove (name is "/tmp/mereo_linux_calls",
+                flags is 512)          -- AT_REMOVEDIR
+  or continue (result is 0)
+
+  -- ---- mkdirat, chdir
+  linux.files.make_directory (name is "/tmp/mereo_linux_calls",
+                        mode is 493)   -- 0755
+
+  linux.files.enter (name is "/tmp/mereo_linux_calls")
+
+  -- ---- openat via `file`, then fstat through the descriptor
+  hold goes
+    sample is linux.file (path is "sample",
+                    flags is 577,      -- O_WRONLY | O_CREAT | O_TRUNC
+                    mode is 420)       -- 0644
+
+    sample.write (buffer is "hello\n", count is 6, written is written)
+
+    sample.status (buffer is meta, mask is 2047)
+    ensure info.length == 6            -- fstat saw the six bytes just written
+  end
+
+  -- ---- symlinkat, readlinkat
+  linux.files.make_symlink (target is "sample", name is "pointer")
+
+  linux.files.read_link (name is "pointer",
+                   buffer is block,
+                   capacity is block.size,
+                   count is count)
+  ensure count == 6                    -- "sample", and readlinkat does not terminate
+
+  -- ---- statx on the link ITSELF rather than what it points at
+  linux.files.inspect (name is "pointer",
+                 buffer is meta,
+                 mask is 2047,
+                 flags is 256)         -- AT_SYMLINK_NOFOLLOW
+  ensure info.length == 6              -- a symlink's size is its text's length
+
+  -- ---- fchmodat, then statx to see it took
+  linux.files.permit (name is "sample",
+                mode is 384)           -- 0600
+
+  linux.files.inspect (name is "sample", buffer is meta, mask is 2047, flags is 0)
+  n is info.mode
+  n is n & 511
+  ensure n == 384
+
+  -- ---- faccessat2: readable, and NOT executable
+  linux.files.reachable (name is "sample",
+                   mode is 6)          -- read | write
+
+  linux.files.reachable (name is "sample",
+                   mode is 1,          -- execute -- must fail, and be repaired
+                   result is n)
+  or continue (result is -1)
+  ensure n == -1
+
+  -- ---- renameat2
+  linux.files.rename (name is "sample", new_name is "renamed", flags is 0)
+
+  linux.files.inspect (name is "renamed", buffer is meta, mask is 2047, flags is 0)
+  ensure info.length == 6
+
+  -- ---- linkat, then unlinkat both names
+  linux.files.make_link (name is "renamed", new_name is "sample")
+
+  linux.files.inspect (name is "renamed", buffer is meta, mask is 2047, flags is 0)
+  ensure info.links == 2               -- two names now share the inode
+
+  -- ---- getdents64 over the directory just built
+  n is 0
+  walk goes
+    folder is linux.directory (path is ".")
+    folder.read (buffer is block, capacity is block.size, count is count)
+    n is count
+  end
+  ensure n > 0
+
+  -- ---- clock_gettime, twice, and nanosleep between them
+  linux.clock.elapsed (buffer is started)
+
+  naptime.seconds is 0
+  naptime.nanoseconds is 2000000          -- 2 ms
+  linux.clock.wait (request is nap, remain is 0)
+
+  linux.clock.elapsed (buffer is ended)
+  ensure after.seconds >= before.seconds
+
+  linux.clock.now (buffer is started)
+  ensure before.seconds > 1700000000       -- a plausible wall clock, in 2023+
+
+  -- ---- pipe2, dup3 and ppoll, together: write a byte, poll for it, read it
+  plumbing goes
+    linux.channel.make (pair is pair, flags is 0)
+
+    head is [pair + 0 : 4] as signed
+    tail is [pair + 4 : 4] as signed
+    sink is adopted linux.file (descriptor is tail)
+    source is adopted linux.file (descriptor is head)
+
+    sink.write (buffer is "x", count is 1, written is written)
+
+    watched.descriptor is head
+    watched.events is 1                -- POLLIN
+    watched.revents is 0
+    source.watch (entries is slot,
+                  count is 1,
+                  timeout is 0,        -- ...wait as long as it takes
+                  ready is ready)
+    ensure ready == 1
+    ensure watched.revents == 1        -- POLLIN came back, not POLLERR/POLLHUP
+
+    source.read (buffer is block, capacity is 1, count is count)
+    ensure count == 1
+
+    -- dup3 the pipe's write end over descriptor 9, then close it by hand
+    sink.redirect (target is 9)
+    spare is adopted linux.file (descriptor is 9)
+  end
+
+  -- ---- uname, getuid, getpid
+  linux.identity.machine (buffer is utsname)
+
+  sysname is already span (data is utsname, length is 65)
+  sysname.until (byte is 0)            -- utsname's first field, up to its NUL
+  ensure sysname.length > 0            -- sysname is a non-empty string
+
+  linux.identity.real (uid is uid)
+  linux.identity.user (euid is euid)
+  linux.identity.process_id (pid is pid)
+  ensure pid > 1
+
+  -- ---- and clean up after ourselves
+  linux.files.remove (name is "renamed", flags is 0)
+  linux.files.remove (name is "sample", flags is 0)
+  linux.files.remove (name is "pointer", flags is 0)
+  linux.files.enter (name is "/tmp")
+  linux.files.remove (name is "/tmp/mereo_linux_calls", flags is 512)
+
+  output.write (buffer is "linux ok\n", count is 9, written is written)
+
+end

@@ -1,0 +1,24 @@
+include "../../linux.mereo"
+
+-- A LAYOUT that also carries a template working on its own fields. The four
+-- programs view_* each build one of the four shapes such an instance can take,
+-- and print chr(64 + value) so a wrong value shows up in stdout, not just exit.
+record is
+  tag is 1 bytes
+  total (sink) is
+    sink is tag
+  end
+end
+
+-- 2. STATE GIVEN: not laid over anything -- the fields are handed to it.
+program is
+  h is already record (tag is 5)
+  n is 0
+  h.total (sink is n)
+  ensure n == 5
+
+  letter is 1 bytes
+  [letter : 1] is 64 + n
+  terminal is already linux.file (descriptor is 1)
+  terminal.write (buffer is letter, count is 1)
+end

@@ -1,0 +1,44 @@
+include "../../linux.mereo"
+
+-- A VIEW OVER A REGISTER BACKING. `in register` is a backing property -- where
+-- the bits are -- so a view lays over one exactly as it lays over a buffer, with
+-- `as`. Its fields become slices of the word instead of cells in memory.
+record is
+  tag is 1 bytes
+  span is 2 bytes
+
+  bump (sink) is               -- a template over its own fields, as ever
+    tag is tag + 1
+    sink is tag
+  end
+end
+
+mode is
+  echo is bit 3                -- ... and bits, one grain down
+  raw is bit 1
+end
+
+program is
+  w is 8 bytes in register
+  r is w + 1 as record         -- at an offset into the word
+  f is w + 6 as mode
+
+  r.tag is 64
+  r.span is 4660               -- 0x1234
+  f.echo is 1
+  f.raw is 0
+
+  n is 0
+  r.bump (sink is n)
+  ensure n == 65               -- the template's write landed in the word
+
+  ensure r.span == 4660        -- the neighbouring field is untouched
+  ensure f.echo == 1
+  ensure f.raw == 0
+  ensure [w + 1 : 1] == 65     -- ... and the raw slice agrees with the view
+
+  emit is 1 bytes
+  [emit : 1] is r.tag
+  terminal is already linux.file (descriptor is 1)
+  terminal.write (buffer is emit, count is 1)
+end

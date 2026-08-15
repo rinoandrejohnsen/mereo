@@ -1,0 +1,65 @@
+include "../linux.mereo"
+
+-- Socket demo: connect a TCP socket to a local server, read the bytes it
+-- sends, and write them to the terminal. `connection` is a resource whose
+-- lifecycle is socket() to open and close() to release; `reach` runs
+-- connect(). Everything is a file descriptor, so once connected we read()
+-- it like any file.
+--
+-- The peer address is linux.mereo's `sockaddr_in` laid over 16 bytes. It used to
+-- be spelled out as a hex string, with a comment explaining which fields were
+-- network order -- the layout says that instead, and says it in one place.
+
+connection is
+  descriptor is -1
+  status is 0
+
+  acquire (domain, type, protocol) is
+    linux.socket (domain is domain,
+                  type is type,
+                  protocol is protocol,
+                  descriptor is descriptor)
+  end
+
+  reach (address, length) is
+    linux.connect (descriptor is descriptor,
+                   address is address,
+                   length is length,
+                   result is status)
+  end
+
+  read (buffer, capacity, count) is
+    linux.read (descriptor is descriptor,
+                buffer is buffer,
+                capacity is capacity,
+                count is count)
+  end
+
+  release is
+    linux.close (descriptor is descriptor)
+  end
+end
+
+program is
+  capacity is 4096
+  buffer is capacity bytes
+  count is 0
+  written is 0
+
+  host is 16 bytes
+  peer is host as linux.sockaddr_in
+  peer.family is 2                     -- AF_INET
+  peer.port is 12345                   -- `2 bytes as big` -- network order, free
+  peer.address is 2130706433           -- 127.0.0.1
+
+  terminal is already linux.file (descriptor is 1)
+
+  link is connection (domain is 2, type is 1, protocol is 0)
+
+  link.reach (address is host, length is host.size)
+
+  link.read (buffer is buffer, capacity is capacity, count is count)
+
+  terminal.write (buffer is buffer, count is count, written is written)
+
+end

@@ -1,0 +1,30 @@
+-- when_or.mereo -- a conditional cascade with a per-cascade `branchless` marker.
+-- The first clause whose condition holds wins; if none do, my_number keeps its
+-- value (here 0). It lowers to `my_number = C1 ? V1 : C2 ? V2 : my_number`.
+--
+-- The trailing `branchless` forces a real cmov per clause even though the values
+-- are constants (GCC would otherwise branch on constant results). Reach for it
+-- only when the condition is UNPREDICTABLE -- there a misprediction costs far
+-- more than the move; on a well-predicted branch the move is pure overhead, so
+-- a plain cascade (no marker) is better and lets GCC choose.
+--
+--   ./when_or       -> 0    (argc 1: neither holds; my_number keeps 0)
+--   ./when_or a     -> 50   (argc 2: > 1)
+--   ./when_or a b   -> 40   (argc 3: > 2 wins, higher priority)
+include "../linux.mereo"
+include "../core.mereo"
+
+program (arguments) is
+  argument_count is arguments.count
+
+  my_number is 40 when argument_count > 2 or
+               50 when argument_count > 1 branchless
+
+  digits is 24 bytes
+  length is 0
+  text.format (value is my_number, buffer is digits, length is length)
+
+  sink is already linux.file (descriptor is 1)
+  sink.write (buffer is digits, count is length)
+  sink.write (buffer is "\n", count is 1)
+end

@@ -1,0 +1,15 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- `span.at` is `at()`, not `operator[]`: the bounds check is the whole reason to
+-- reach through a view rather than write `[v.data + i]`. Reading past the end
+-- must END the program with a record naming the step, not answer with whatever
+-- byte happened to follow.
+
+program is
+  line is "abc"
+  v is already span (data is line, length is 3)
+  b is 0
+
+  v.at (offset is 99, byte is b)
+end

@@ -1,0 +1,25 @@
+include "../../../linux.mereo"
+
+-- A counted loop and nothing else: the cost of a mereo SCOPE that repeats,
+-- against a C `for`. The result goes out as eight raw bytes deliberately --
+-- formatting it would compare two itoa implementations, which is a question
+-- about libraries, not about what a loop costs.
+
+program is
+  word is 8 bytes
+  total is 0
+  i is 1
+
+  terminal is already linux.file (descriptor is 1)
+
+  step goes
+    total is total + i * i
+    i is i + 1
+    repeat step when i <= 100
+  end
+
+  [word : 8] is total
+
+  terminal.write (buffer is word, count is 8)
+
+end

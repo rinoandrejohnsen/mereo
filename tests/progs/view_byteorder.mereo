@@ -1,0 +1,58 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- A field's BYTE ORDER belongs to the field, so every way of writing it must
+-- agree. There are three, and one of them did not:
+--
+--   h.length is V              a direct field store
+--   h.fill (v is V)            a template of the layout writing its own field
+--   already header (length is V)   a value handed in at construction
+--
+-- The third stored the value RAW, ignoring `as big`, and read back byte-
+-- reversed -- 4660 (0x1234) came out 13330 (0x3412) -- while the other two were
+-- correct. The lvalue helper takes the field's reading apart and drops the
+-- byte-order half, so the swap had to be applied to the value, which is where
+-- the ordinary store path applies it.
+--
+-- Checked two ways: the RAW BYTE at offset 1 must be 0x12 for the two store
+-- forms (most significant first is what big-endian means), and the constructed
+-- one must read back as the number that went in.
+--
+--   prints:  18 18 4660
+
+header is
+  tag is 1 bytes
+  length is 2 bytes as big
+
+  fill (v) is
+    length is v
+  end
+end
+
+program is
+  room is 32 bytes
+  stored is 8 bytes
+  templated is 8 bytes
+
+  page is already builder (data is room, count is 0, limit is 32)
+
+  by_store is stored as header
+  by_store.length is 4660
+
+  by_template is templated as header
+  by_template.fill (v is 4660)
+
+  by_construction is already header (tag is 0, length is 4660)
+
+  page.number (value is [stored + 1 : 1])
+  page.byte (value is 32)
+  page.number (value is [templated + 1 : 1])
+  page.byte (value is 32)
+  page.number (value is by_construction.length)
+  page.byte (value is 10)
+
+  terminal is already linux.file (descriptor is 1)
+
+  terminal.write (buffer is page.data, count is page.count)
+
+end

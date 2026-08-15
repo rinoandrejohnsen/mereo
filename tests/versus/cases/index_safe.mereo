@@ -1,0 +1,41 @@
+include "../../../linux.mereo"
+include "../../../core.mereo"
+
+-- The SAFE way to index: `span.at`, which checks the bound and fails into the
+-- release tower naming the step. C++ spells it `v.at(i)`.
+--
+-- The loop is bounded by `v.length` -- the SAME thing `at` checks against --
+-- and that is the whole trick: GCC then proves the check redundant and deletes
+-- it, so this compiles to what the unchecked form compiles to. Bound the loop
+-- by `count` instead and the check survives, because nothing ties that local to
+-- the span's length. See docs/fast-and-safe.md, which measures both.
+
+program is
+  block is 4096 bytes
+  word is 8 bytes
+  total is 0
+  i is 0
+  b is 0
+  count is 0
+
+  input is already linux.file (descriptor is 0)
+
+  terminal is already linux.file (descriptor is 1)
+
+  input.read (buffer is block, capacity is 4096, count is count)
+
+  v is already span (data is block, length is count)
+
+  step goes
+    leave step when i >= v.length
+    v.at (offset is i, byte is b)
+    total is total + b
+    i is i + 1
+    repeat step
+  end
+
+  [word : 8] is total
+
+  terminal.write (buffer is word, count is 8)
+
+end

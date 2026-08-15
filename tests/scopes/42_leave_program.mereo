@@ -1,0 +1,19 @@
+include "markers.mereo"
+
+-- The PROGRAM is a scope too, and the one whose release ladder already exists as
+-- the tower. So `leave program` ENTERS the tower at the floor for what is live
+-- here rather than emitting its own releases -- one jump, from two scopes deep.
+--
+-- argc is 1, so it leaves. Expect 102 101 103: inner, outer, then the program's.
+program (arguments) is
+  n is arguments.count
+  keep is adopted mark_c (descriptor is 103)
+
+  outer goes
+    a is adopted mark_a (descriptor is 101)
+    inner goes
+      b is adopted mark_b (descriptor is 102)
+      leave program when n == 1
+    end
+  end
+end

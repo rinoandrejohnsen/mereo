@@ -1,0 +1,44 @@
+include "../../linux.mereo"
+
+-- A TEMPLATE SPLICED INTO A BRANCH ROAD -- both the hot `likely` road and the
+-- cold `when` one. Its body is a store, an `ensure` and a loop: none of the four
+-- step kinds the road planner used to know, which is exactly why a call there
+-- was rejected ("a branch road cannot call the procedure method ... yet").
+--
+--   ./tmpl_road       -> CCCCC   (the cold road)
+--   ./tmpl_road x     -> HHH     (the hot road)
+shout (mark, area, length) is
+  ensure length >= 1
+  i is 0
+  fill goes
+    [area + i : 1] is mark
+    i is i + 1
+    repeat fill when i < length
+  end
+end
+
+program (arguments) is
+  argc is arguments.count
+  buf is 8 bytes
+  n is 0
+
+  terminal is already linux.file (descriptor is 1)
+
+  pick likely goes
+    shout (mark is 72,             -- 'H'
+           area is buf,
+           length is 3)
+    n is 3
+  end
+
+  terminal.write (buffer is buf, count is n)
+
+  linux.exit
+
+  pick when argc == 1 goes
+    shout (mark is 67,             -- 'C'
+           area is buf,
+           length is 5)
+    n is 5
+  end
+end

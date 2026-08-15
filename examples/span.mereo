@@ -1,0 +1,62 @@
+include "../linux.mereo"
+include "../core.mereo"
+
+-- span -- the two views in core.mereo, on the job they exist for.
+--
+-- `span` is mereo's string_view: an address and a count over bytes someone else
+-- owns. `builder` is the other half, appending into a buffer that knows where it
+-- stops. Read a `key=value` list on stdin and print it back as `key -> value`:
+--
+--   printf 'host=localhost\nport=8080\n' | ./span_bin
+--   host -> localhost
+--   port -> 8080
+--
+-- The point is that NO offset arithmetic appears below. Each line is cut out of
+-- the block, then each key is cut out of the line -- two narrowings, and the C
+-- version of that is four pointers and four lengths that have to stay in step.
+-- Here `skip` (C++'s `remove_prefix`) advances a view in place, and adopting a
+-- span from `SOMETHING.data` names the part in front of it.
+--
+-- Two behaviours fall out of the clamping rather than being written:
+--   * the last line needs no newline -- `find` answers `length` when the byte is
+--     absent, and `skip (count is n + 1)` then clamps and empties the view
+--   * a line with no `=` is a key with an empty value, for the same reason
+program is
+  capacity is 65536
+  block is capacity bytes
+  room is capacity bytes
+  count is 0
+  n is 0
+  k is 0
+
+  input is already linux.file (descriptor is 0)
+
+  terminal is already linux.file (descriptor is 1)
+
+  input.read (buffer is block, capacity is capacity, count is count)
+
+  rest is already span (data is block, length is count)
+  page is already builder (data is room, count is 0, limit is capacity)
+
+  lines goes
+    leave lines when rest.length == 0
+
+    rest.find (byte is 10, offset is n)
+    line is already span (data is rest.data, length is n)
+    rest.skip (count is n + 1)
+
+    line.find (byte is 61, offset is k)   -- `=`; the whole line if there is none
+    key is already span (data is line.data, length is k)
+    line.skip (count is k + 1)            -- ...and now `line` is the VALUE
+
+    page.add (source is key.data, length is key.length)
+    page.add (source is " -> ", length is 4)
+    page.add (source is line.data, length is line.length)
+    page.byte (value is 10)
+
+    repeat lines
+  end
+
+  terminal.write (buffer is page.data, count is page.count)
+
+end

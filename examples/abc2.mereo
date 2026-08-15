@@ -1,0 +1,21 @@
+-- abc2 -- a second take on the abc file-processor: also on linux.mereo's
+-- `file`, kept around as a sibling of abc. (Now that abc itself uses
+-- linux.mereo, this is nearly identical -- a candidate to fold together.)
+
+include "../linux.mereo"
+
+program is
+  capacity is 4096
+  buffer is capacity bytes
+  count is 0
+  written is 0
+
+  input is linux.file (path is "lorem_ipsum.txt", flags is 0, mode is 0)
+
+  output is already linux.file (descriptor is 1)
+
+  input.read (buffer is buffer, capacity is capacity, count is count)
+
+  output.write (buffer is buffer, count is count, written is written)
+
+end

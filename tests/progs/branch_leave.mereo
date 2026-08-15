@@ -1,0 +1,48 @@
+include "../../linux.mereo"
+
+-- `leave LABEL` from inside a ROAD. A road is a scope like any other, so it has
+-- an end to jump to -- its crossroad's merge, where the cold roads already
+-- rejoin. `leave pick` is therefore the road's own break: release what THIS
+-- road took and rejoin now, without running the rest of the arm.
+--
+-- Both roads read a byte and then leave; the step after each `leave` would
+-- clear the count, so the printed byte IS the proof the jump was taken -- if it
+-- ever fell through, the program would print nothing. The guard is `argc > 0`,
+-- true at runtime and not foldable, so both paths stay live code.
+--
+-- Each road opens a real descriptor (through `peek`, since a road body accepts
+-- `NAME is adopted CLASS where` but not a direct construction), which gives
+-- mereoraii a fault to inject on either arm.
+--
+--   ./branch_leave      ->  L    (argc 1, the cold road)
+--   ./branch_leave x    ->  --    (the hot road)
+peek (path, area, count) is
+  source is linux.file (path is path, flags is 0, mode is 0)
+
+  source.read (buffer is area, capacity is 1, count is count)
+end
+
+program (arguments) is
+  argc is arguments.count
+  cap is 64
+  buf is cap bytes
+  n is 0
+
+  terminal is already linux.file (descriptor is 1)
+
+  pick likely goes
+    peek (path is "linux.mereo", area is buf, count is n)
+    leave pick when argc > 0
+    n is 0                           -- never runs: the byte still prints
+  end
+
+  terminal.write (buffer is buf, count is n)
+
+  linux.exit
+
+  pick when argc == 1 goes
+    peek (path is "lorem_ipsum.txt", area is buf, count is n)
+    leave pick when argc > 0
+    n is 0                           -- never runs
+  end
+end

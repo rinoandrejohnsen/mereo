@@ -1,0 +1,22 @@
+include "markers.mereo"
+
+-- A non-final `repeat` skips the rest of the pass -- and must release what the
+-- pass already holds on the way round. `t` is taken every pass; `o` only on the
+-- passes that get past the skip.
+--
+-- argc=1 run bare, so pass 1 skips (releasing t alone) and passes 2 and 3 run
+-- through (releasing o then t).
+-- Expect close(101) close(103) close(101) close(103) close(101) close(104).
+program (arguments) is
+  keep is adopted mark_d (descriptor is 104)
+  n is arguments.count
+  i is 0
+
+  spin goes
+    t is adopted mark_a (descriptor is 101)
+    i is i + 1
+    repeat spin when i == n              -- pass 1 only: skip the rest
+    o is adopted mark_c (descriptor is 103)
+    repeat spin when i < 3
+  end
+end

@@ -1,0 +1,27 @@
+include "markers.mereo"
+
+-- The same break taken from the LIKELY road, which is on the spine rather than
+-- past exit. The guard is `n is 9`, so a bare run never leaves the hot path.
+-- `skipped` is opened after the leave and must never be reached: 102 never
+-- closes, and the road's fall-through release (skipped then h) is dead.
+-- Expect 101 103, three times, then 104.
+program (arguments) is
+  keep is adopted mark_d (descriptor is 104)
+  n is arguments.count
+  i is 0
+
+  serve goes
+    o is adopted mark_c (descriptor is 103)
+    pick likely goes
+      h is adopted mark_a (descriptor is 101)
+      leave pick when n < 9
+      skipped is adopted mark_b (descriptor is 102)
+    end
+    i is i + 1
+    repeat serve when i < 3
+  end
+
+  pick when n == 9 goes
+    c is adopted mark_b (descriptor is 102)
+  end
+end

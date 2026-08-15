@@ -1,0 +1,23 @@
+include "../linux.mereo"
+
+-- or continue where -- recovery demo. The path is a directory, so read
+-- always fails with EISDIR; the repair turns that into an empty read and
+-- the program completes silently with exit 0. The only failure this
+-- program can still have is the construction itself.
+
+program is
+  capacity is 4096
+  buffer is capacity bytes
+  count is 0
+  written is 0
+
+  terminal is already linux.file (descriptor is 1)
+
+  file is linux.file (path is ".", flags is 0, mode is 0)
+
+  linux.file.read (buffer is buffer, capacity is capacity, count is count)
+  or continue (count is 0)
+
+  terminal.write (buffer is buffer, count is count, written is written)
+
+end

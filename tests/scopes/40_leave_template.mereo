@@ -1,0 +1,21 @@
+include "markers.mereo"
+
+-- A template's body is a SCOPE with the template's name, so `leave` is an early
+-- return -- and it releases what the body holds AT THE JUMP. `t` is taken before
+-- the guard, `u` only after it, so the early path releases t alone.
+-- Expect 101 103, not 102 101 103.
+peek (mode, sink) is
+  t is adopted mark_a (descriptor is 101)
+  sink is 1
+  leave peek when mode == 1
+  u is adopted mark_b (descriptor is 102)
+  sink is 2
+end
+
+program (arguments) is
+  keep is adopted mark_c (descriptor is 103)
+  n is arguments.count
+  r is 0
+
+  peek (mode is n, sink is r)
+end

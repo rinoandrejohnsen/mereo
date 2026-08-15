@@ -1,0 +1,42 @@
+include "../../linux.mereo"
+
+-- MULTIPLE `repeat`. Every one starts the named loop's next pass; the last one in
+-- a body is also where that loop falls out. So a non-final `repeat` skips the
+-- rest of the pass -- C's `continue`, with one difference worth knowing: it jumps
+-- to the TOP, it does not consult the trailing condition. One rule everywhere.
+--
+-- That is why the bound is stated once at the top with `leave` rather than at
+-- the bottom: on the skipping path the bottom is never reached.
+--
+-- Counts the bytes that are not 'x', stopping at 'z'.
+--
+--   printf abcde | ./loop_repeat ->  5
+--   printf axbxc | ./loop_repeat ->  3
+--   printf abzcd | ./loop_repeat ->  2
+--   printf xxxxx | ./loop_repeat ->  0
+program is
+  capacity is 64
+  buffer is capacity bytes
+  count is 0
+  i is 0
+  c is 0
+  found is 0
+
+  input is already linux.file (descriptor is 0)
+  terminal is already linux.file (descriptor is 1)
+
+  input.read (buffer is buffer, capacity is capacity, count is count)
+
+  scan goes
+    leave scan when i >= count
+    c is [buffer + i : 1]
+    i is i + 1
+    leave scan when c == 122           -- 'z' -- stop altogether
+    repeat scan when c == 120                -- 'x' -- skip the rest of this pass
+    found is found + 1
+    repeat scan
+  end
+
+  [buffer + 0 : 1] is 48 + found
+  terminal.write (buffer is buffer, count is 1)
+end

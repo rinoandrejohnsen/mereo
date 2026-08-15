@@ -1,0 +1,23 @@
+include "markers.mereo"
+
+-- A loop inside the likely road, adopting a resource each of 3 iterations;
+-- keep at exit. n=5 so the likely road runs. Expect: 101 101 101 104
+program (arguments) is
+  keep is adopted mark_d (descriptor is 104)
+  n is arguments.count
+  -- 1 when run bare -- and unknowable at compile time, so the crossroad
+  -- survives into the binary instead of folding away. With a constant
+  -- guard the compiler decides the branch and the road stops being a
+  -- road, which is not what this scenario means to be testing.
+  k is 0
+  pick likely goes
+    spin goes
+      t is adopted mark_a (descriptor is 101)
+      k is k + 1
+      repeat spin when k < 3
+    end
+  end
+  pick when n == 0 goes
+    c is adopted mark_b (descriptor is 102)
+  end
+end

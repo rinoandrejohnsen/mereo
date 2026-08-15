@@ -1,0 +1,20 @@
+include "../linux.mereo"
+
+-- copy: file-to-file, two owned `file` resources; the derived release tower
+-- closes them in reverse (sink then source).
+
+program is
+  capacity is 4096
+  buffer is capacity bytes
+  count is 0
+  written is 0
+
+  source is linux.file (path is "lorem_ipsum.txt", flags is 0, mode is 0)
+
+  sink is linux.file (path is "copy_out.txt", flags is 577, mode is 420)
+
+  source.read (buffer is buffer, capacity is capacity, count is count)
+
+  sink.write (buffer is buffer, count is count, written is written)
+
+end

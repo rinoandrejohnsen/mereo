@@ -1,0 +1,18 @@
+include "markers.mereo"
+
+-- The same construct with its guard FALSE (`n` is 1 on a bare run, never 9).
+-- Nothing inside is acquired, so the entry test skips the body AND its releases
+-- -- skipping both is not a shortcut, it is what "the body is what acquires"
+-- means. The resource taken AFTER the block is untouched by any of it.
+-- Expect 101 103: 102 never opens.
+program (arguments) is
+  keep is adopted mark_c (descriptor is 103)
+  n is arguments.count
+
+  n == 9 goes
+    c is adopted mark_b (descriptor is 102)
+  end
+
+  after is adopted mark_a (descriptor is 101)
+
+end

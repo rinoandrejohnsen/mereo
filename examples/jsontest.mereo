@@ -1,0 +1,43 @@
+-- jsontest.mereo -- harder cases through a json reader: pretty-printed spacing, a
+-- non-first key, a multi-word string value, and a negative number.
+include "../linux.mereo"
+include "../core.mereo"
+
+program is
+  raw is constant "{ \"id\": 7, \"name\": \"hello world\", \"port\": 8080, \"temp\": -12 }"
+  namekey is constant "name"
+  portkey is constant "port"
+  tempkey is constant "temp"
+  newline is constant "\n"
+  start is 0
+  vlen is 0
+  num is 0
+  digits is 12 bytes
+  dlen is 0
+
+  doc is already json (content is raw, length is raw.size)
+
+  terminal is already linux.file (descriptor is 1)
+
+  -- a multi-word string value, with a space after the colon
+  doc.text (key is namekey,
+            keylen is namekey.size,
+            start is start,
+            vlen is vlen)
+  field is raw + start
+  terminal.write (buffer is field, count is vlen)
+  terminal.write (buffer is newline, count is 1)
+
+  -- a number, not the first key
+  doc.number (key is portkey, keylen is portkey.size, value is num)
+  text.format (value is num, buffer is digits, length is dlen)
+  terminal.write (buffer is digits, count is dlen)
+  terminal.write (buffer is newline, count is 1)
+
+  -- a negative number
+  doc.number (key is tempkey, keylen is tempkey.size, value is num)
+  text.format (value is num, buffer is digits, length is dlen)
+  terminal.write (buffer is digits, count is dlen)
+  terminal.write (buffer is newline, count is 1)
+
+end

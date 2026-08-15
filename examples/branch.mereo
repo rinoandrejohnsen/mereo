@@ -1,0 +1,46 @@
+include "../linux.mereo"
+
+-- branch demo: read stdin, then branch on how many bytes arrived. The roads
+-- only SELECT -- each sets `message`/`length` -- and the spine after the merge
+-- does ONE write, exactly the shape a hand systems programmer lays out.
+-- `report likely goes` is the hot default (inline, fall-through); the cold
+-- `when` roads live past `exit`, each dispatched by its guard and rejoining
+-- at `report` before the shared write.
+--
+--   printf ''    | ./branch_bin   -> nothing
+--   printf 'x'   | ./branch_bin   -> one byte
+--   printf 'xyz' | ./branch_bin   -> many bytes   (the hot-path default)
+
+program is
+  capacity is 4096
+  buffer is capacity bytes
+  count is 0
+  written is 0
+  message is 0
+  length is 0
+
+  input is already linux.file (descriptor is 0)
+
+  terminal is already linux.file (descriptor is 1)
+
+  input.read (buffer is buffer, capacity is capacity, count is count)
+
+  report likely goes
+    message is "many bytes\n"
+    length is 11
+  end
+
+  terminal.write (buffer is message, count is length, written is written)
+
+  linux.exit
+
+  report when count == 0 goes
+    message is "nothing\n"
+    length is 8
+  end
+
+  report when count == 1 goes
+    message is "one byte\n"
+    length is 9
+  end
+end

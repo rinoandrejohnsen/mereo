@@ -1,0 +1,329 @@
+-- https.mereo -- a TLS 1.3 client over kTLS, end to end and from scratch.
+--
+-- Dials 127.0.0.1:4443 (no DNS -- the address is a `sockaddr_in`), runs the whole
+-- handshake in mereo -- X25519 key exchange, the HKDF-Expand-Label key schedule,
+-- AES-128-GCM-SHA256 -- verifies the server's Finished, sends its own, then hands
+-- the traffic keys to the kernel with setsockopt(TCP_ULP,"tls") so the record
+-- layer runs in kTLS for both directions. Finally it sends a plain HTTP GET and
+-- prints the reply. No certificate validation: this talks to the dev server in
+-- example_server.sh, not the internet.
+--
+-- The socket is the one owned resource, so the derived release tower closes it on
+-- every exit -- success, a failed `ensure` anywhere, or Ctrl-C.
+include "../../core.mereo"  -- the byte layer: these copies were hand-written
+include "crypto.mereo"      -- only because it was never in scope here
+include "curve.mereo"
+include "net.mereo"
+-- Read ONE TLS record into REC: the five-byte header, then the body its length
+-- field asks for. Each is a loop because a socket may hand over less than was
+-- asked. LENGTH is the body length the header declares, TOTAL the whole record.
+--
+-- It was these same fourteen steps written three times -- for the ServerHello,
+-- for the CCS/EncryptedExtensions, and once per pass of the flight loop -- with
+-- only the buffer and the loop names differing.
+read_record (link, rec, length, total) is
+  got is 0
+  n is 0
+  at is 0
+  left is 0
+
+  head goes
+    at is rec + got
+    left is 5 - got
+    link.receive (buffer is at, capacity is left, count is n)
+    got is got + n
+    repeat head when got < 5
+  end
+
+  length is [rec + 3 : 2] as big
+  total is length + 5
+
+  body goes
+    at is rec + got
+    left is total - got
+    link.receive (buffer is at, capacity is left, count is n)
+    got is got + n
+    repeat body when got < total
+  end
+end
+
+program is
+  cpriv is 32 bytes
+  cpub is 32 bytes
+  crand is 32 bytes
+  sid is 32 bytes
+  host is constant "localhost"
+  ch is 512 bytes
+  sh_rec is 512 bytes
+  spub is 32 bytes
+  shared is 32 bytes
+  tr is 16384 bytes in static
+  rec is 16384 bytes in static
+  plain is 16384 bytes in static
+  zeros is 32 bytes
+  emptyhash is constant bytes 0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55
+  lbl_derived is constant "derived"
+  lbl_shs is constant "s hs traffic"
+  lbl_chs is constant "c hs traffic"
+  lbl_key is constant "key"
+  lbl_iv is constant "iv"
+  lbl_fin is constant "finished"
+  lbl_cap is constant "c ap traffic"
+  lbl_sap is constant "s ap traffic"
+  early is 32 bytes
+  derived is 32 bytes
+  hs is 32 bytes
+  s_hs is 32 bytes
+  c_hs is 32 bytes
+  s_hs_key is 16 bytes
+  s_hs_iv is 16 bytes
+  c_hs_key is 16 bytes
+  c_hs_iv is 16 bytes
+  s_fin_key is 32 bytes
+  c_fin_key is 32 bytes
+  th_chsh is 32 bytes
+  th_before is 32 bytes
+  th_after is 32 bytes
+  verify_data is 32 bytes
+  expected_vd is 32 bytes
+  c_verify_data is 32 bytes
+  cfin_msg is 48 bytes
+  crec is 128 bytes
+  derived2 is 32 bytes
+  master is 32 bytes
+  c_ap is 32 bytes
+  s_ap is 32 bytes
+  c_ap_key is 16 bytes
+  c_ap_iv is 16 bytes
+  s_ap_key is 16 bytes
+  s_ap_iv is 16 bytes
+  txinfo is 48 bytes
+  rxinfo is 48 bytes
+  ulp is constant "tls"
+  getreq is constant "GET / HTTP/1.0\r\nHost: localhost\r\n\r\n"
+  resp is 16384 bytes in static
+  chlen is 171
+  shlen is 0
+  tlen is 0
+  rlen is 0
+  reclen is 0
+  inner_len is 0
+  seq is 0
+  foff is 0
+  a is 0
+  b is 0
+  cc is 0
+  d is 0
+  hbefore is 0
+  diff is 0
+  n is 0
+  ci is 0
+  shmsg is 0
+  written is 0
+  terminal is already linux.file (descriptor is 1)
+  -- the view says which fields are
+  endpoint is linux.sockaddr_in (family is 2,  -- network order; the block is zeroed,
+                           port is 4443,  -- so `pad` needs no writing
+                           address is 0x7f000001)  -- 127.0.0.1
+  curve.keypair (priv is cpriv, pub is cpub)
+  rng is already entropy (count is 0)
+  rng.fill (buffer is crand, length is 32)
+  rng.fill (buffer is sid, length is 32)
+  crypto.client_hello (rand is crand,
+                       sid is sid,
+                       pub is cpub,
+                       host is host,
+                       hostlen is host.size,
+                       sink is ch)
+  link is stream (domain is 2, type is 1, protocol is 0)
+  link.dial (address is endpoint, length is 16)
+  link.transmit (buffer is ch, length is chlen)
+  read_record (link is link, rec is sh_rec, length is shlen, total is reclen)
+  shmsg is sh_rec + 5
+  crypto.server_hello (rec is shmsg, pub is spub)
+  curve.x25519 (secret is cpriv, point is spub, shared is shared)
+  text.copy (source is ch + 5, target is tr, length is 166)  -- ClientHello body -> the transcript
+  text.copy (source is sh_rec + 5, target is tr + 166, length is shlen)  -- ...then ServerHello after it
+  tlen is shlen + 166
+  crypto.sha256 (data is tr, datalen is tlen, digest is th_chsh)
+  crypto.hmac (key is zeros,
+               keylen is 32,
+               data is zeros,
+               datalen is 32,
+               digest is early)
+  crypto.derive_secret (secret is early,
+                        label is lbl_derived,
+                        labellen is lbl_derived.size,
+                        thash is emptyhash,
+                        sink is derived)
+  crypto.hmac (key is derived,
+               keylen is 32,
+               data is shared,
+               datalen is 32,
+               digest is hs)
+  crypto.derive_secret (secret is hs,
+                        label is lbl_shs,
+                        labellen is lbl_shs.size,
+                        thash is th_chsh,
+                        sink is s_hs)
+  crypto.derive_secret (secret is hs,
+                        label is lbl_chs,
+                        labellen is lbl_chs.size,
+                        thash is th_chsh,
+                        sink is c_hs)
+  crypto.expand_label_empty (secret is s_hs,
+                             label is lbl_key,
+                             labellen is lbl_key.size,
+                             sink is s_hs_key,
+                             outlen is 16)
+  crypto.expand_label_empty (secret is s_hs,
+                             label is lbl_iv,
+                             labellen is lbl_iv.size,
+                             sink is s_hs_iv,
+                             outlen is 12)
+  crypto.expand_label_empty (secret is c_hs,
+                             label is lbl_key,
+                             labellen is lbl_key.size,
+                             sink is c_hs_key,
+                             outlen is 16)
+  crypto.expand_label_empty (secret is c_hs,
+                             label is lbl_iv,
+                             labellen is lbl_iv.size,
+                             sink is c_hs_iv,
+                             outlen is 12)
+  read_record (link is link, rec is rec, length is rlen, total is reclen)
+  seq is 0
+  flightproc goes
+    read_record (link is link, rec is rec, length is rlen, total is reclen)
+    crypto.open (key is s_hs_key,
+                 iv is s_hs_iv,
+                 seq is seq,
+                 rec is rec,
+                 reclen is reclen,
+                 sink is plain)
+    inner_len is reclen - 22
+    ci is 0
+    text.copy (source is plain, target is tr + tlen, length is inner_len)
+    tlen is tlen + inner_len
+    seq is seq + 1
+    foff is tlen - 36
+    a is [tr + foff : 1]
+    foff is foff + 1
+    b is [tr + foff : 1]
+    foff is foff + 1
+    cc is [tr + foff : 1]
+    foff is foff + 1
+    d is [tr + foff : 1]
+    -- the last handshake message of the flight is Finished (type 20, length 32)
+    leave flightproc when a == 20 && b == 0 && cc == 0 && d == 32
+    repeat flightproc
+  end
+  hbefore is tlen - 36
+  crypto.sha256 (data is tr, datalen is hbefore, digest is th_before)
+  text.copy (source is tr + tlen - 32, target is verify_data, length is 32)  -- the server's verify_data, at the tail
+  crypto.expand_label_empty (secret is s_hs,
+                             label is lbl_fin,
+                             labellen is lbl_fin.size,
+                             sink is s_fin_key,
+                             outlen is 32)
+  crypto.hmac (key is s_fin_key,
+               keylen is 32,
+               data is th_before,
+               datalen is 32,
+               digest is expected_vd)
+  diff is 0
+  ci is 0
+  vcmp goes
+    a is [verify_data + ci : 1]
+    b is [expected_vd + ci : 1]
+    a is a ^ b
+    diff is diff | a
+    ci is ci + 1
+    repeat vcmp when ci < 32
+  end
+  ensure diff == 0
+  crypto.sha256 (data is tr, datalen is tlen, digest is th_after)
+  crypto.expand_label_empty (secret is c_hs,
+                             label is lbl_fin,
+                             labellen is lbl_fin.size,
+                             sink is c_fin_key,
+                             outlen is 32)
+  crypto.hmac (key is c_fin_key,
+               keylen is 32,
+               data is th_after,
+               datalen is 32,
+               digest is c_verify_data)
+  [cfin_msg + 0 : 1] is 20
+  [cfin_msg + 1 : 1] is 0
+  [cfin_msg + 2 : 1] is 0
+  [cfin_msg + 3 : 1] is 32
+  text.copy (source is c_verify_data, target is cfin_msg + 4, length is 32)  -- ours, into the Finished message body
+  crypto.seal (key is c_hs_key,
+               iv is c_hs_iv,
+               seq is 0,
+               pt is cfin_msg,
+               ptlen is 36,
+               type is 22,
+               sink is crec)
+  link.transmit (buffer is crec, length is 58)
+  crypto.derive_secret (secret is hs,
+                        label is lbl_derived,
+                        labellen is lbl_derived.size,
+                        thash is emptyhash,
+                        sink is derived2)
+  crypto.hmac (key is derived2,
+               keylen is 32,
+               data is zeros,
+               datalen is 32,
+               digest is master)
+  crypto.derive_secret (secret is master,
+                        label is lbl_cap,
+                        labellen is lbl_cap.size,
+                        thash is th_after,
+                        sink is c_ap)
+  crypto.derive_secret (secret is master,
+                        label is lbl_sap,
+                        labellen is lbl_sap.size,
+                        thash is th_after,
+                        sink is s_ap)
+  crypto.expand_label_empty (secret is c_ap,
+                             label is lbl_key,
+                             labellen is lbl_key.size,
+                             sink is c_ap_key,
+                             outlen is 16)
+  crypto.expand_label_empty (secret is c_ap,
+                             label is lbl_iv,
+                             labellen is lbl_iv.size,
+                             sink is c_ap_iv,
+                             outlen is 12)
+  crypto.expand_label_empty (secret is s_ap,
+                             label is lbl_key,
+                             labellen is lbl_key.size,
+                             sink is s_ap_key,
+                             outlen is 16)
+  crypto.expand_label_empty (secret is s_ap,
+                             label is lbl_iv,
+                             labellen is lbl_iv.size,
+                             sink is s_ap_iv,
+                             outlen is 12)
+  link.option (level is 6, name is 31, value is ulp, length is ulp.size)
+  [txinfo + 0 : 1] is 4
+  [txinfo + 1 : 1] is 3
+  [txinfo + 2 : 1] is 51
+  [txinfo + 3 : 1] is 0
+  text.copy (source is c_ap_iv + 4, target is txinfo + 4, length is 8)  -- crypto_info: iv, key, then salt
+  text.copy (source is c_ap_key, target is txinfo + 12, length is 16)
+  text.copy (source is c_ap_iv, target is txinfo + 28, length is 4)
+  link.option (level is 282, name is 1, value is txinfo, length is 40)
+  [rxinfo + 0 : 1] is 4
+  [rxinfo + 1 : 1] is 3
+  [rxinfo + 2 : 1] is 51
+  [rxinfo + 3 : 1] is 0
+  text.copy (source is s_ap_iv + 4, target is rxinfo + 4, length is 8)  -- crypto_info: iv, key, then salt
+  text.copy (source is s_ap_key, target is rxinfo + 12, length is 16)
+  text.copy (source is s_ap_iv, target is rxinfo + 28, length is 4)
+  link.option (level is 282, name is 2, value is rxinfo, length is 40)
+  link.transmit (buffer is getreq, length is getreq.size)
+  link.receive (buffer is resp, capacity is 16384, count is n)
+  terminal.write (buffer is resp, count is n, written is written)
+end

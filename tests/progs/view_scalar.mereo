@@ -1,0 +1,44 @@
+include "../../linux.mereo"
+
+-- A VIEW OVER A SCALAR. A scalar is the same backing as `8 bytes in register` --
+-- one word, in a register, no address -- carrying `as signed` as its default
+-- view. So a view lays over one, and its fields are slices of the word.
+--
+-- What a scalar does NOT get is slice syntax: its name is its VALUE, so
+-- `[x + k : w]` still means "dereference the address in x", as it always has.
+record is
+  tag is 1 bytes
+  span is 2 bytes
+
+  bump (sink) is
+    tag is tag + 1
+    sink is tag
+  end
+end
+
+mode is
+  echo is bit 3
+end
+
+program is
+  x is 0
+  h is x as record
+  f is x + 6 as mode
+
+  h.tag is 64
+  h.span is 4660                 -- 0x1234, in the same word
+  f.echo is 1
+
+  n is 0
+  h.bump (sink is n)
+  ensure n == 65                 -- the template wrote through to the scalar
+
+  ensure h.span == 4660          -- the neighbouring field is untouched
+  ensure f.echo == 1
+  ensure x > 0                   -- ... and it is all still one signed scalar
+
+  letter is 1 bytes
+  [letter : 1] is h.tag
+  terminal is already linux.file (descriptor is 1)
+  terminal.write (buffer is letter, count is 1)
+end

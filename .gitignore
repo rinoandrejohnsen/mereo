@@ -1,0 +1,25 @@
+# build output -- ./build.sh regenerates all of it
+/build/
+
+# ...and one prototype in the attic that shipped with its own
+/attic/prototypes/error_handling/build/
+
+# python bytecode
+__pycache__/
+*.pyc
+
+# the self-signed dev cert programs/tls/example_server.sh makes on first run
+programs/tls/cert.pem
+programs/tls/key.pem
+
+# written by examples/copy.mereo and examples/catview.mereo when they run
+copy_out.txt
+
+# editor leftovers
+*.kate-swp
+*.swp
+*~
+.*.sw[a-p]
+
+# local tool state, not project content
+.claude/

@@ -1,0 +1,45 @@
+include "../../linux.mereo"
+
+-- A MIDDLE sibling fails to acquire. Of three independent bases, the first
+-- acquires, the second's acquire fails, and the third is never attempted. Only
+-- the first must be released -- this is the one scenario where the failing layer
+-- is neither the top nor the bottom, so it pins down the floor selection.
+-- Expect close(101) alone: no 102 (never acquired), no 103 (never reached).
+
+sib_a is
+  fd_a is 101
+  acquire is
+    linux.close (descriptor is 201)
+  end
+  release is
+    linux.close (descriptor is fd_a)
+  end
+end
+
+sib_b is
+  fd_b is 102
+  probe is 0
+  acquire is
+    linux.read (descriptor is 199, buffer is fd_b, capacity is 1, count is probe)
+  end
+  release is
+    linux.close (descriptor is fd_b)
+  end
+end
+
+sib_c is
+  fd_c is 103
+  acquire is
+    linux.close (descriptor is 203)
+  end
+  release is
+    linux.close (descriptor is fd_c)
+  end
+end
+
+sib_trio extends sib_a and sib_b and sib_c is
+end
+
+program is
+  all_three is sib_trio
+end

@@ -1,0 +1,14 @@
+include "markers.mereo"
+
+-- `keep` lives for the whole program; `tmp` is acquired inside the loop and
+-- must be released at the END OF EACH ITERATION, before `keep` at exit.
+-- Expect: close(101) close(101) close(103).
+program is
+  n is 0
+  keep is adopted mark_c (descriptor is 103)
+  serve goes
+    tmp is adopted mark_a (descriptor is 101)
+    n is n + 1
+    repeat serve when n < 2
+  end
+end

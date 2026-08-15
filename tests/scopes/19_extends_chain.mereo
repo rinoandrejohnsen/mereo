@@ -1,0 +1,42 @@
+include "../../linux.mereo"
+
+-- Layered ownership. Three resources stacked with `extends`; each layer owns ONE
+-- thing, so the stack owns three. Each layer's acquire ACQUIRES (a harmless
+-- close on a 2xx fd -- outside the traced 10x window, so it never disturbs the
+-- release sequence) and its release RELEASES its own 10x sentinel.
+-- Expect the stack to come apart in reverse acquisition order:
+--   close(103) close(102) close(101).
+
+chain_a is
+  fd_a is 101
+  acquire is
+    linux.close (descriptor is 201)
+  end
+  release is
+    linux.close (descriptor is fd_a)
+  end
+end
+
+chain_b extends chain_a is
+  fd_b is 102
+  acquire is
+    linux.close (descriptor is 202)
+  end
+  release is
+    linux.close (descriptor is fd_b)
+  end
+end
+
+chain_c extends chain_b is
+  fd_c is 103
+  acquire is
+    linux.close (descriptor is 203)
+  end
+  release is
+    linux.close (descriptor is fd_c)
+  end
+end
+
+program is
+  stack is chain_c
+end

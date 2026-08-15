@@ -1,0 +1,23 @@
+include "markers.mereo"
+
+-- TWO `when` roads, each acquiring, and the SECOND one taken. Roads are planned
+-- in sequence off a shared live stack, so this checks the first road's
+-- bookkeeping does not leak into the second -- a leak would release 102 as well,
+-- or release nothing.
+-- Expect 103 104.
+program (arguments) is
+  keep is adopted mark_d (descriptor is 104)
+  n is arguments.count
+
+  pick likely goes
+    h is adopted mark_a (descriptor is 101)
+  end
+
+  pick when n == 5 goes
+    x is adopted mark_b (descriptor is 102)
+  end
+
+  pick when n == 1 goes
+    y is adopted mark_c (descriptor is 103)
+  end
+end

@@ -1,0 +1,34 @@
+include "client.mereo"
+
+-- The smallest use of `secure_fetch`: TLS 1.3 to a local server, one GET, print
+-- the reply. Run tls/example_server.sh first.
+--
+-- The address, the SNI host and the request used to be sixty single-byte stores
+-- spelling out three constants. They are constants, so they are written as
+-- constants: a `sockaddr_in` construction, and two string literals whose lengths
+-- come from `size of` rather than being counted by hand alongside them.
+program is
+  page is 16384 bytes
+  got is 0
+  written is 0
+
+  host is "localhost"
+  request is "GET / HTTP/1.0\r\nHost: localhost\r\n\r\n"
+
+  endpoint is linux.sockaddr_in (family is 2,  -- AF_INET
+                           port is 4443,  -- `2 bytes as big` -- network order, free
+                           address is 0x7f000001)  -- 127.0.0.1
+
+  terminal is already linux.file (descriptor is 1)
+
+  client.secure_fetch (address is endpoint,
+                       host is host,
+                       hostlen is host.size,
+                       request is request,
+                       reqlen is request.size,
+                       sink is page,
+                       received is got)
+
+  terminal.write (buffer is page, count is got, written is written)
+
+end

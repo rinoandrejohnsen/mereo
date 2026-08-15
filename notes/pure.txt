@@ -1,0 +1,56 @@
+# pure
+
+structure is
+  a is 8 bytes
+  b is 8 bytes
+  c is 8 bytes
+
+add with x and y and z is
+  z is x + y
+
+program is
+  buffer is 24 bytes
+
+  data is buffer as structure
+
+  a of data is 1
+  b of data is 2
+  c of data is 0
+
+  add where
+      x is a of data
+      y is b of data
+      z is c of data
+
+  exit
+
+# short
+
+program is
+  data is structure
+
+  a of data is 1
+  b of data is 2
+  c of data is 0
+
+  add where
+      x is a of data
+      y is b of data
+      z is c of data
+
+  exit
+
+# shorter
+
+program is
+  data is structure where
+      a is 1
+      b is 2
+      c is 0
+
+  add where
+      x is a of data
+      y is b of data
+      z is c of data
+
+  exit

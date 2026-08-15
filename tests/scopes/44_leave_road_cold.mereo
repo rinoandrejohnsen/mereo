@@ -1,0 +1,40 @@
+include "markers.mereo"
+
+-- `leave pick` from inside a COLD road -- a road is a scope, so this is the
+-- road's own break: release what THIS ROAD took and rejoin the merge, without
+-- running the rest of the arm. The pass's `o` and the program's `keep` stay
+-- live, so the loop keeps going.
+--
+-- The road runs on the middle pass only, and `late` is opened after the leave,
+-- so it must never be reached: 101 closes on the two hot passes and never in
+-- the road.
+-- Expect 101 103, then 105 102 103, then 101 103, then 104.
+--
+-- Two shapes here are deliberate, both learned from mereocheck rejecting the
+-- first draft. The road holds TWO markers: with one it did exactly the work of
+-- the likely road and ended at the same label, so GCC if-converted the pair
+-- into a cmov of the descriptor. And the guard reads the loop counter, not
+-- argc: a loop-invariant guard let GCC UNSWITCH the loop into two specialised
+-- copies, which dissolves the road just as thoroughly. The trip count comes
+-- from argc so the loop cannot be unrolled and the guard folded.
+program (arguments) is
+  keep is adopted mark_d (descriptor is 104)
+  n is arguments.count
+  i is 0
+
+  serve goes
+    o is adopted mark_c (descriptor is 103)
+    pick likely goes
+      h is adopted mark_a (descriptor is 101)
+    end
+    i is i + 1
+    repeat serve when i < n + 2
+  end
+
+  pick when i == 1 goes
+    c is adopted mark_b (descriptor is 102)
+    e is adopted mark_e (descriptor is 105)
+    leave pick when n < 9
+    late is adopted mark_a (descriptor is 101)
+  end
+end

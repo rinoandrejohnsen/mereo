@@ -1,0 +1,27 @@
+include "markers.mereo"
+
+-- A `scope` block inside a TEMPLATE. The block's resource must be released at the
+-- END OF THE BLOCK -- inside the spliced body -- not deferred to the program's
+-- exit. `outer` is acquired by the program before the call, so it unwinds after.
+-- Nesting is reverse-order as everywhere else.
+-- Expect close(102) close(101) close(103): inner block, outer block, then the
+-- program's own resource.
+
+work is
+  run (sink) is
+    sink is 0
+    scope
+      a is adopted mark_a (descriptor is 101)
+      scope
+        b is adopted mark_b (descriptor is 102)
+      end
+    end
+    sink is 1
+  end
+end
+
+program is
+  c is adopted mark_c (descriptor is 103)
+  r is 0
+  work.run (sink is r)
+end

@@ -1,0 +1,40 @@
+include "../../linux.mereo"
+
+-- A FLAG VIEW that carries templates -- bits and bytes differ only in GRAIN, so
+-- a flag layout may hold work over its own fields exactly as a byte layout does.
+-- A bit is not a C lvalue, so a write inside a spliced template must lower to
+-- the same masked read-modify-write the program level emits.
+mode is
+  echo is bit 3
+  raw is bit 1
+
+  quiet (sink) is              -- the template WRITES two bits of its backing
+    echo is 0
+    raw is 1
+    sink is echo + raw         -- ... and READS them back in an expression
+  end
+end
+
+-- LENSED over a word: the bits are the backing's bits, so the caller sees them.
+program is
+  w is 4 bytes
+  m is w as mode
+  m.echo is 1                  -- set bit 3 at the program level -> word is 8
+  m.raw is 0
+
+  n is 0
+  m.quiet (sink is n)          -- the splice clears bit 3 and sets bit 1
+
+  a is m.echo
+  b is m.raw
+  word is [w : 1]
+  ensure a == 0                -- the template's write is visible here
+  ensure b == 1
+  ensure n == 1                -- 0 + 1, read back inside the template
+  ensure word == 2             -- and the backing word really is just bit 1
+
+  letter is 1 bytes
+  [letter : 1] is 64 + word
+  terminal is already linux.file (descriptor is 1)
+  terminal.write (buffer is letter, count is 1)
+end

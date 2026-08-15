@@ -1,0 +1,25 @@
+include "markers.mereo"
+
+-- `leave` taken from inside a cold road, while both the road and the loop pass
+-- hold something. It has to release the ROAD's resource, then the PASS's, then
+-- land past the loop -- the road never reaches its merge.
+-- Expect 102 103 104.
+program (arguments) is
+  keep is adopted mark_d (descriptor is 104)
+  n is arguments.count
+  i is 0
+
+  serve goes
+    o is adopted mark_c (descriptor is 103)
+    pick likely goes
+      h is adopted mark_a (descriptor is 101)
+    end
+    i is i + 1
+    repeat serve when i < 3
+  end
+
+  pick when n == 1 goes
+    c is adopted mark_b (descriptor is 102)
+    leave serve
+  end
+end

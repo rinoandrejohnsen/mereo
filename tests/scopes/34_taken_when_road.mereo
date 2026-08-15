@@ -1,0 +1,21 @@
+include "markers.mereo"
+
+-- A `when` road that ACQUIRES and IS TAKEN. Every other branch scenario has the
+-- cold road's resource on a path that never runs -- descriptor 102 appears in no
+-- trace in the suite -- so the road-local release before the merge has never
+-- been exercised at all.
+--
+-- argc is 1, so the cold road runs: cold is released before rejoining, keep at
+-- exit. Expect 102 103.
+program (arguments) is
+  keep is adopted mark_c (descriptor is 103)
+  n is arguments.count
+
+  pick likely goes
+    hot is adopted mark_a (descriptor is 101)
+  end
+
+  pick when n == 1 goes
+    cold is adopted mark_b (descriptor is 102)
+  end
+end

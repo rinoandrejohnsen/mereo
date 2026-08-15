@@ -1,0 +1,1270 @@
+-- linux.mereo -- everything that needs a system call.
+--
+-- The other half of the pair; see core.mereo for the half that does not. This
+-- file is self-contained: the raw syscall declarations come first, then the
+-- resources built on them, so a program needs only `use "linux.mereo"`.
+--
+--   the syscall ABI    each one a raw `assembly "syscall"`, no injected wrapper
+--   file               THE acquired resource: a descriptor, closed by its scope
+--   directory          the same, opened with O_DIRECTORY and read by getdents64
+--   mapping            mmap/munmap as an owned region
+--   files              the path operations -- stat, remove, rename, link, chmod
+--   clock              the time, and sleeping
+--   channel            pipe2, whose two ends are adopted as ordinary files
+--   sockaddr_in        an IPv4 address, byte order stated in the declaration
+--   file_status        `struct statx` as a layout view, and file_mode its bits
+--   timespec           what the clock fills; poll_entry, what ppoll watches
+--   process, identity  kill, geteuid, uname, and the /etc/passwd lookup
+--
+-- Every syscall NUMBER below is checked against <asm/unistd_64.h> by
+-- tools/check_syscalls.py, which ./test.sh runs.
+
+-- ---------------------------------------------------------------------------- the ABI
+
+-- The Linux x86-64 syscall ABI, written in mereo's own assembly.
+-- The mereo equivalent of linux/calls.h++: names, numbers, and port shapes.
+-- Numbers verified against linux/calls.h++, the project's canonical table.
+--
+-- Each syscall is a raw `assembly "syscall"` primitive -- no transpiler-injected
+-- wrapper. The System V syscall ABI is spelled out per call:
+--   number  -> rax   (a constant operand, baked in: `number is N in rax`)
+--   args    -> rdi, rsi, rdx, r10, r8, r9   (in that order)
+--   result  -> rax   (`... out rax`)
+--   clobbers rcx and r11 (the kernel trashes them) and memory (a barrier).
+-- An address is just a value -- a buffer name is its own address -- so a pointer
+-- argument is an ordinary register operand. `final assembly` marks noreturn.
+--
+-- These are declarations, not code: nothing is emitted for one you never call.
+
+linux contains
+
+  read is assembly "syscall"
+    count out rax
+    number is 0 in rax
+    descriptor in rdi
+    buffer in rsi
+    capacity in rdx
+    clobbers rcx and r11 and memory
+    ensure count >= 0
+  end
+
+  write is assembly "syscall"
+    written out rax
+    number is 1 in rax
+    descriptor in rdi
+    buffer in rsi
+    count in rdx
+    clobbers rcx and r11 and memory
+    ensure written >= 0
+  end
+
+  open is assembly "syscall"
+    descriptor out rax
+    number is 2 in rax
+    path in rdi
+    flags in rsi
+    mode in rdx
+    clobbers rcx and r11 and memory
+    ensure descriptor >= 0
+  end
+
+  close is assembly "syscall"
+    result out rax
+    number is 3 in rax
+    descriptor in rdi
+    clobbers rcx and r11 and memory
+  end
+
+  socket is assembly "syscall"
+    descriptor out rax
+    number is 41 in rax
+    domain in rdi
+    type in rsi
+    protocol in rdx
+    clobbers rcx and r11 and memory
+    ensure descriptor >= 0
+  end
+
+  connect is assembly "syscall"
+    result out rax
+    number is 42 in rax
+    descriptor in rdi
+    address in rsi
+    length in rdx
+    clobbers rcx and r11 and memory
+    ensure result >= 0
+  end
+
+  accept is assembly "syscall"
+    connection out rax
+    number is 43 in rax
+    descriptor in rdi
+    address in rsi
+    length in rdx
+    clobbers rcx and r11 and memory
+    ensure connection >= 0
+  end
+
+  bind is assembly "syscall"
+    result out rax
+    number is 49 in rax
+    descriptor in rdi
+    address in rsi
+    length in rdx
+    clobbers rcx and r11 and memory
+    ensure result >= 0
+  end
+
+  listen is assembly "syscall"
+    result out rax
+    number is 50 in rax
+    descriptor in rdi
+    backlog in rsi
+    clobbers rcx and r11 and memory
+    ensure result >= 0
+  end
+
+  -- setsockopt has five arguments: the fourth lands in r10, the fifth in r8.
+  setsockopt is assembly "syscall"
+    result out rax
+    number is 54 in rax
+    descriptor in rdi
+    level in rsi
+    optname in rdx
+    value in r10
+    length in r8
+    clobbers rcx and r11 and memory
+    ensure result >= 0
+  end
+
+  sendmsg is assembly "syscall"
+    sent out rax
+    number is 46 in rax
+    descriptor in rdi
+    message in rsi
+    flags in rdx
+    clobbers rcx and r11 and memory
+    ensure sent >= 0
+  end
+
+  recvmsg is assembly "syscall"
+    received out rax
+    number is 47 in rax
+    descriptor in rdi
+    message in rsi
+    flags in rdx
+    clobbers rcx and r11 and memory
+    ensure received >= 0
+  end
+
+  getrandom is assembly "syscall"
+    count out rax
+    number is 318 in rax
+    buffer in rdi
+    length in rsi
+    flags in rdx
+    clobbers rcx and r11 and memory
+    ensure count >= 0
+  end
+
+  lseek is assembly "syscall"
+    position out rax
+    number is 8 in rax
+    descriptor in rdi
+    offset in rsi
+    whence in rdx
+    clobbers rcx and r11 and memory
+    ensure position >= 0
+  end
+
+  ioctl is assembly "syscall"
+    result out rax
+    number is 16 in rax
+    descriptor in rdi
+    request in rsi
+    argument in rdx
+    clobbers rcx and r11 and memory
+    ensure result >= 0
+  end
+
+  -- mmap has six arguments: the fourth/fifth/sixth land in r10/r8/r9.
+  mmap is assembly "syscall"
+    address out rax
+    number is 9 in rax
+    hint in rdi
+    length in rsi
+    protection in rdx
+    flags in r10
+    descriptor in r8
+    offset in r9
+    clobbers rcx and r11 and memory
+    ensure address > 0
+  end
+
+  munmap is assembly "syscall"
+    result out rax
+    number is 11 in rax
+    address in rdi
+    length in rsi
+    clobbers rcx and r11 and memory
+    ensure result >= 0
+  end
+
+  -- exit_group (231), not exit (60): terminate the whole process, not just the
+  -- calling thread -- the correct way for a program to end, and what libc's exit
+  -- invokes. (mereo is single-threaded, so both behave the same here, but 231 is
+  -- the honest citizen.) noreturn, so no result is caught.
+  exit is final assembly "syscall"
+    status in rdi
+    number is 231 in rax
+    clobbers rcx and r11 and memory
+  end
+
+  kill is assembly "syscall"
+    result out rax
+    number is 62 in rax
+    pid in rdi
+    signal in rsi
+    clobbers rcx and r11 and memory
+    ensure result >= 0
+  end
+
+  fsync is assembly "syscall"
+    result out rax
+    number is 74 in rax
+    descriptor in rdi
+    clobbers rcx and r11 and memory
+    ensure result >= 0
+  end
+
+  -- geteuid takes no arguments and cannot fail -- it just reports the caller's
+  -- effective user id (a zero-argument syscall).
+  geteuid is assembly "syscall"
+    euid out rax
+    number is 107 in rax
+    clobbers rcx and r11 and memory
+  end
+
+  -- getuid is geteuid's pair: the REAL user id. `whoami` wants the effective one,
+  -- `id -r` the real one; both cannot fail.
+  getuid is assembly "syscall"
+    uid out rax
+    number is 102 in rax
+    clobbers rcx and r11 and memory
+  end
+
+  getpid is assembly "syscall"
+    pid out rax
+    number is 39 in rax
+    clobbers rcx and r11 and memory
+  end
+
+  -- ------------------------------------------------------------- the *at family
+  --
+  -- Every path-taking call below is the `*at` form, which takes the descriptor a
+  -- relative path is resolved against as its FIRST argument. That port is `base`
+  -- here, and the value that means "the current directory" is AT_FDCWD = -100:
+  --
+  --     base is -100        -- resolve PATH the way the shell would
+  --     base is folder      -- ...or relative to a directory you hold
+  --
+  -- The older one-argument spellings (open, mkdir, unlink, rmdir, chmod, link,
+  -- symlink) are not declared. They are `*at` with base = -100 and nothing else,
+  -- so they would be two names for one call, and the pair that is NOT
+  -- interchangeable -- unlink and rmdir -- is one flag apart here (AT_REMOVEDIR =
+  -- 0x200), which says the relationship better than two numbers do.
+  --
+  -- `open` above is the exception, kept because `file` acquires with it and the
+  -- corpus is written against it.
+
+  openat is assembly "syscall"
+    descriptor out rax
+    number is 257 in rax
+    base in rdi
+    path in rsi
+    flags in rdx
+    mode in r10
+    clobbers rcx and r11 and memory
+    ensure descriptor >= 0
+  end
+
+  -- statx(base, path, flags, mask, buffer) -- the file metadata call, and the one
+  -- nolibc itself uses to implement stat, fstat and lstat. There is no `stat`
+  -- here for the same reason there is no `open`-less `openat`: three names for
+  -- one call, distinguished only by arguments.
+  --
+  --   a path              base is -100, path is "x", flags is 0
+  --   a descriptor        base is fd,   path is "",  flags is 0x1000  (AT_EMPTY_PATH)
+  --   the link itself     flags is 0x100                              (AT_SYMLINK_NOFOLLOW)
+  --
+  -- `mask` says which fields to ask for; 0x7ff (STATX_BASIC_STATS) is everything
+  -- the old `struct stat` carried. The kernel may return MORE than was asked for
+  -- and may return less -- `mask of` on the result says what it actually filled.
+  -- The buffer is 256 bytes; see the `file_status` view below.
+  statx is assembly "syscall"
+    result out rax
+    number is 332 in rax
+    base in rdi
+    path in rsi
+    flags in rdx
+    mask in r10
+    buffer in r8
+    clobbers rcx and r11 and memory
+    ensure result >= 0
+  end
+
+  -- getdents64(descriptor, buffer, capacity) -- read directory entries into a
+  -- buffer as a run of variable-length records. Returns the number of BYTES
+  -- written, and **zero at the end of the directory**, which is not an error: the
+  -- contract is `count >= 0`, and a caller stops on `count == 0`.
+  -- See the `directory` resource below.
+  --
+  -- One record -- `struct linux_dirent64` -- read at the cursor `at`:
+  --
+  --   inode      [at + 0  : 8]
+  --   offset     [at + 8  : 8] as signed
+  --   length     [at + 16 : 2]     d_reclen: the step to the NEXT record
+  --   kind       [at + 18 : 1]     d_type, the same numbers as `kind of` a mode
+  --   name        at + 19          NUL-terminated, to the end of the record
+  --
+  -- `dirent` below names those offsets. It has to be lensed with the BRACKET
+  -- form, because the cursor is a runtime value and a record is variable-length:
+  --
+  --   entry is [at : 19] as linux.dirent
+  --
+  -- A named backing is a fixed block at a compile-time offset, so it cannot say
+  -- "the record here". `[ADDRESS : WIDTH]` can: the programmer supplies the
+  -- width and the compiler checks it covers the layout. 19 is the fixed head --
+  -- the name runs past it to `length`, and is reached at `at + 19`.
+  -- See examples/ls.mereo.
+  getdents64 is assembly "syscall"
+    count out rax
+    number is 217 in rax
+    descriptor in rdi
+    buffer in rsi
+    capacity in rdx
+    clobbers rcx and r11 and memory
+    ensure count >= 0
+  end
+
+  -- unlinkat(base, path, flags) -- remove a name. flags is 0 for a file,
+  -- 0x200 (AT_REMOVEDIR) for a directory; that one bit is the whole of the
+  -- difference between unlink and rmdir.
+  unlinkat is assembly "syscall"
+    result out rax
+    number is 263 in rax
+    base in rdi
+    path in rsi
+    flags in rdx
+    clobbers rcx and r11 and memory
+    ensure result >= 0
+  end
+
+  mkdirat is assembly "syscall"
+    result out rax
+    number is 258 in rax
+    base in rdi
+    path in rsi
+    mode in rdx
+    clobbers rcx and r11 and memory
+    ensure result >= 0
+  end
+
+  -- renameat2(base, path, new_base, new_path, flags) -- five arguments, so the
+  -- fourth lands in r10 and the fifth in r8. flags is 0 for a plain rename;
+  -- RENAME_NOREPLACE is 1, RENAME_EXCHANGE is 2.
+  renameat2 is assembly "syscall"
+    result out rax
+    number is 316 in rax
+    base in rdi
+    path in rsi
+    new_base in rdx
+    new_path in r10
+    flags in r8
+    clobbers rcx and r11 and memory
+    ensure result >= 0
+  end
+
+  linkat is assembly "syscall"
+    result out rax
+    number is 265 in rax
+    base in rdi
+    path in rsi
+    new_base in rdx
+    new_path in r10
+    flags in r8
+    clobbers rcx and r11 and memory
+    ensure result >= 0
+  end
+
+  -- symlinkat(target, base, path) -- note the order: the TARGET comes first and
+  -- is not resolved at all (it is stored as text), so it takes no `base`.
+  symlinkat is assembly "syscall"
+    result out rax
+    number is 266 in rax
+    target in rdi
+    base in rsi
+    path in rdx
+    clobbers rcx and r11 and memory
+    ensure result >= 0
+  end
+
+  -- readlinkat -- symlinkat's other half. Writes the link text into BUFFER and
+  -- yields how many bytes that was. It does NOT terminate the text, and it
+  -- TRUNCATES rather than failing when the buffer is short, so a count equal to
+  -- the capacity means "there may be more".
+  readlinkat is assembly "syscall"
+    count out rax
+    number is 267 in rax
+    base in rdi
+    path in rsi
+    buffer in rdx
+    capacity in r10
+    clobbers rcx and r11 and memory
+    ensure count >= 0
+  end
+
+  fchmodat is assembly "syscall"
+    result out rax
+    number is 268 in rax
+    base in rdi
+    path in rsi
+    mode in rdx
+    clobbers rcx and r11 and memory
+    ensure result >= 0
+  end
+
+  -- faccessat2(base, path, mode, flags) -- the four-argument form, which is the
+  -- one that honours flags. mode is a bit set: 0 exists, 1 execute, 2 write,
+  -- 4 read.
+  faccessat2 is assembly "syscall"
+    result out rax
+    number is 439 in rax
+    base in rdi
+    path in rsi
+    mode in rdx
+    flags in r10
+    clobbers rcx and r11 and memory
+    ensure result >= 0
+  end
+
+  chdir is assembly "syscall"
+    result out rax
+    number is 80 in rax
+    path in rdi
+    clobbers rcx and r11 and memory
+    ensure result >= 0
+  end
+
+  -- ------------------------------------------------------------- time and waiting
+
+  -- clock_gettime(clock, buffer) -- the current time into a 16-byte `timespec`
+  -- (see the view below). clock 0 is CLOCK_REALTIME (wall time, jumps), 1 is
+  -- CLOCK_MONOTONIC (since boot, never jumps -- the one to measure with).
+  --
+  -- This is the real syscall, not the vDSO. The vDSO route is faster (no
+  -- kernel entry) but needs the auxiliary vector and an indirect call, and mereo
+  -- has neither yet.
+  clock_gettime is assembly "syscall"
+    result out rax
+    number is 228 in rax
+    clock in rdi
+    buffer in rsi
+    clobbers rcx and r11 and memory
+    ensure result >= 0
+  end
+
+  -- nanosleep(request, remain) -- both are `timespec` buffers. A signal cuts the
+  -- sleep short and returns -EINTR with the time left written into `remain`, so
+  -- a caller that must sleep the whole span loops on it. Pass 0 for `remain` to
+  -- discard that.
+  nanosleep is assembly "syscall"
+    result out rax
+    number is 35 in rax
+    request in rdi
+    remain in rsi
+    clobbers rcx and r11 and memory
+    ensure result >= 0
+  end
+
+  -- ppoll(entries, count, timeout, mask, mask_size) -- five arguments. `entries`
+  -- points at COUNT 8-byte records (see the `poll_entry` view); `timeout` is a
+  -- `timespec` or 0 for "wait forever"; `mask` is 0 for "leave the signal mask
+  -- alone", and then `mask_size` must still be 8.
+  --
+  -- ppoll rather than poll because its timeout is a timespec the kernel does not
+  -- write back -- poll's millisecond count is coarser and select's timeval is
+  -- modified in place on Linux.
+  ppoll is assembly "syscall"
+    ready out rax
+    number is 271 in rax
+    entries in rdi
+    count in rsi
+    timeout in rdx
+    mask in r10
+    mask_size in r8
+    clobbers rcx and r11 and memory
+    ensure ready >= 0
+  end
+
+  -- --------------------------------------------------------------- descriptors
+
+  -- dup3(descriptor, target, flags) -- make TARGET refer to what DESCRIPTOR
+  -- refers to, closing whatever TARGET was. flags is 0, or 0o2000000 (0x80000,
+  -- O_CLOEXEC) to set close-on-exec on the copy.
+  --
+  -- dup3 rather than dup2 because dup2(fd, fd) silently succeeds and does
+  -- nothing, which hides a bug; dup3 refuses it with -EINVAL.
+  dup3 is assembly "syscall"
+    result out rax
+    number is 292 in rax
+    descriptor in rdi
+    target in rsi
+    flags in rdx
+    clobbers rcx and r11 and memory
+    ensure result >= 0
+  end
+
+  -- pipe2(pair, flags) -- writes two descriptors into an 8-byte buffer: the READ
+  -- end at offset 0, the WRITE end at offset 4, both 4 bytes.
+  --
+  --   pair is 8 bytes
+  --   pipe2 system where
+  --       pair is pair
+  --       flags is 0
+  --   reader is adopted file where
+  --       descriptor is [pair + 0 : 4] as signed
+  --   writer is adopted file where
+  --       descriptor is [pair + 4 : 4] as signed
+  pipe2 is assembly "syscall"
+    result out rax
+    number is 293 in rax
+    pair in rdi
+    flags in rsi
+    clobbers rcx and r11 and memory
+    ensure result >= 0
+  end
+
+  -- uname(buffer) -- six NUL-terminated strings in one 390-byte block, each field
+  -- 65 bytes: sysname 0, nodename 65, release 130, version 195, machine 260,
+  -- domainname 325.
+  --
+  -- Those offsets are written here rather than in a layout view because a layout
+  -- view's fields are 1/2/4/8 bytes -- they name a NUMBER at an offset, and each
+  -- of these is a run of TEXT. Read them with `measure text` over `buffer + 65`.
+  uname is assembly "syscall"
+    result out rax
+    number is 63 in rax
+    buffer in rdi
+    clobbers rcx and r11 and memory
+    ensure result >= 0
+  end
+
+  -- -------------------------------------------------------------------------- the resources
+
+  -- linux.mereo -- conceptual equivalents of linux.h++, in mereo.
+  -- Imports its own primitive declarations; programs need only
+  -- `use "linux.mereo"`.
+  --
+  -- What ports directly (linux.h++ -> here):
+  --   file                    ->  file     THE ACQUIRED RESOURCE: a `descriptor`
+  --                                        field, opened by acquire and closed
+  --                                        by release, with the I/O methods
+  --                                        (read, write, seek, sync) reaching the
+  --                                        fd directly. Construct one to open
+  --                                        (`f is file where path ...`) or adopt a
+  --                                        raw descriptor (`f is already file where
+  --                                        descriptor is 1`).
+  --   mapping                 ->  mapping  with a fixed length: a
+  --                                        mereo constructor cannot yet
+  --                                        persist a parameter into state,
+  --                                        and munmap needs the length.
+  --                                        Declare a resource per size, or
+  --                                        wait for param-to-state.
+  --   process (kill, running) ->  process  adopted-only: wrap a known pid.
+  --
+  -- Skipped, with reasons (each is a known design thread):
+  --   duplicate, accept, pidfd   factory methods returning a new owned
+  --                              instance (instance-valued ports)
+  --   release, detach            ownership transfer; mereo ownership is
+  --                              fixed at declaration
+  --   subprocess spawn           fork returns twice; needs the fused spawn
+  --                              pseudo-primitive or branches
+  --   socket                     a socket is an fd like any other, so `file`
+  --                              already covers the I/O; what a program adds is
+  --                              the lifecycle it wants (connect, or bind and
+  --                              listen). See socket.mereo and server.mereo --
+  --                              the address is `sockaddr_in`, below.
+  --   app                        argv and env live in initial-stack pointer
+  --                              land; its status-then-exit-last design IS
+  --                              mereo already (the implicit status and the
+  --                              release tower)
+  --
+  -- Contract caveat: mmap's true failure test is the [-4095,-1] window;
+  -- `address > 0` is correct for user mappings on x86-64 until an
+  -- `ensure ok` form exists.
+
+
+  file is
+    descriptor is 4 bytes as signed
+
+    acquire (path, flags, mode) is
+      open (path is path,
+                  flags is flags,
+                  mode is mode,
+                  descriptor is descriptor)
+    end
+
+    read (buffer, capacity, count) is
+      read (descriptor is descriptor,
+                  buffer is buffer,
+                  capacity is capacity,
+                  count is count)
+    end
+
+    write (buffer, count, written) is
+      write (descriptor is descriptor,
+                   buffer is buffer,
+                   count is count,
+                   written is written)
+      ensure written == count
+    end
+      -- the one clause implies written >= 0 (count is never negative), so the
+      -- hot path pays a single compare; an error return (-errno) or a short
+      -- write both fail it, and the cold block still tells them apart
+      -- (-EINTR/-EPIPE stay graceful there)
+
+    seek (offset, whence, position) is
+      lseek (descriptor is descriptor,
+                   offset is offset,
+                   whence is whence,
+                   position is position)
+    end
+
+    sync (result) is
+      fsync (descriptor is descriptor, result is result)
+    end
+
+    -- fstat: metadata for the descriptor itself rather than a path, which is
+    -- statx with an EMPTY path and AT_EMPTY_PATH set. Lay `file_status` over the
+    -- buffer to read it. Doing it this way -- on the open file rather than by
+    -- name -- is what closes the race where the path is replaced between the two
+    -- calls, so a program that has the file open should always ask it and not
+    -- the directory.
+    status (buffer, mask, result) is
+      statx (base is descriptor,
+                   path is "",
+                   flags is 4096,
+                   mask is mask,
+                   buffer is buffer,
+                   result is result)
+    end
+
+    -- dup3: make TARGET refer to what this file refers to, closing whatever
+    -- TARGET was. This is how a program points standard output somewhere else --
+    -- `redirect log where target is 1`.
+    --
+    -- The copy is NOT owned by anything: two descriptors now name one open file,
+    -- this resource releases only its own, and the target is the caller's to
+    -- close. That asymmetry is why this is a method and not a second instance.
+    redirect (target, result) is
+      dup3 (descriptor is descriptor,
+                  target is target,
+                  flags is 0,
+                  result is result)
+    end
+
+    -- ppoll: wait until one of ENTRIES is ready. ENTRIES is an array of COUNT
+    -- 8-byte `poll_entry` records the CALLER fills in -- which is what the view
+    -- is for:
+    --
+    --   slot is 8 bytes
+    --   watched is slot as poll_entry
+    --   descriptor of watched is here          -- `descriptor of source` reads it
+    --   events of watched is 1                 -- POLLIN
+    --   watch source where
+    --       entries is slot
+    --       count is 1
+    --       timeout is 0                       -- ...forever; or a `timespec`
+    --       ready is ready
+    --   got is revents of watched
+    --
+    -- `ready` is 0 when the timeout ran out, which is not a failure. The array may
+    -- name any descriptors at all -- this is a method on `file` because a fallible
+    -- primitive needs a resource to carry its `ensure`, and calling it on the file
+    -- being waited for is what reads correctly.
+    watch (entries, count, timeout, ready) is
+      ppoll (entries is entries,
+                   count is count,
+                   timeout is timeout,
+                   mask is 0,
+                   mask_size is 8,
+                   ready is ready)
+    end
+
+    release is
+      close (descriptor is descriptor)
+    end
+  end
+
+  -- `tty` -- a terminal, LAYERED on `file`. This is what `extends` is for, and
+  -- the only example of it in the library.
+  --
+  -- `file` is already the atomic fd-owning unit, so open, close, read and write
+  -- come from there unchanged. This layer owns a SECOND thing on top of the
+  -- descriptor: the terminal's original settings. Its `acquire` snapshots them
+  -- into its own `backup`, its `release` puts them back -- so on ANY exit, a
+  -- normal one, a failed check, or a Ctrl-C, the tower restores THEN closes, in
+  -- that order, each a single operation.
+  --
+  -- That ordering is the reason to layer rather than to write one resource
+  -- owning both: each layer acquires exactly one thing, so how far acquisition
+  -- got is still known statically, and the tower is still derived.
+  --
+  --   console is tty (path is "/dev/tty", flags is 2, mode is 0)
+  --   console.snapshot (buffer is work)     -- a WORKING copy to edit
+  --   ...
+  --   console.apply (buffer is work)
+  --
+  -- 21505 is TCGETS and 21506 TCSETS -- read and write the terminal's
+  -- attributes. See examples/keys.mereo.
+  tty extends file is
+    backup is 36 bytes
+    status is 4 bytes as signed
+
+    acquire is
+      ioctl (descriptor is descriptor,
+             request is 21505,
+             argument is backup,
+             result is status)
+    end
+
+    snapshot (buffer) is
+      ioctl (descriptor is descriptor,
+             request is 21505,
+             argument is buffer,
+             result is status)
+    end
+
+    apply (buffer) is
+      ioctl (descriptor is descriptor,
+             request is 21506,
+             argument is buffer,
+             result is status)
+    end
+
+    release is
+      ioctl (descriptor is descriptor,
+             request is 21506,
+             argument is backup,
+             result is status)
+    end
+  end
+
+  -- `channel` -- pipe2, and nothing else. Stateless, because the thing it makes
+  -- is not one resource but TWO independently-owned descriptors, and mereo
+  -- already has the word for that: adopt each end as a `file` and the scope
+  -- closes both, in reverse order, on every path out.
+  --
+  --   pair is 8 bytes
+  --   make channel where
+  --       pair is pair
+  --       flags is 0
+  --   head is [pair + 0 : 4] as signed      -- the read end, at offset 0
+  --   tail is [pair + 4 : 4] as signed      -- ...and the write end, at 4
+  --   source is adopted file where
+  --       descriptor is head
+  --   sink is adopted file where
+  --       descriptor is tail
+  --
+  -- A `pipe` resource owning both was the first shape tried and is the wrong one:
+  -- it would have to hand its descriptors out, and a method cannot read its own
+  -- state bytes to do it. Two adoptions say the same thing with what is already
+  -- here.
+  channel is
+    make (pair, flags, result) is
+      pipe2 (pair is pair, flags is flags, result is result)
+    end
+  end
+
+  -- A directory, open and walked. The same shape as `file` -- a descriptor its
+  -- scope closes -- with the two differences that make it its own resource: it
+  -- acquires with O_DIRECTORY, so opening a plain file fails HERE rather than at
+  -- the first read, and its `read` is getdents64 rather than read.
+  --
+  --   folder is directory where
+  --       path is "/etc"
+  --   read folder where
+  --       buffer is block
+  --       capacity is size of block
+  --       count is count
+  --
+  -- `count` is bytes, not entries, and **zero means the end of the directory**,
+  -- not a failure. One call rarely returns everything: loop until it answers 0.
+  -- Walking the bytes is the caller's loop over `dirent`, above -- there is no
+  -- callback to hand it, and a `next` method would need a cursor the resource
+  -- cannot yet keep (a constructor cannot persist a parameter into state).
+  directory is
+    descriptor is 4 bytes as signed
+
+    acquire (path) is
+      openat (base is -100,
+                    path is path,
+                    flags is 65536,
+                    mode is 0,
+                    descriptor is descriptor)
+    end
+
+    read (buffer, capacity, count) is
+      getdents64 (descriptor is descriptor,
+                        buffer is buffer,
+                        capacity is capacity,
+                        count is count)
+    end
+
+    release is
+      close (descriptor is descriptor)
+    end
+  end
+
+  -- `files` -- the operations that NAME a file rather than hold one. Stateless,
+  -- like `identity`: nothing is acquired, so there is nothing to release, and the
+  -- whole namespace is used by name (`inspect files where ...`).
+  --
+  -- These are here rather than as free-standing templates because every one of
+  -- them can fail, and a fallible primitive has to live in a resource so that its
+  -- `ensure` has a release tower to fail into.
+  --
+  -- Every one carries a `result` out-port. Leaving it unbound is the usual case
+  -- -- the step's own `ensure` has already decided the call succeeded -- but
+  -- binding it is what lets `or continue` repair a failure, which is how you say
+  -- "remove it if it is there":
+  --
+  --   remove files where
+  --       name is "scratch"
+  --       flags is 0
+  --   or continue where
+  --       result is 0
+  --
+  -- Every one resolves `name` relative to the current directory (base is -100).
+  -- To work relative to a `directory` you hold, reach for the primitive itself
+  -- and pass its descriptor as `base` -- these methods do not take one, because a
+  -- resource cannot yet be handed to a method as a value.
+  files is
+    -- metadata for a path -- `file`'s `status` method is the same call on an open
+    -- descriptor, and is the one to prefer when you have the file open, since a
+    -- name can be replaced between two calls. `flags is 0` follows symlinks;
+    -- `flags is 256` (AT_SYMLINK_NOFOLLOW) reports on the link itself.
+    inspect (name, buffer, mask, flags, result) is
+      statx (base is -100,
+                   path is name,
+                   flags is flags,
+                   mask is mask,
+                   buffer is buffer,
+                   result is result)
+    end
+
+    -- unlink, and rmdir: `flags is 0` for a file, `flags is 512` (AT_REMOVEDIR)
+    -- for a directory.
+    remove (name, flags, result) is
+      unlinkat (base is -100,
+                      path is name,
+                      flags is flags,
+                      result is result)
+    end
+
+    make_directory (name, mode, result) is
+      mkdirat (base is -100, path is name, mode is mode, result is result)
+    end
+
+    -- `flags is 0` replaces an existing target; 1 (RENAME_NOREPLACE) refuses to,
+    -- and 2 (RENAME_EXCHANGE) swaps the two names atomically.
+    rename (name, new_name, flags, result) is
+      renameat2 (base is -100,
+                       path is name,
+                       new_base is -100,
+                       new_path is new_name,
+                       flags is flags,
+                       result is result)
+    end
+
+    make_link (name, new_name, result) is
+      linkat (base is -100,
+                    path is name,
+                    new_base is -100,
+                    new_path is new_name,
+                    flags is 0,
+                    result is result)
+    end
+
+    -- NAME becomes a symlink whose text is TARGET. The target is stored as
+    -- written and is never resolved here, so it may point at nothing.
+    make_symlink (target, name, result) is
+      symlinkat (target is target,
+                       base is -100,
+                       path is name,
+                       result is result)
+    end
+
+    -- the text of a symlink. Not terminated, and truncated rather than failed
+    -- when the buffer is short -- a count equal to CAPACITY means "there may be
+    -- more".
+    read_link (name, buffer, capacity, count) is
+      readlinkat (base is -100,
+                        path is name,
+                        buffer is buffer,
+                        capacity is capacity,
+                        count is count)
+    end
+
+    permit (name, mode, result) is
+      fchmodat (base is -100, path is name, mode is mode, result is result)
+    end
+
+    -- `mode is 0` asks only whether it exists; 1 execute, 2 write, 4 read, and
+    -- they combine. This FAILS when the answer is no, which is the useful shape
+    -- inside a program that needs the access -- to ask without failing, use
+    -- `or continue`.
+    reachable (name, mode, result) is
+      faccessat2 (base is -100,
+                        path is name,
+                        mode is mode,
+                        flags is 0,
+                        result is result)
+    end
+
+    enter (name, result) is
+      chdir (path is name, result is result)
+    end
+  end
+
+  -- The clock. Stateless, like `identity`: a query over the running system that
+  -- holds nothing, so adopt one (`already clock`) and ask. Every method fills a
+  -- 16-byte `timespec`.
+  --
+  --   watch is already clock
+  --   elapsed watch where
+  --       buffer is started
+  --   ...
+  --   elapsed watch where
+  --       buffer is ended
+  --   spent is seconds of (ended as timespec) - seconds of (started as timespec)
+  clock is
+    -- wall-clock time, seconds since 1970. Jumps when the system clock is set, so
+    -- it answers "what time is it" and must not be used to measure a duration.
+    now (buffer, result) is
+      clock_gettime (clock is 0, buffer is buffer, result is result)
+    end
+
+    -- time since boot. Never jumps -- this is the one to measure with.
+    elapsed (buffer, result) is
+      clock_gettime (clock is 1, buffer is buffer, result is result)
+    end
+
+    -- sleep for the span in REQUEST. A signal cuts it short, and the time left
+    -- is written into REMAIN, so a caller that must sleep the whole span loops
+    -- while the remainder is non-zero.
+    wait (request, remain, result) is
+      nanosleep (request is request, remain is remain, result is result)
+    end
+  end
+
+  mapping is
+    address is 0
+    length is 4096
+
+    acquire (protection) is
+      mmap (hint is 0,
+                  length is length,
+                  protection is protection,
+                  flags is 34,
+                  descriptor is -1,
+                  offset is 0,
+                  address is address)
+    end
+
+    release is
+      munmap (address is address, length is length)
+    end
+  end
+
+  -- An IPv4 socket address -- what bind/connect/accept take. Byte order is not
+  -- uniform across its fields, and the VIEW is where that gets said, once: the
+  -- family is host order, the port and address are network order. `htons` is not
+  -- a function you call here, it is `2 bytes as big`.
+  --
+  --   host is 16 bytes
+  --   peer is host as sockaddr_in
+  --   family of peer is 2            -- AF_INET
+  --   port of peer is 12345
+  --   address of peer is 2130706433  -- 127.0.0.1
+  sockaddr_in is
+    family is 2 bytes
+    port is 2 bytes as big
+    address is 4 bytes as big
+    pad is 8 bytes
+  end
+
+  -- ------------------------------------------------------------ file metadata
+
+  -- `struct statx`, as a view. The kernel's buffer is 256 bytes; this names the
+  -- first 128 -- everything the old `struct stat` carried, ending exactly on the
+  -- 0x80 boundary the kernel's own header marks. The tail past it (rdev, dev,
+  -- mount id, direct-I/O alignment, and 72 bytes of spare) has no field here,
+  -- because nothing has wanted one; declare the buffer 256 bytes regardless, since
+  -- that is what the kernel writes.
+  --
+  --   meta is 256 bytes
+  --   inspect where
+  --       path is "/etc/passwd"
+  --       buffer is meta
+  --       mask is 2047                -- STATX_BASIC_STATS
+  --       flags is 0
+  --   info is meta as file_status
+  --   n is length of info
+  --
+  -- `mask of info` says what the kernel actually filled -- it may answer with
+  -- more than was asked for, and on an unusual filesystem with less.
+  --
+  -- The `size` field is called `length` here: `size of X` is mereo's compile-time
+  -- size operator, so a field of that name could not be read.
+  file_status is
+    mask is 4 bytes
+    blocksize is 4 bytes
+    attributes is 8 bytes
+    links is 4 bytes
+    uid is 4 bytes
+    gid is 4 bytes
+    mode is 2 bytes
+    spare is 2 bytes
+    inode is 8 bytes
+    length is 8 bytes
+    blocks is 8 bytes
+    attribute_mask is 8 bytes
+    access_seconds is 8 bytes as signed
+    access_nanoseconds is 4 bytes
+    access_pad is 4 bytes
+    birth_seconds is 8 bytes as signed
+    birth_nanoseconds is 4 bytes
+    birth_pad is 4 bytes
+    change_seconds is 8 bytes as signed
+    change_nanoseconds is 4 bytes
+    change_pad is 4 bytes
+    modify_seconds is 8 bytes as signed
+    modify_nanoseconds is 4 bytes
+    modify_pad is 4 bytes
+  end
+
+  -- The mode word, as named bits. Everyone else writes these as octal constants
+  -- (S_IFDIR is 0040000, S_ISUID is 0004000); they are a bit layout, and a flag
+  -- view is what mereo has for a bit layout.
+  --
+  --   perm is mode of info as file_mode
+  --   kind of perm == 4 goes ...      -- a directory
+  --
+  -- `kind` is the top four bits, and its values are the SAME NUMBERS as a
+  -- directory entry's `kind` (below) -- d_type is literally the mode shifted down
+  -- by 12. One table serves both:
+  --
+  --   0 unknown   1 fifo   2 character   4 directory
+  --   6 block     8 file  10 symlink    12 socket
+  file_mode is
+    other_execute is bit 0
+    other_write is bit 1
+    other_read is bit 2
+    group_execute is bit 3
+    group_write is bit 4
+    group_read is bit 5
+    owner_execute is bit 6
+    owner_write is bit 7
+    owner_read is bit 8
+    sticky is bit 9
+    setgid is bit 10
+    setuid is bit 11
+    kind is bits 12 to 15
+  end
+
+  -- ----------------------------------------------------------------- time and polling
+
+  -- `struct timespec` -- what clock_gettime fills and nanosleep reads. Both
+  -- fields are signed: a difference of two of them is the useful thing.
+  timespec is
+    seconds is 8 bytes as signed
+    nanoseconds is 8 bytes as signed
+  end
+
+  -- One `struct linux_dirent64`, as getdents64 packs them. Only the fixed HEAD
+  -- is named: the name is a NUL-terminated run starting at offset 19 and ending
+  -- somewhere before `length`, and a layout field is a number at an offset, not
+  -- a run of text. So the name is still reached as `at + 19`, bounded by
+  -- `length - 19`.
+  --
+  -- Records are variable-length and the cursor is a runtime value, so this is
+  -- lensed with the bracket form -- `entry is [at : 19] as linux.dirent` -- not
+  -- over a named backing. See examples/ls.mereo.
+  dirent is
+    inode is 8 bytes
+    offset is 8 bytes as signed
+    length is 2 bytes            -- d_reclen: the step to the NEXT record
+    kind is 1 bytes              -- d_type, the same numbers as a mode's `kind`
+  end
+
+  -- One `struct pollfd` -- ppoll takes an array of these. `events` is what to
+  -- watch for and `revents` is what happened; the kernel writes the second and
+  -- leaves the first alone. POLLIN is 1, POLLOUT is 4, POLLERR 8, POLLHUP 16.
+  poll_entry is
+    descriptor is 4 bytes as signed
+    events is 2 bytes
+    revents is 2 bytes
+  end
+
+  -- `struct termios`, 36 bytes -- what TCGETS hands back and TCSETS takes. The
+  -- fields a program touches get names; the rest of the control-character array
+  -- is spanned by padding, so that read_minimum (POSIX VMIN) and read_timeout
+  -- (POSIX VTIME) land at their real offsets, 23 and 22.
+  terminal_settings is
+    input_flags is 4 bytes
+    output_flags is 4 bytes
+    control_flags is 4 bytes
+    local_flags is 4 bytes
+    control_characters_start is 4 bytes
+    control_characters_before is 2 bytes
+    read_timeout is 1 bytes
+    read_minimum is 1 bytes
+    control_characters_after is 8 bytes
+    control_characters_end is 4 bytes
+  end
+
+  -- The local-mode bits of `terminal_settings.local_flags` (POSIX c_lflag), so
+  -- a program flips them by name instead of by bitmask. Laid over the LOW BYTE
+  -- of that word, which is where all three of these live -- `local_flags` sits
+  -- at offset 12, so the view goes over `settings + 12`.
+  local_mode is
+    signals is bit 0        -- ISIG   -- keypresses raise signals (Ctrl-C)
+    canonical is bit 1      -- ICANON -- line buffering
+    echo is bit 3           -- ECHO   -- echo typed input
+  end
+
+  process is
+    pid is -1
+
+    kill (signal, result) is
+      kill (pid is pid, signal is signal, result is result)
+    end
+
+    probe (result) is
+      kill (pid is pid, signal is 0, result is result)
+    end
+  end
+
+  -- identity -- the caller's own credentials. Stateless: a pure query over the
+  -- running process, so it holds no resource. Adopt one (`already identity`) and
+  -- ask; there is nothing for the tower to release.
+  --
+  -- `getpwuid` is a PROCEDURE method (a multi-step body, inlined at the call
+  -- site): it opens /etc/passwd itself, reads it, and walks the lines in mereo to
+  -- find the login name whose uid field matches. The opened `file` is owned by the
+  -- body, so it joins the release tower and is closed on both the happy and the
+  -- error path -- getpwuid cleans up after itself. Needs the byte layer (`text`);
+  -- a caller of getpwuid therefore also `use`s core.mereo.
+  identity is
+    user (euid) is
+      geteuid (euid is euid)
+    end
+
+    -- the REAL user id, which differs from the effective one only under setuid.
+    -- `whoami` wants `user`; `id -r` wants this.
+    real (uid) is
+      getuid (uid is uid)
+    end
+
+    -- the caller's own process id. On `identity` rather than on `process` because
+    -- `process` wraps a pid you already know, and this is how you learn one.
+    process_id (pid) is
+      getpid (pid is pid)
+    end
+
+    -- uname: what the kernel calls this machine. Six NUL-terminated strings in
+    -- one 390-byte block, each field 65 bytes -- sysname 0, nodename 65,
+    -- release 130, version 195, machine 260, domainname 325. Read one with
+    -- `measure text` over `buffer + OFFSET`.
+    --
+    -- The offsets stay written here rather than in a layout view because a view's
+    -- fields are 1/2/4/8 bytes: they name a NUMBER at an offset, and every one of
+    -- these is a run of text.
+    machine (buffer, result) is
+      uname (buffer is buffer, result is result)
+    end
+
+    getpwuid (uid, name, length) is
+      capacity is 65536
+      buffer is capacity bytes
+      count is 0
+      key is 16 bytes
+      keylen is 0
+      key_ptr is 0
+      cur is 0
+      left is 0
+      name_ptr is 0
+      name_len is 0
+      skip_len is 0
+      uid_len is 0
+      line_len is 0
+      match is 0
+      hits is 0
+      answer_ptr is 0
+      answer_len is 0
+
+      passwd is file (path is "/etc/passwd", flags is 0, mode is 0)
+
+      passwd.read (buffer is buffer, capacity is capacity, count is count)
+
+      text.format (value is uid, buffer is key, length is keylen)
+
+      key_ptr is key
+      cur is buffer
+      left is count
+
+      lines goes
+        name_ptr is cur
+        text.find (data is cur, length is left, byte is 58, offset is name_len)
+        cur is cur + name_len
+        cur is cur + 1
+        left is left - name_len
+        left is left - 1
+
+        text.find (data is cur, length is left, byte is 58, offset is skip_len)
+        cur is cur + skip_len
+        cur is cur + 1
+        left is left - skip_len
+        left is left - 1
+
+        text.find (data is cur, length is left, byte is 58, offset is uid_len)
+        text.compare (data is cur,
+                      length is uid_len,
+                      other is key_ptr,
+                      other_length is keylen,
+                      result is match)
+
+        match != 0 goes           -- this line's uid is the one asked for
+          answer_ptr is name_ptr
+          answer_len is name_len
+          hits is 1
+          leave lines             -- ...and there is no second answer to find
+        end
+
+        text.find (data is cur, length is left, byte is 10, offset is line_len)
+        cur is cur + line_len
+        cur is cur + 1
+        left is left - line_len
+        left is left - 1
+        repeat lines when left > 0
+      end
+
+      ensure hits >= 1
+
+      name is answer_ptr
+      length is answer_len
+    end
+  end
+end

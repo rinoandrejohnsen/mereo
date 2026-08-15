@@ -1,0 +1,691 @@
+-- core.mereo -- everything that needs no system call.
+--
+-- mereo has exactly two libraries, split on one question: does it talk to the
+-- kernel? If not it is here; if so it is in linux.mereo. A program that only
+-- computes needs this file and nothing else, and this file needs nothing at all.
+--
+--   raw instructions   popcnt, mfence, rdrand -- one CPU instruction each
+--   the byte layer     on a `text` group: find and last, compare, search,
+--                      measure; copy and fill; upper and lower; digit,
+--                      space and alpha; format and number for decimal,
+--                      hex, hexbytes and unhex for base 16
+--   span               a READ view: bytes you already have, named once
+--   builder            a WRITE view: a buffer that knows where it stops
+--   json               a reader over bytes you already have
+--
+-- Nothing here is a template you pay for unless you use it: an unused
+-- definition emits no code.
+
+-- -------------------------------------------------------------------------- raw instructions
+
+-- Raw inline-assembly primitives. A syscall is the special
+-- case `assembly "syscall"` (see linux.mereo); here the template and the
+-- per-operand register constraints are written out. Directions are the same
+-- verbs as everywhere: in = input, out = output.
+
+
+-- Pure computation: no side effects, so `pure` (non-volatile) lets GCC
+-- fold/hoist/eliminate it. popcnt reads one register, writes another.
+population_count is pure assembly "popcnt %[source], %[result]"
+  source in register
+  result out register
+end
+
+-- A full memory barrier: no operands, only the memory clobber. Volatile
+-- by default (a barrier that GCC could delete would be worthless).
+memory_fence is assembly "mfence"
+  clobbers memory
+end
+
+-- Hardware RNG into a register; the carry flag (cc) says whether the
+-- value is valid, so it is clobbered.
+random_word is assembly "rdrand %[result]"
+  result out register
+  clobbers cc
+end
+
+-- ------------------------------------------------------------------------------ bytes
+
+-- The byte/text layer: pure operations over regions of memory,
+-- gathered on a stateless `text` namespace. No syscalls and no state.
+--
+--   find     offset of the first BYTE in DATA[0..LENGTH), or LENGTH if absent
+--   search   offset of NEEDLE[0..NEEDLE_LENGTH) in DATA[0..LENGTH), or LENGTH
+--   compare  1 if DATA[0..LENGTH) equals OTHER[0..OTHER_LENGTH), else 0
+--   number   read DATA[0..LENGTH) as a signed decimal integer (leading spaces ok)
+--   format   write VALUE as decimal digits into BUFFER, yielding its LENGTH
+--
+-- `find`, `compare` and `format` are the irreducible byte primitives -- memchr,
+-- memcmp and itoa, one machine loop each -- kept as always_inline C helpers.
+-- `search` and `number` are COMPOSED from them in mereo (loops + byte-loads),
+-- not C, so the logic stays in the language. Each says where it stops with a
+-- `leave` per reason, rather than folding every reason into one flag.
+
+scan is helper _scan
+  data in
+  length in
+  byte in
+  offset out
+end
+
+same is helper _same
+  data in
+  length in
+  other in
+  other_length in
+  result out
+end
+
+decimal is helper _decimal
+  value in
+  output in
+  length out
+end
+
+text is
+  find (data, length, byte, offset) is
+    scan (data is data, length is length, byte is byte, offset is offset)
+  end
+
+  compare (data, length, other, other_length, result) is
+    same (data is data,
+          length is length,
+          other is other,
+          other_length is other_length,
+          result is result)
+  end
+
+  format (value, buffer, length) is
+    decimal (value is value, output is buffer, length is length)
+  end
+
+  -- THE THREE THE KERNEL'S OWN nolibc KEEPS, and mereo did not: memcpy, memset
+  -- and strlen. The corpus had written the first of them out by hand 37 times.
+  --
+  -- Each is a bounded loop with the test at the TOP, so a length of zero does
+  -- nothing and needs no special case at the call site.
+
+  -- memcpy: LENGTH bytes, SOURCE to TARGET, forwards. Overlapping regions are
+  -- safe only when TARGET is at or below SOURCE -- there is no memmove here,
+  -- because nothing has wanted one and a direction test is not free.
+  copy (source, target, length) is
+    i is 0
+    step goes
+      leave step when i >= length
+      [target + i : 1] is [source + i : 1]
+      i is i + 1
+      repeat step
+    end
+  end
+
+  -- memset: LENGTH bytes of TARGET set to BYTE.
+  fill (target, length, byte) is
+    i is 0
+    step goes
+      leave step when i >= length
+      [target + i : 1] is byte
+      i is i + 1
+      repeat step
+    end
+  end
+
+  -- strlen, bounded: the offset of the first zero byte, or LIMIT if there is
+  -- none. `find` already answers this; `measure` says which question was asked.
+  measure (data, limit, result) is
+    scan (data is data, length is limit, byte is 0, offset is result)
+  end
+
+  -- strrchr: the offset of the LAST BYTE in DATA[0..LENGTH), or LENGTH if it
+  -- is not there -- `find`'s mirror, and the same answer when absent.
+  --
+  -- A conditional store rather than a guarded scope, so the loop keeps no
+  -- data-dependent branch and stays vectorisable: every pass writes, and the
+  -- last write to land is the answer.
+  last (data, length, byte, offset) is
+    i is 0
+    offset is length
+    step goes
+      leave step when i >= length
+      offset is i when [data + i] == byte
+      i is i + 1
+      repeat step
+    end
+  end
+
+  -- ASCII case, in place. Branchless for the same reason: the comparison is
+  -- arithmetic, not a branch, so a case pass over a buffer vectorises.
+  upper (data, length) is
+    i is 0
+    step goes
+      leave step when i >= length
+      c is [data + i]
+      shift is c >= 97 & c <= 122
+      [data + i] is c - shift * 32
+      i is i + 1
+      repeat step
+    end
+  end
+
+  lower (data, length) is
+    i is 0
+    step goes
+      leave step when i >= length
+      c is [data + i]
+      shift is c >= 65 & c <= 90
+      [data + i] is c + shift * 32
+      i is i + 1
+      repeat step
+    end
+  end
+
+  -- The three ctype questions this corpus actually asks. nolibc carries
+  -- thirteen; the other ten are not here because nothing has wanted one, which
+  -- is the same reason there is no memmove.
+  digit (byte, result) is
+    result is byte >= 48 & byte <= 57
+  end
+
+  space (byte, result) is
+    result is byte == 32 | byte == 9 | byte == 10 | byte == 13
+  end
+
+  alpha (byte, result) is
+    result is byte >= 65 & byte <= 90 | byte >= 97 & byte <= 122
+  end
+
+  -- VALUE as lowercase hex, shortest form, into BUFFER. `format` writes signed
+  -- decimal and `number` reads it; between them there was no way to see a byte,
+  -- an address or a flag word in the base a systems programmer reads them in.
+  --
+  -- Unsigned: hex of a negative number means its bit pattern, so the shift is
+  -- `as unsigned` and the sign bit does not smear.
+  hex (value, buffer, length) is
+    digits is constant "0123456789abcdef"
+    v is value
+    probe is value
+    n is 1
+    width goes
+      probe is probe as unsigned >> 4
+      leave width when probe == 0
+      n is n + 1
+      repeat width
+    end
+    length is n
+    i is n
+    emit goes
+      i is i - 1
+      [buffer + i] is [digits + (v & 15)]
+      v is v as unsigned >> 4
+      leave emit when i == 0
+      repeat emit
+    end
+  end
+
+  -- COUNT bytes as hex, two digits each, no separator: what a digest or a
+  -- packet dump wants. `hex` would drop the leading zero of every byte below
+  -- 16 and the run would no longer line up.
+  hexbytes (data, count, buffer, length) is
+    digits is constant "0123456789abcdef"
+    i is 0
+    at is 0
+    b is 0
+    step goes
+      leave step when i >= count
+      b is [data + i]
+      at is i * 2
+      [buffer + at] is [digits + (b as unsigned >> 4)]
+      [buffer + at + 1] is [digits + (b & 15)]
+      i is i + 1
+      repeat step
+    end
+    length is count * 2
+  end
+
+  -- hex text back to a value: `hex`'s inverse, as `number` is `format`'s.
+  -- Stops at the first byte that is not a hex digit, so it reads a prefix.
+  --
+  -- A separate template rather than a `base` port on `number`, because a port
+  -- is wired BY NAME and adding one would break every existing call.
+  unhex (data, length, value) is
+    i is 0
+    v is 0
+    d is 0
+    b is 0
+    step goes
+      leave step when i >= length
+      b is [data + i]
+      d is -1
+      d is b - 48 when b >= 48 & b <= 57
+      d is b - 87 when b >= 97 & b <= 102
+      d is b - 55 when b >= 65 & b <= 70
+      leave step when d < 0
+      v is v * 16 + d
+      i is i + 1
+      repeat step
+    end
+    value is v
+  end
+
+  -- substring search: walk to each position where NEEDLE's first byte occurs
+  -- (memchr jumps us there), compare the whole needle, stop on a match. The two
+  -- ways to stop -- a match, or running out of haystack -- are two `leave`s, so
+  -- each says which one it is; the back-edge itself is unconditional.
+  search (data, length, needle, needle_length, offset) is
+    i is 0
+    rem is 0
+    rel is 0
+    eq is 0
+    first is 0
+    at is 0
+    first is [needle : 1]
+    probe goes
+      rem is length - i
+      at is data + i
+      text.find (data is at, length is rem, byte is first, offset is rel)
+      i is i + rel
+      at is data + i
+      text.compare (data is at,
+                    length is needle_length,
+                    other is needle,
+                    other_length is needle_length,
+                    result is eq)
+      leave probe when eq == 1           -- this candidate is the needle
+      leave probe when i >= length       -- ran out of haystack
+      i is i + 1
+      repeat probe
+    end
+    offset is i
+  end
+
+  -- atoi: skip leading spaces, an optional `-`, then decimal digits. Both loops
+  -- are TOP-TESTED -- the bound comes first, then the byte, then what that byte
+  -- means -- so nothing is read that the length does not cover, and the byte a
+  -- loop stops on is still in `b` for the next stage to look at. That used to be
+  -- a flag (`ok`) computed from three tests at once, which meant reading the
+  -- byte BEFORE checking the range and then fixing the index up afterwards.
+  --
+  -- The leading `-` is an EXCEPTION, so it is a crossroad rather than arithmetic:
+  -- unsigned input runs straight through `sign likely`, and the minus case steps
+  -- over the byte in a cold road that rejoins at the digit loop. The road lands
+  -- past the exit in the caller's cold region -- this is a template, so it is
+  -- spliced into whatever program uses it.
+  number (data, length, value) is
+    i is 0
+    v is 0
+    neg is 0
+    b is 0
+    space goes
+      leave space when i >= length
+      b is [data + i : 1]
+      leave space when b != 32
+      i is i + 1
+      repeat space
+    end
+    sign likely goes
+      neg is 0
+    end
+    digit goes
+      leave digit when i >= length
+      b is [data + i : 1]
+      leave digit when b < 48
+      leave digit when b > 57
+      v is v * 10
+      v is v + b - 48
+      i is i + 1
+      repeat digit
+    end
+    value is v
+    value is 0 - v when neg == 1
+    sign when b == 45 goes
+      neg is 1
+      i is i + 1
+    end
+  end
+end
+
+-- ------------------------------------------------------------------------------ views
+
+-- The two shapes C++ ends up with once it stops passing a pointer and a count
+-- as two arguments: `string_view`/`span<const byte>` for bytes you are READING,
+-- and (having no one type for it -- `back_insert_iterator`, `to_chars`, a
+-- growing `string`) something that APPENDS into a buffer that knows where it
+-- stops. mereo needs both for the same reason C++ does, and the corpus says so:
+-- 22 calls scan a region, 39 append into one.
+--
+-- Both are borrowed resources, not views in the language's sense -- the same
+-- distinction `json` draws below. A view is laid OVER bytes with `as` and
+-- re-reads them every time; these are handed an address and a length and keep
+-- them BY VALUE, like `already file` holding a descriptor. Neither owns
+-- anything, so neither has a `release` and the tower has nothing to do.
+--
+-- What they buy over `data` + `length` as two arguments is not brevity. It is
+-- that the pair is stated ONCE, so the two halves cannot drift apart, and that
+-- there is somewhere for a bounds check to live: every `builder` method
+-- `ensure`s it fits before it writes, which the 39 hand-written copies did not.
+
+-- `span` -- mereo's string_view: an address and a count over bytes someone else
+-- owns. The C++ operations that survive the trip are the ones that do not have
+-- to MANUFACTURE a view: mereo is function-free, so a method cannot return a
+-- fresh instance, and `substr`/`first`/`last(n)`/`subspan` all do exactly that.
+--
+-- What replaces them is C++'s own pair of MUTATORS, `remove_prefix` and
+-- `remove_suffix` -- here `skip` and `trim` -- which narrow the view in place,
+-- and `take`, which does what `first(n)` (`views::take`) does by narrowing
+-- rather than by manufacturing. Between the three and `already span (data is
+-- v.data, length is n)` every subrange C++ can name is still reachable, and the
+-- loop that walks a buffer field by field is written without a hand-rolled
+-- offset:
+--
+--   rest is already span (data is buffer, length is got)
+--   line goes
+--     leave line when rest.length == 0
+--     rest.find (byte is 10, offset is n)      -- n is rest.length if none
+--     part is already span (data is rest.data, length is n)
+--     ...
+--     rest.skip (count is n + 1)               -- clamped, so the last line ends it
+--     repeat line
+--   end
+--
+-- Absent still answers `length`, never a separate sentinel: C++ needs `npos`
+-- because `size_t` has no spare value, and mereo does not have that problem --
+-- the offset one past the end IS the length, and it is the offset you would
+-- resume from anyway.
+--
+-- NOT here, and why: `find_first_of` and its three relatives (no caller has
+-- wanted a character SET); `front`/`back` (`at` with 0 or `length - 1`);
+-- `swap`; a three-way `compare` (nothing here orders text, only tests it);
+-- `size_bytes` and the static extent `span<T, N>` (everything is bytes, and
+-- there are no generics to parameterise). The same rule as the ten ctype
+-- questions that are not in `text`: absent because nothing has wanted one.
+span is
+  data is 8 bytes             -- where the bytes are
+  length is 8 bytes           -- how many there are
+
+  -- find/rfind for one byte: the offset within the view, or `length` if absent.
+  find (byte, offset) is
+    n is 0
+    text.find (data is data, length is length, byte is byte, offset is n)
+    offset is n
+  end
+
+  last (byte, offset) is
+    n is 0
+    text.last (data is data, length is length, byte is byte, offset is n)
+    offset is n
+  end
+
+  -- `find(string_view)`, and C++20's `contains` with the answer thrown in:
+  -- the offset of NEEDLE, or `length` when it is not there.
+  search (needle, needle_length, offset) is
+    n is 0
+    text.search (data is data,
+                 length is length,
+                 needle is needle,
+                 needle_length is needle_length,
+                 offset is n)
+    offset is n
+  end
+
+  -- `at()`, not `operator[]`: the bounds check is the reason to reach through a
+  -- span rather than write `[v.data + i]`, so it is not optional. A read past
+  -- the end fails into the caller's release tower, naming this step.
+  at (offset, byte) is
+    b is 0
+    ensure offset < length
+    b is [data + offset]
+    byte is b
+  end
+
+  -- `remove_prefix` and `remove_suffix`, CLAMPED rather than undefined. C++
+  -- requires n <= size() and blames you otherwise; here the clamp is what makes
+  -- the scan loop above correct with no special case, because `find` answers
+  -- `length` when the delimiter is absent and `skip (count is length + 1)` then
+  -- empties the view and ends the loop.
+  skip (count) is
+    n is count
+    n is length when count > length
+    data is data + n
+    length is length - n
+  end
+
+  trim (count) is
+    n is count
+    n is length when count > length
+    length is length - n
+  end
+
+  -- `first(n)` / `views::take`: KEEP the first COUNT bytes. `trim`'s complement
+  -- -- it says what to keep where `trim` says what to drop -- and the reason it
+  -- is here rather than left as `trim (count is length - count)` is that the
+  -- subtraction would be arithmetic at the call site, which is the one thing
+  -- these views exist to remove. Clamped like the other two, so taking more
+  -- than there is keeps what there is.
+  take (count) is
+    n is count
+    n is length when count > length
+    length is n
+  end
+
+  -- Narrow to everything BEFORE the first BYTE -- `find` and `take` fused,
+  -- which is the pair the corpus writes out whenever it meets a terminator.
+  --
+  -- `until (byte is 0)` is what the GSL calls a `czstring`: a region whose end
+  -- is a zero byte rather than a count. Six places in this corpus recovered
+  -- that length by hand, each inventing its own bound -- 24, 6, 65, 4096 --
+  -- with nothing naming the operation they had in common.
+  --
+  -- mereo keeps the bound, which is the part `gsl::czstring` does NOT have: a
+  -- bare `char *` trusts the terminator to be there, and this cannot, because
+  -- the view already knows how far it may read. So the length going in is the
+  -- limit, and a region with no terminator inside it is left alone -- `find`
+  -- answers `length` when the byte is absent, and narrowing to `length` is a
+  -- no-op. That is the safe reading of "it did not terminate".
+  until (byte) is
+    n is 0
+    text.find (data is data, length is length, byte is byte, offset is n)
+    length is n
+  end
+
+  -- `operator==`, `starts_with`, `ends_with`. Each is the same byte compare
+  -- over a different window, and each first rules out the length that would
+  -- make the compare read past the end.
+  equals (other, other_length, result) is
+    r is 0
+    text.compare (data is data,
+                  length is length,
+                  other is other,
+                  other_length is other_length,
+                  result is r)
+    result is r
+  end
+
+  starts (other, other_length, result) is
+    r is 0
+    text.compare (data is data,
+                  length is other_length,
+                  other is other,
+                  other_length is other_length,
+                  result is r)
+    result is r
+    result is 0 when length < other_length
+  end
+
+  -- the window is the LAST other_length bytes, so the address is computed
+  -- before the compare and the short case is ruled out first -- with
+  -- `length < other_length` the address would be below `data`.
+  ends (other, other_length, result) is
+    r is 0
+    tail is data
+    tail is data + length - other_length when length >= other_length
+    text.compare (data is tail,
+                  length is other_length,
+                  other is other,
+                  other_length is other_length,
+                  result is r)
+    result is r
+    result is 0 when length < other_length
+  end
+
+  -- atoi over the view. `text.number` already skips leading spaces and reads an
+  -- optional sign, so a field cut out of a line needs no trimming first.
+  number (value) is
+    v is 0
+    text.number (data is data, length is length, value is v)
+    value is v
+  end
+end
+
+-- `builder` -- the write half, and the one the corpus wanted most: 39 of its
+-- calls into `text` are a `copy` into an output buffer followed by advancing an
+-- offset by hand. Not one of those 39 checks that the bytes fit.
+--
+-- A `container` already carries a buffer and its fill level, but there is
+-- nothing to DO with it -- no append -- which is why it has no users anywhere in
+-- this corpus. This is that missing verb, as a borrowed resource so that the
+-- overflow check has a release tower to fail into:
+--
+--   room is 4096 bytes
+--   page is already builder (data is room, count is 0, limit is room.size)
+--   page.add (source is "total ", length is 6)
+--   page.number (value is blocks)
+--   page.byte (value is 10)
+--   terminal.write (buffer is page.data, count is page.count)
+--
+-- Every method `ensure`s the write fits BEFORE it writes, so an overflow is a
+-- named failure with a status, not a smashed stack. `number` and `hex` reserve
+-- their worst case (20 digits for a signed 64-bit decimal, 16 for hex) rather
+-- than formatting first and checking after -- there is nowhere safe to format
+-- into if the check has not passed yet.
+builder is
+  data is 8 bytes             -- the buffer being filled
+  count is 8 bytes            -- how much is in it
+  limit is 8 bytes            -- how much it can hold
+
+  -- `append(ptr, n)`, and the join between the two views: appending a `span` is
+  -- `page.add (source is v.data, length is v.length)`.
+  add (source, length) is
+    n is length
+    ensure count + length <= limit
+    text.copy (source is source, target is data + count, length is n)
+    count is count + n
+  end
+
+  -- `push_back`.
+  byte (value) is
+    n is count
+    ensure count < limit
+    [data + n : 1] is value
+    count is n + 1
+  end
+
+  -- `append(n, ch)`: TIMES copies of one byte, for a column that has to line up.
+  pad (value, times) is
+    n is times
+    ensure count + times <= limit
+    text.fill (target is data + count, length is n, byte is value)
+    count is count + n
+  end
+
+  -- `to_chars`, in the two bases a systems program reads: signed decimal, and
+  -- lowercase hex of the bit pattern.
+  number (value) is
+    n is 0
+    ensure count + 20 <= limit
+    text.format (value is value, buffer is data + count, length is n)
+    count is count + n
+  end
+
+  hex (value) is
+    n is 0
+    ensure count + 16 <= limit
+    text.hex (value is value, buffer is data + count, length is n)
+    count is count + n
+  end
+end
+
+-- ------------------------------------------------------------------------------- json
+
+-- A JSON reader. A response is just bytes; a `json` names those
+-- bytes once (their address and length) and its templates scan them, so a
+-- program reads fields off the document instead of re-stating where it is:
+--
+--   body is already json where
+--     content is page          -- WHERE the bytes are (a pointer)
+--     length is got            -- how many there are
+--   text body where key is ... start is ... vlen is ...    -- a STRING field
+--   number body where key is ... value is ...              -- a NUMBER field
+--
+-- Note this is NOT a view in the language's sense: a view is laid OVER bytes
+-- with `as` and re-reads them, holding nothing. A `json` is handed a pointer
+-- and a length and keeps them BY VALUE -- a borrowed resource, like
+-- `already file` holding a descriptor. Its templates scan the bytes it points
+-- at. Extraction is a FLAT scan (no recursion -- mereo is function-free):
+-- locate the key, step over the `:`, read the value. Good for top-level fields
+-- of an object; it does not descend into nested objects/arrays, trusts the key
+-- to appear as a key, and does not decode string escapes.
+
+
+-- Locate KEY in the document and step past its colon, yielding the offset of the
+-- first byte of the value. Written once and spliced into both readers below: it
+-- was the same eight steps in each, and a template of the group could not be
+-- shared -- a method has no way to call a sibling on its own instance.
+--
+-- A key that is not there fails here, into the caller's release tower.
+value_at (content, length, key, keylen, offset) is
+  keyat is 0
+  coloff is 0
+  at is 0
+  rem is 0
+  text.search (data is content,
+               length is length,
+               needle is key,
+               needle_length is keylen,
+               offset is keyat)
+  ensure keyat < length
+  offset is keyat + keylen
+  rem is length - offset
+  at is content + offset
+  text.find (data is at, length is rem, byte is 58, offset is coloff)
+  offset is offset + coloff + 1
+end
+
+json is
+  content is 8 bytes          -- pointer to the backing bytes
+  length is 8 bytes           -- number of bytes in the backing
+
+  -- the STRING value of KEY -> a byte range within the backing: START (an offset
+  -- from `content`) and VLEN (length, excluding the quotes).
+  text (key, keylen, start, vlen) is
+    off is 0
+    rem is 0
+    q1off is 0
+    at is 0
+    value_at (content is content,
+              length is length,
+              key is key,
+              keylen is keylen,
+              offset is off)
+    rem is length - off
+    at is content + off
+    text.find (data is at, length is rem, byte is 34, offset is q1off)
+    start is off + q1off + 1
+    rem is length - start
+    at is content + start
+    text.find (data is at, length is rem, byte is 34, offset is vlen)
+  end
+
+  -- the NUMBER value of KEY -> a signed integer VALUE.
+  number (key, keylen, value) is
+    off is 0
+    rem is 0
+    at is 0
+    value_at (content is content,
+              length is length,
+              key is key,
+              keylen is keylen,
+              offset is off)
+    rem is length - off
+    at is content + off
+    text.number (data is at, length is rem, value is value)
+  end
+end

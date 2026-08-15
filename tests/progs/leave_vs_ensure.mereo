@@ -1,0 +1,24 @@
+include "../scopes/markers.mereo"
+
+-- `leave program` and a failing `ensure` sit at the SAME point here, two scopes
+-- deep, and must UNWIND IDENTICALLY -- same descriptors, same order, entering
+-- the same tower at the same floor. The only things that differ are the exit
+-- status and whether a record is written.
+--
+--   ./leave_vs_ensure      argc 1: `leave program` fires  -> exit 0, no record
+--   ./leave_vs_ensure x    argc 2: the `ensure` fails     -> exit 1 + record
+--
+-- Both must close 102, 101, 103. The suite compares the two traces.
+program (arguments) is
+  n is arguments.count
+  keep is adopted mark_c (descriptor is 103)
+
+  outer goes
+    a is adopted mark_a (descriptor is 101)
+    inner goes
+      b is adopted mark_b (descriptor is 102)
+      leave program when n == 1
+      ensure n == 1
+    end
+  end
+end

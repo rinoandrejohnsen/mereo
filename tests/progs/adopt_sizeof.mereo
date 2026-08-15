@@ -1,0 +1,49 @@
+include "../../linux.mereo"
+
+-- `size of X` in an ADOPTION binding -- the one place a compile-time size was
+-- refused, so a program had to count the bytes of its own literal by hand and
+-- write the number next to it.
+--
+-- The two shapes take different paths and both are exercised here: a RESOURCE's
+-- state is validated and top-declared (`long view_length = 11;`), while an
+-- object VIEW's is stored at the adopt step through `resolve_value`.
+span is
+  data is 0
+  length is 0
+
+  show (descriptor, written) is
+    linux.write (descriptor is descriptor,
+                 buffer is data,
+                 count is length,
+                 written is written)
+    ensure written == length
+  end
+end
+
+-- a layout carrying a template -- the object-view path
+record is
+  at is 8 bytes
+  size is 8 bytes
+
+  span_of (pointer, count) is
+    pointer is at
+    count is size
+  end
+end
+
+program is
+  raw is constant "hello world"
+  written is 0
+  p is 0
+  n is 0
+
+  view is already span (data is raw, length is raw.size)  -- a resource, from a size
+
+  doc is already record (at is raw, size is raw.size)  -- an object view, from a size
+
+  doc.span_of (pointer is p, count is n)
+  ensure n == 11
+  ensure p > 0
+
+  view.show (descriptor is 1, written is written)
+end

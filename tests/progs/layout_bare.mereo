@@ -1,0 +1,22 @@
+include "../../linux.mereo"
+
+-- THE SHORT FORM of layout_explicit.mereo: name the layout on its own and it
+-- owns a block of that shape, zero-filled. No separate backing to name, no `as`.
+-- Same fields, same syscall, and the suite asserts the same .text.
+structure is
+  a is 8 bytes
+  b is 8 bytes
+  c is 8 bytes
+end
+
+program is
+  data is structure
+
+  data.a is 4702111234474983745         -- 'AAAAAAAA'
+  data.b is 4774451407313060418         -- 'BBBBBBBB'
+  data.c is 4846791580151137091         -- 'CCCCCCCC'
+
+  terminal is already linux.file (descriptor is 1)
+  written is 0
+  terminal.write (buffer is data, count is 24, written is written)
+end
