@@ -68,9 +68,87 @@ binaries with real destructors by running both under `strace` and comparing the
 ## One acquisition per resource
 
 `acquire` must be exactly one call. That restriction is what makes the tower
-derivable, and it is enforced. To own a second thing, layer it — `NAME extends
-THIS is` — so each layer acquires one thing and the tower releases them in
-reverse.
+derivable, and it is enforced. A resource that tries to take two things is
+refused:
+
+```ada
+logfile extends linux.file is
+  saved is 4 bytes as signed
+  acquire (path) is
+    open (path is path, flags is 0, mode is 0, descriptor is saved)
+    lseek (descriptor is saved, offset is 0, whence is 0, position is n)
+  end
+end
+```
+
+```
+`acquire` must be exactly ONE call -- the one thing this resource acquires --
+not a multi-step body. That single-step shape is what lets the release tower be
+DERIVED: the transpiler knows statically how far acquisition got, so it needs no
+drop flags and no unwinder. To own a second thing, layer it instead: `NAME
+extends THIS is`, where each layer acquires one thing and the tower releases
+them in reverse (see `linux.tty`, which layers on `linux.file`)
+```
+
+The reason is the one the message gives. If a single `acquire` could fail
+halfway, the cleanup would have to know *which* half succeeded — and recording
+that is a drop flag.
+
+### Layering instead
+
+`linux.tty` is the library's own answer. A terminal is two things: a descriptor,
+and the settings that were in force before the program touched them. `file`
+already owns the first, so `tty` layers on it and owns only the second:
+
+```ada
+  tty extends file is
+    backup is 36 bytes
+
+    acquire is
+      ioctl (descriptor is descriptor, request is 21505, argument is backup)
+    end
+
+    release is
+      ioctl (descriptor is descriptor, request is 21506, argument is backup)
+    end
+  end
+```
+
+Each layer takes exactly one thing, so each is still statically known, and the
+tower is still derived — now with two floors:
+
+```c
+release_console:
+    _assembly_ioctl(console_descriptor, 21506, (long)console_backup);
+release_console__0:
+    _assembly_close(console_descriptor);
+exit:
+```
+
+Restore, then close, in reverse order of acquisition. A program says only:
+
+```ada
+include "linux.mereo"
+
+program is
+  work is linux.terminal_settings
+
+  console is linux.tty (path is "/dev/tty", flags is 2, mode is 0)
+
+  console.snapshot (buffer is work)
+
+end
+```
+
+and gets both. Interrupted mid-read with a `SIGTERM`, a real run does this:
+
+```
+(SIGTERM arrives)
+ioctl(3, TCSETS, {…}) = 0      <- the original settings, put back
+close(3)              = 0
+```
+
+`examples/keys.mereo` is the full program.
 
 ## Interruption
 

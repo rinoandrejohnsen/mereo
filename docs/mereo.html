@@ -461,7 +461,56 @@ release_server:
 <p>Every exit enters it: reaching <code>end</code>, a <code>leave</code>, a failed <code>ensure</code>, or an interrupt. Nothing records progress at run time — a generated program holding several descriptors contains no boolean guard — because the label jumped to <em>is</em> the record, resolved when the program was compiled.</p>
 <p>The order is reverse of acquisition, and is checked against equivalent C++ binaries with real destructors by running both under <code>strace</code> and comparing the <code>close</code> sequence, on normal paths and on fault-injected ones.</p>
 <h3>One acquisition per resource</h3>
-<p><code>acquire</code> must be exactly one call. That restriction is what makes the tower derivable, and it is enforced. To own a second thing, layer it — <code>NAME extends THIS is</code> — so each layer acquires one thing and the tower releases them in reverse.</p>
+<p><code>acquire</code> must be exactly one call. That restriction is what makes the tower derivable, and it is enforced. A resource that tries to take two things is refused:</p>
+<pre><code><span class="t-plain">logfile</span> <span class="t-structure">extends</span> <span class="t-namespace">linux</span><span class="t-operator">.</span><span class="t-member">file</span> <span class="t-structure">is</span>
+  <span class="t-plain">saved</span> <span class="t-bind">is</span> <span class="t-number">4</span> <span class="t-inside">bytes</span> <span class="t-inside">as</span> <span class="t-inside">signed</span>
+  <span class="t-structure">acquire</span> <span class="t-operator">(</span><span class="t-plain">path</span><span class="t-operator">)</span> <span class="t-structure">is</span>
+    <span class="t-call">open</span> <span class="t-operator">(</span><span class="t-label">path</span> <span class="t-bind">is</span> <span class="t-plain">path</span><span class="t-operator">,</span> <span class="t-label">flags</span> <span class="t-bind">is</span> <span class="t-number">0</span><span class="t-operator">,</span> <span class="t-label">mode</span> <span class="t-bind">is</span> <span class="t-number">0</span><span class="t-operator">,</span> <span class="t-label">descriptor</span> <span class="t-bind">is</span> <span class="t-plain">saved</span><span class="t-operator">)</span>
+    <span class="t-call">lseek</span> <span class="t-operator">(</span><span class="t-label">descriptor</span> <span class="t-bind">is</span> <span class="t-plain">saved</span><span class="t-operator">,</span> <span class="t-label">offset</span> <span class="t-bind">is</span> <span class="t-number">0</span><span class="t-operator">,</span> <span class="t-label">whence</span> <span class="t-bind">is</span> <span class="t-number">0</span><span class="t-operator">,</span> <span class="t-label">position</span> <span class="t-bind">is</span> <span class="t-plain">n</span><span class="t-operator">)</span>
+  <span class="t-structure">end</span>
+<span class="t-structure">end</span></code></pre>
+<pre><code>`acquire` must be exactly ONE call -- the one thing this resource acquires --
+not a multi-step body. That single-step shape is what lets the release tower be
+DERIVED: the transpiler knows statically how far acquisition got, so it needs no
+drop flags and no unwinder. To own a second thing, layer it instead: `NAME
+extends THIS is`, where each layer acquires one thing and the tower releases
+them in reverse (see `linux.tty`, which layers on `linux.file`)</code></pre>
+<p>The reason is the one the message gives. If a single <code>acquire</code> could fail halfway, the cleanup would have to know <em>which</em> half succeeded — and recording that is a drop flag.</p>
+<h4>Layering instead</h4>
+<p><code>linux.tty</code> is the library's own answer. A terminal is two things: a descriptor, and the settings that were in force before the program touched them. <code>file</code> already owns the first, so <code>tty</code> layers on it and owns only the second:</p>
+<pre><code>  <span class="t-plain">tty</span> <span class="t-structure">extends</span> <span class="t-plain">file</span> <span class="t-structure">is</span>
+    <span class="t-plain">backup</span> <span class="t-bind">is</span> <span class="t-number">36</span> <span class="t-inside">bytes</span>
+
+    <span class="t-structure">acquire</span> <span class="t-structure">is</span>
+      <span class="t-call">ioctl</span> <span class="t-operator">(</span><span class="t-label">descriptor</span> <span class="t-bind">is</span> <span class="t-plain">descriptor</span><span class="t-operator">,</span> <span class="t-label">request</span> <span class="t-bind">is</span> <span class="t-number">21505</span><span class="t-operator">,</span> <span class="t-label">argument</span> <span class="t-bind">is</span> <span class="t-plain">backup</span><span class="t-operator">)</span>
+    <span class="t-structure">end</span>
+
+    <span class="t-structure">release</span> <span class="t-structure">is</span>
+      <span class="t-call">ioctl</span> <span class="t-operator">(</span><span class="t-label">descriptor</span> <span class="t-bind">is</span> <span class="t-plain">descriptor</span><span class="t-operator">,</span> <span class="t-label">request</span> <span class="t-bind">is</span> <span class="t-number">21506</span><span class="t-operator">,</span> <span class="t-label">argument</span> <span class="t-bind">is</span> <span class="t-plain">backup</span><span class="t-operator">)</span>
+    <span class="t-structure">end</span>
+  <span class="t-structure">end</span></code></pre>
+<p>Each layer takes exactly one thing, so each is still statically known, and the tower is still derived — now with two floors:</p>
+<pre><code>release_console:
+    _assembly_ioctl(console_descriptor, 21506, (long)console_backup);
+release_console__0:
+    _assembly_close(console_descriptor);
+exit:</code></pre>
+<p>Restore, then close, in reverse order of acquisition. A program says only:</p>
+<pre><code><span class="t-structure">include</span> <span class="t-string">"linux.mereo"</span>
+
+<span class="t-structure">program</span> <span class="t-structure">is</span>
+  <span class="t-plain">work</span> <span class="t-bind">is</span> <span class="t-namespace">linux</span><span class="t-operator">.</span><span class="t-member">terminal_settings</span>
+
+  <span class="t-plain">console</span> <span class="t-bind">is</span> <span class="t-namespace">linux</span><span class="t-operator">.</span><span class="t-call">tty</span> <span class="t-operator">(</span><span class="t-label">path</span> <span class="t-bind">is</span> <span class="t-string">"/dev/tty"</span><span class="t-operator">,</span> <span class="t-label">flags</span> <span class="t-bind">is</span> <span class="t-number">2</span><span class="t-operator">,</span> <span class="t-label">mode</span> <span class="t-bind">is</span> <span class="t-number">0</span><span class="t-operator">)</span>
+
+  <span class="t-plain">console</span><span class="t-operator">.</span><span class="t-call">snapshot</span> <span class="t-operator">(</span><span class="t-label">buffer</span> <span class="t-bind">is</span> <span class="t-plain">work</span><span class="t-operator">)</span>
+
+<span class="t-structure">end</span></code></pre>
+<p>and gets both. Interrupted mid-read with a <code>SIGTERM</code>, a real run does this:</p>
+<pre><code>(SIGTERM arrives)
+ioctl(3, TCSETS, {…}) = 0      &lt;- the original settings, put back
+close(3)              = 0</code></pre>
+<p><code>examples/keys.mereo</code> is the full program.</p>
 <h3>Interruption</h3>
 <p>A program that owns something installs a handler for <code>SIGINT</code> and <code>SIGTERM</code> whose stub simply returns, so the interrupted system call comes back <code>EINTR</code>, the ordinary failure path runs, and the tower releases what is open on the way out. A program that owns nothing installs no such handler, and correspondingly does not test for <code>EINTR</code> — there is none to see.</p>
 <h3>What ownership may not do</h3>
