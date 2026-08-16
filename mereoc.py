@@ -1745,15 +1745,25 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     if method["role"] != "op":
                         _role = ("acquires" if method["role"] == "acquire"
                                  else "releases")
+                        # This used to say "must be exactly ONE call", which is
+                        # not the rule and misled a reader of the guide into
+                        # writing that down: `acquire` MAY be a sequence (socket
+                        # then bind then setsockopt), it just may not be a
+                        # procedure. What is forbidden here is a STATEMENT --
+                        # a local, a loop, a block -- because the tower is
+                        # derived from the calls and their `acquired when`, and
+                        # a statement is not a step it can reason about.
                         fail(
-                            f"line {n}: `{method['name']}` must be exactly ONE "
-                            f"call -- the one thing this resource {_role} -- not a "
-                            "multi-step body. That single-step shape is what "
-                            "lets the release tower be DERIVED: the transpiler "
-                            "knows statically how far acquisition got, so it "
-                            "needs no drop flags and no unwinder. To own a "
-                            "second thing, layer it instead: "
-                            "`NAME extends THIS is`, where each layer acquires "
+                            f"line {n}: `{method['name']}` may only make CALLS "
+                            f"-- the steps by which this resource {_role} -- "
+                            "not statements: no locals, no loops, no blocks. "
+                            "Several calls are fine; what the tower needs is to "
+                            "know which one takes ownership, and `acquired when "
+                            "<result> <cmp> <value>` after that call says so. "
+                            "That is what lets the release tower be DERIVED, "
+                            "with no drop flags and no unwinder. To own a "
+                            "SECOND thing, layer it instead: "
+                            "`NAME extends THIS is`, where each layer owns "
                             "one thing and the tower releases them in reverse "
                             "(see `linux.tty`, which layers on `linux.file`)")
                     method["procedure"] = [line[2:]]

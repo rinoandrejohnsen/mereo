@@ -67,40 +67,61 @@ The order is reverse of acquisition, and is checked against equivalent C++
 binaries with real destructors by running both under `strace` and comparing the
 `close` sequence, on normal paths and on fault-injected ones.
 
-## One acquisition per resource
+## One thing owned, not one call
 
-`acquire` must be exactly one call. That restriction is what makes the tower
-derivable, and it is enforced. A resource that tries to take two things is
-refused:
+What is fixed is the number of things a resource **owns** — exactly one — not
+the number of calls it takes to get there. `acquire` may be a sequence: open,
+then bind, then set an option.
+
+What the sequence must say is **where ownership begins**, and `acquired when`
+says it. The library's own socket does this:
 
 ```
-logfile extends linux.file is
-  saved is 4 bytes as signed
-  acquire (path) is
-    open (path is path, flags is 0, mode is 0, descriptor is saved)
-    lseek (descriptor is saved, offset is 0, whence is 0, position is n)
+transform is
+  descriptor is 4 bytes as signed
+  status is 8 bytes as signed
+
+  acquire (domain, type, protocol, address, length) is
+    linux.socket (domain is domain,
+                  type is type,
+                  protocol is protocol,
+                  descriptor is descriptor)
+    acquired when descriptor >= 0
+    linux.bind (descriptor is descriptor,
+                address is address,
+                length is length,
+                result is status)
   end
 end
 ```
 
+That one test **is** the ownership boundary. A fault *before* it releases
+nothing, because nothing had been taken; a fault *after* it — a failed `bind`,
+here — releases the one thing, so the descriptor is closed. The socket is opened
+and bound in one acquisition, which is the point: there is no window in which a
+`transform` exists without its algorithm attached.
+
+Omit the marker from a multi-call acquire and it is refused, because the
+boundary would be a guess:
+
 ```
-`acquire` must be exactly ONE call -- the one thing this resource acquires --
-not a multi-step body. That single-step shape is what lets the release tower be
-DERIVED: the transpiler knows statically how far acquisition got, so it needs no
-drop flags and no unwinder. To own a second thing, layer it instead: `NAME
-extends THIS is`, where each layer acquires one thing and the tower releases
-them in reverse (see `linux.tty`, which layers on `linux.file`)
+'holder' acquires in several steps, so it must say which one takes ownership --
+add `acquired when <result> <cmp> <value>` after that call
 ```
 
-The reason is the one the message gives. If a single `acquire` could fail
-halfway, the cleanup would have to know *which* half succeeded — and recording
-that is a drop flag.
+A **single-call** acquire needs no marker: the boundary is unambiguous. And
+`release` carries no test at any step — a failed release cannot reroute
+anything.
 
-### Layering instead
+## Owning a second thing: layering
 
-`linux.tty` is the library's own answer. A terminal is two things: a descriptor,
-and the settings that were in force before the program touched them. `file`
-already owns the first, so `tty` layers on it and owns only the second:
+A sequence of calls gets *one* thing into a usable state. Owning a **second**
+thing is a different question, and the answer is `NAME extends THIS is` — each
+layer owns one thing, and the tower releases them in reverse.
+
+`linux.tty` is the library's own example. A terminal is two things: a
+descriptor, and the settings that were in force before the program touched them.
+`file` already owns the first, so `tty` layers on it and owns only the second:
 
 ```
   tty extends file is
