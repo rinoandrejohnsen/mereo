@@ -12,7 +12,7 @@ holder is
 
   release is
     linux.close (descriptor is descriptor)
-    acquired when descriptor >= 0
+    acquired
   end
 end
 

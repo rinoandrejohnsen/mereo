@@ -15,7 +15,7 @@ transform is
                   type is type,
                   protocol is protocol,
                   descriptor is descriptor)
-    acquired when descriptor >= 0
+    acquired
     linux.bind (descriptor is descriptor,
                 address is address,
                 length is length,
@@ -54,7 +54,7 @@ aead_socket is
                   type is 5,
                   protocol is 0,
                   descriptor is descriptor)
-    acquired when descriptor >= 0
+    acquired
     linux.bind (descriptor is descriptor,
                 address is "&\x00aead\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00gcm(aes)\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
                 length is 88,
@@ -88,7 +88,7 @@ duplex extends aead_socket is
                   address is 0,
                   length is 0,
                   connection is connection)
-    acquired when connection >= 0
+    acquired
   end
   send (message) is
     linux.sendmsg (descriptor is connection,

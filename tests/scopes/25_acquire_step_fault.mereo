@@ -13,7 +13,7 @@ staged is
 
   acquire (path, spot) is
     linux.open (path is path, flags is 0, mode is 0, descriptor is handle)
-    acquired when handle >= 0        -- <- never reached: the open failed
+    acquired        -- <- never reached: the open failed
     linux.lseek (descriptor is handle,
                  offset is spot,
                  whence is 0,

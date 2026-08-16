@@ -7,7 +7,7 @@ holder is
   descriptor is 4 bytes as signed
 
   acquire (path) is
-    acquired when descriptor >= 0
+    acquired
     linux.open (path is path, flags is 0, mode is 0, descriptor is descriptor)
   end
 

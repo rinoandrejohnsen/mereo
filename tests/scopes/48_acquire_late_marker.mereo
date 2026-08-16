@@ -26,7 +26,7 @@ staged is
                       flags is 0,
                       result is status)
     linux.open (path is path, flags is 0, mode is 0, descriptor is handle)
-    acquired when handle >= 0             -- <- ownership starts HERE, not above
+    acquired             -- <- ownership starts HERE, not above
   end
 
   release is

@@ -1812,7 +1812,15 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                 # IT rather than being told about `ensure`, which is not what
                 # was written. That check made this branch's own
                 # "must follow the call" message unreachable.
-                m = re.match(r"^acquired when (.+?) (<=|>=|==|!=|<|>) (.+)$", s)
+                # `acquired` alone is the ordinary case: this call is the
+                # ownership boundary, and the test is the one the primitive
+                # already carries. `acquired when COND` is for the rare boundary
+                # that differs -- and note it REPLACES the primitive's own
+                # ensure rather than adding to it, so a looser condition
+                # silently drops the contract that came with the call. Every use
+                # in this tree restated the primitive's test verbatim, which is
+                # what the bare form is for.
+                m = re.match(r"^acquired(?: when (.+?) (<=|>=|==|!=|<|>) (.+))?$", s)
                 if m:
                     if method["role"] != "acquire":
                         fail(f"line {n}: `acquired when` belongs in `acquire` -- "
@@ -1826,8 +1834,9 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                              "`acquire` has exactly one `acquired when`; to own "
                              "a second, layer it (`NAME extends THIS is`)")
                     curcall["marker"] = True
-                    curcall["ensure"].append(
-                        (m.group(1), m.group(2), m.group(3), n))
+                    if m.group(1) is not None:      # `when COND` given
+                        curcall["ensure"].append(
+                            (m.group(1), m.group(2), m.group(3), n))
                     continue
                 if method["prim"] is None and not method["delegate"]:
                     fail(f"line {n}: `ensure` before the method's body")
@@ -2996,9 +3005,12 @@ def elaborate_classes(definitions):
                 if not marked and chain:
                     fail(f"line {acq['line']}: '{cname}' acquires in several "
                          "steps, so it must say which one takes ownership -- "
-                         "add `acquired when <result> <cmp> <value>` after that "
-                         "call (the test IS the boundary: before it a fault "
-                         "releases nothing, after it a fault releases)")
+                         "add `acquired` after that call. That marker IS the "
+                         "boundary: before it a fault releases nothing, after "
+                         "it a fault releases. It keeps the test the call "
+                         "already carries; `acquired when <result> <cmp> "
+                         "<value>` is only for a boundary that differs, and it "
+                         "REPLACES that test rather than adding to it")
                 own = [{"init": c, "owner": cname,
                         "cleanup": chain if c.get("marker") else []}
                        for c in acalls]

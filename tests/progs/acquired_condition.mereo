@@ -1,0 +1,40 @@
+include "../../linux.mereo"
+
+-- `acquired when COND` -- the explicit form, for the rare boundary that is not
+-- the primitive's own test. Every acquisition in this tree uses the bare
+-- `acquired` instead, because every one of them restated `descriptor >= 0`,
+-- which is exactly what `linux.open` already promises.
+--
+-- So this exists to keep the conditional form exercised, and to pin what it
+-- does that the bare form does not: it REPLACES the primitive's ensure rather
+-- than adding to it. Here the boundary is `descriptor >= 3`, which is stricter
+-- -- descriptors 0, 1 and 2 are already the standard streams, so a program that
+-- means "a file I opened myself" can say so.
+--
+-- Opening /dev/null gets 3, so the check passes and the close runs.
+--
+--   prints:  ok
+
+owner is
+  descriptor is 4 bytes as signed
+
+  acquire (path) is
+    linux.open (path is path, flags is 0, mode is 0, descriptor is descriptor)
+    acquired when descriptor >= 3
+  end
+
+  release is
+    linux.close (descriptor is descriptor)
+  end
+end
+
+program is
+  terminal is already linux.file (descriptor is 1)
+
+  held is owner (path is "/dev/null")
+
+  ensure held.descriptor >= 3
+
+  terminal.write (buffer is "ok\n", count is 3)
+
+end

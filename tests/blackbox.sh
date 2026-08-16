@@ -349,6 +349,9 @@ rejects branch/no-repeat  branch_repeat  "a road has no start to go back to"
 # `acquired when` marks where ownership BEGINS in a multi-call acquire -- the
 # test before which a fault releases nothing and after which it releases the one
 # thing. Its four refusals, none of which had a test:
+# ...and the conditional form still works, and still closes what it took.
+bb   acquired/condition  acquired_condition "" 0 "ok"
+
 rejects acquired/missing    acquired_missing    "which one takes ownership"
 rejects acquired/twice      acquired_twice      "already marks an acquisition"
 rejects acquired/in-release acquired_in_release "belongs in \`acquire\`"

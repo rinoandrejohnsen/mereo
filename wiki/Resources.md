@@ -71,8 +71,8 @@ What is fixed is the number of things a resource **owns** — exactly one — no
 the number of calls it takes to get there. `acquire` may be a sequence: open,
 then bind, then set an option.
 
-What the sequence must say is **where ownership begins**, and `acquired when`
-says it. The library's own socket does this:
+What the sequence must say is **where ownership begins**, and `acquired` says
+it. The library's own socket does this:
 
 ```ada
 transform is
@@ -84,7 +84,7 @@ transform is
                   type is type,
                   protocol is protocol,
                   descriptor is descriptor)
-    acquired when descriptor >= 0
+    acquired
     linux.bind (descriptor is descriptor,
                 address is address,
                 length is length,
@@ -93,7 +93,7 @@ transform is
 end
 ```
 
-That one test **is** the ownership boundary. A fault *before* it releases
+That one marker **is** the ownership boundary. A fault *before* it releases
 nothing, because nothing had been taken; a fault *after* it — a failed `bind`,
 here — releases the one thing, so the descriptor is closed. The socket is opened
 and bound in one acquisition, which is the point: there is no window in which a
@@ -104,12 +104,28 @@ boundary would be a guess:
 
 ```
 'holder' acquires in several steps, so it must say which one takes ownership --
-add `acquired when <result> <cmp> <value>` after that call
+add `acquired` after that call
 ```
 
 A **single-call** acquire needs no marker: the boundary is unambiguous. And
 `release` carries no test at any step — a failed release cannot reroute
 anything.
+
+### When the boundary is not the call's own test
+
+`acquired` keeps the test the primitive already carries — `linux.open` promises
+`descriptor >= 0`, and that is what the boundary means. Where the boundary is
+genuinely something else, `acquired when COND` states it:
+
+```ada
+    linux.open (path is path, flags is 0, mode is 0, descriptor is descriptor)
+    acquired when descriptor >= 3
+```
+
+Note what that does: it **replaces** the primitive's own `ensure`, it does not
+add to it. A condition looser than the call's own contract therefore discards
+it silently, which is why the bare form is the one to reach for. Every
+acquisition in this project uses it.
 
 ## Owning a second thing: layering
 

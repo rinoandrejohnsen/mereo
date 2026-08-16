@@ -9,7 +9,7 @@ holder is
 
   acquire (path) is
     linux.open (path is path, flags is 0, mode is 0, descriptor is descriptor)
-    acquired when descriptor >= 0
+    acquired
     linux.lseek (descriptor is descriptor,
                  offset is 0,
                  whence is 0,
