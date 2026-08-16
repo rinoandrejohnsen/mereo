@@ -54,7 +54,7 @@ That builds to a 784-byte executable.
   docs/            the guide; `python3 docs/build.py` renders it two ways
   wiki/            ...the second: pages for this repo's GitHub wiki (generated)
   notes/           design notes and history
-  tools/           the highlighter and the verification helpers
+  tools/           the highlighter, the verification helpers, publish_wiki.sh
   attic/           prototypes, experiments and the gem5 model -- see attic/README.md
 ```
 
@@ -88,14 +88,16 @@ a retired phrasing, a broken link, or an example that no longer transpiles:
 python3 docs/build.py     # -> docs/mereo.html  and  wiki/
 ```
 
-`wiki/` is shaped for GitHub's wiki, which is a separate repository. To publish:
+`wiki/` is shaped for GitHub's wiki, which is a **separate repository** and so
+is invisible to `./test.sh` and to `build.py`'s own checks. One command
+rebuilds, syncs and publishes it, then reads it back to confirm what landed:
 
 ```sh
-git clone https://github.com/rinoandrejohnsen/mereo.wiki.git /tmp/w
-cp wiki/*.md /tmp/w && (cd /tmp/w && git add -A && git commit -m docs && git push)
+./tools/publish_wiki.sh             # or --dry-run to see what would change
 ```
 
-Edit the guide in `docs/`, never in `wiki/` — the next build overwrites it.
+Edit the guide in `docs/`, never in `wiki/` and never in GitHub's web editor —
+both are output, and the next publish overwrites them.
 
 ## Requirements
 

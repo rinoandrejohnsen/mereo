@@ -150,7 +150,7 @@ ioctl(3, TCSETS, {…}) = 0      <- the original settings, put back
 close(3)              = 0
 ```
 
-`examples/keys.mereo` is the full program.
+`examples/keys.mereo` is the full program, built by the ordinary sweep.
 
 ## Interruption
 

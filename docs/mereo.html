@@ -510,7 +510,7 @@ exit:</code></pre>
 <pre><code>(SIGTERM arrives)
 ioctl(3, TCSETS, {…}) = 0      &lt;- the original settings, put back
 close(3)              = 0</code></pre>
-<p><code>examples/keys.mereo</code> is the full program.</p>
+<p><code>examples/keys.mereo</code> is the full program, built by the ordinary sweep.</p>
 <h3>Interruption</h3>
 <p>A program that owns something installs a handler for <code>SIGINT</code> and <code>SIGTERM</code> whose stub simply returns, so the interrupted system call comes back <code>EINTR</code>, the ordinary failure path runs, and the tower releases what is open on the way out. A program that owns nothing installs no such handler, and correspondingly does not test for <code>EINTR</code> — there is none to see.</p>
 <h3>What ownership may not do</h3>
