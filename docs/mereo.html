@@ -460,9 +460,8 @@ release_server:
     _assembly_close(server_descriptor);</code></pre>
 <p>Every exit enters it: reaching <code>end</code>, a <code>leave</code>, a failed <code>ensure</code>, or an interrupt. Nothing records progress at run time — a generated program holding several descriptors contains no boolean guard — because the label jumped to <em>is</em> the record, resolved when the program was compiled.</p>
 <p>The order is reverse of acquisition, and is checked against equivalent C++ binaries with real destructors by running both under <code>strace</code> and comparing the <code>close</code> sequence, on normal paths and on fault-injected ones.</p>
-<h3>One thing owned, not one call</h3>
-<p>What is fixed is the number of things a resource <strong>owns</strong> — exactly one — not the number of calls it takes to get there. <code>acquire</code> may be a sequence: open, then bind, then set an option.</p>
-<p>What the sequence must say is <strong>where ownership begins</strong>, and <code>acquired</code> says it. The library's own socket does this:</p>
+<h3>One thing owned</h3>
+<p>A resource owns exactly one thing. Getting it into a usable state may take several calls — open, then bind, then set an option — and one of them is the call that takes ownership. <code>acquired</code> marks that call. The library's own socket does this:</p>
 <pre><code><span class="t-decl">transform</span> <span class="t-structure">is</span>
   <span class="t-plain">descriptor</span> <span class="t-bind">is</span> <span class="t-number">4</span> <span class="t-inside">bytes</span> <span class="t-inside">as</span> <span class="t-inside">signed</span>
   <span class="t-plain">status</span> <span class="t-bind">is</span> <span class="t-number">8</span> <span class="t-inside">bytes</span> <span class="t-inside">as</span> <span class="t-inside">signed</span>
@@ -484,13 +483,13 @@ release_server:
 <pre><code>'holder' acquires in several steps, so it must say which one takes ownership --
 add `acquired` after that call</code></pre>
 <p>A <strong>single-call</strong> acquire needs no marker: the boundary is unambiguous. And <code>release</code> carries no test at any step — a failed release cannot reroute anything.</p>
-<h4>When the boundary is not the call's own test</h4>
-<p><code>acquired</code> keeps the test the primitive already carries — <code>linux.open</code> promises <code>descriptor &gt;= 0</code>, and that is what the boundary means. Where the boundary is genuinely something else, <code>acquired when COND</code> states it:</p>
+<h4>A boundary of your own</h4>
+<p><code>acquired</code> keeps the test the call already carries: <code>linux.open</code> promises <code>descriptor &gt;= 0</code>, and that is what the boundary means. To make the boundary something else, state it:</p>
 <pre><code>    <span class="t-namespace">linux</span><span class="t-operator">.</span><span class="t-call">open</span> <span class="t-operator">(</span><span class="t-label">path</span> <span class="t-bind">is</span> <span class="t-plain">path</span><span class="t-operator">,</span> <span class="t-label">flags</span> <span class="t-bind">is</span> <span class="t-number">0</span><span class="t-operator">,</span> <span class="t-label">mode</span> <span class="t-bind">is</span> <span class="t-number">0</span><span class="t-operator">,</span> <span class="t-label">descriptor</span> <span class="t-bind">is</span> <span class="t-plain">descriptor</span><span class="t-operator">)</span>
     <span class="t-plain">acquired</span> <span class="t-inside">when</span> <span class="t-plain">descriptor</span> <span class="t-operator">&gt;=</span> <span class="t-number">3</span></code></pre>
-<p>Note what that does: it <strong>replaces</strong> the primitive's own <code>ensure</code>, it does not add to it. A condition looser than the call's own contract therefore discards it silently, which is why the bare form is the one to reach for. Every acquisition in this project uses it.</p>
+<p>The condition <strong>replaces</strong> the call's own test rather than adding to it, so a looser one discards the guarantee that came with the call. Reach for the bare <code>acquired</code> unless the boundary really is elsewhere.</p>
 <h3>Owning a second thing: layering</h3>
-<p>A sequence of calls gets <em>one</em> thing into a usable state. Owning a <strong>second</strong> thing is a different question, and the answer is <code>NAME extends THIS is</code> — each layer owns one thing, and the tower releases them in reverse.</p>
+<p>To own a <strong>second</strong> thing, layer it: <code>NAME extends THIS is</code>. Each layer owns one thing, and the tower releases them in reverse.</p>
 <p><code>linux.tty</code> is the library's own example. A terminal is two things: a descriptor, and the settings that were in force before the program touched them. <code>file</code> already owns the first, so <code>tty</code> layers on it and owns only the second:</p>
 <pre><code>  <span class="t-plain">tty</span> <span class="t-structure">extends</span> <span class="t-plain">file</span> <span class="t-structure">is</span>
     <span class="t-plain">backup</span> <span class="t-bind">is</span> <span class="t-number">36</span> <span class="t-inside">bytes</span>

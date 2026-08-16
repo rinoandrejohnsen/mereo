@@ -65,14 +65,12 @@ The order is reverse of acquisition, and is checked against equivalent C++
 binaries with real destructors by running both under `strace` and comparing the
 `close` sequence, on normal paths and on fault-injected ones.
 
-## One thing owned, not one call
+## One thing owned
 
-What is fixed is the number of things a resource **owns** — exactly one — not
-the number of calls it takes to get there. `acquire` may be a sequence: open,
-then bind, then set an option.
-
-What the sequence must say is **where ownership begins**, and `acquired` says
-it. The library's own socket does this:
+A resource owns exactly one thing. Getting it into a usable state may take
+several calls — open, then bind, then set an option — and one of them is the
+call that takes ownership. `acquired` marks that call. The library's own socket
+does this:
 
 ```ada
 transform is
@@ -111,27 +109,25 @@ A **single-call** acquire needs no marker: the boundary is unambiguous. And
 `release` carries no test at any step — a failed release cannot reroute
 anything.
 
-### When the boundary is not the call's own test
+### A boundary of your own
 
-`acquired` keeps the test the primitive already carries — `linux.open` promises
-`descriptor >= 0`, and that is what the boundary means. Where the boundary is
-genuinely something else, `acquired when COND` states it:
+`acquired` keeps the test the call already carries: `linux.open` promises
+`descriptor >= 0`, and that is what the boundary means. To make the boundary
+something else, state it:
 
 ```ada
     linux.open (path is path, flags is 0, mode is 0, descriptor is descriptor)
     acquired when descriptor >= 3
 ```
 
-Note what that does: it **replaces** the primitive's own `ensure`, it does not
-add to it. A condition looser than the call's own contract therefore discards
-it silently, which is why the bare form is the one to reach for. Every
-acquisition in this project uses it.
+The condition **replaces** the call's own test rather than adding to it, so a
+looser one discards the guarantee that came with the call. Reach for the bare
+`acquired` unless the boundary really is elsewhere.
 
 ## Owning a second thing: layering
 
-A sequence of calls gets *one* thing into a usable state. Owning a **second**
-thing is a different question, and the answer is `NAME extends THIS is` — each
-layer owns one thing, and the tower releases them in reverse.
+To own a **second** thing, layer it: `NAME extends THIS is`. Each layer owns
+one thing, and the tower releases them in reverse.
 
 `linux.tty` is the library's own example. A terminal is two things: a
 descriptor, and the settings that were in force before the program touched them.
