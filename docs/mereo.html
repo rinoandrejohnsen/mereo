@@ -35,6 +35,10 @@ hr{border:none;border-top:1px solid #e2e8f0;margin:26px 0}
 ul{padding-left:22px;margin:10px 0}
 li{margin:4px 0}
 strong{color:#0f172a}
+blockquote{margin:18px 0;padding:12px 18px;background:#f8fafc;border-left:3px solid #94a3b8;border-radius:0 6px 6px 0}
+blockquote p{margin:6px 0;font-size:.95em;color:#334155}
+blockquote p:first-child{margin-top:0}
+blockquote p:last-child{margin-bottom:0}
 /* The lead's first table is the infobox: an encyclopedia article's summary
    panel, floated beside the opening paragraphs the way one is. Keyed on
    position rather than a class because the pages are plain markdown. */
@@ -483,6 +487,7 @@ release_server:
 <pre><code>'holder' acquires in several steps, so it must say which one takes ownership --
 add `acquired` after that call</code></pre>
 <p>A <strong>single-call</strong> acquire needs no marker: the boundary is unambiguous. And <code>release</code> carries no test at any step — a failed release cannot reroute anything.</p>
+<blockquote><p><strong>Is <code>acquired</code> a drop flag by another name?</strong> It carries the same question a drop flag answers — <em>had we got it yet?</em> — so it is worth being precise about the difference, which is where that answer lives.</p><p>A drop flag is a runtime boolean: written as ownership changes, read at cleanup, and branched on. <code>acquired</code> leaves nothing behind at all — it is read by the transpiler and never reaches the output. What it does is decide which <strong>label</strong> each failure jumps to: a fault before the marker goes to a release point that skips this resource, one after it goes to a release point that includes it. The answer ends up in the program counter rather than in a bit. Across all 79 programs in this repository there is not one boolean declaration, and no cleanup is gated on stored ownership state.</p><p>It is manual, which a drop flag is not — the compiler cannot tell which of <code>socket</code>, <code>bind</code>, <code>setsockopt</code> takes the thing, so you say. But a misplaced marker is a mistake at compile time, and a test can catch it: scenario 48 in <code>tests/scopes</code> moves one up by a single call and the release order stops matching its C++ twin. A mishandled drop flag is a leak at run time.</p></blockquote>
 <h4>A boundary of your own</h4>
 <p><code>acquired</code> keeps the test the call already carries: <code>linux.open</code> promises <code>descriptor &gt;= 0</code>, and that is what the boundary means. To make the boundary something else, state it:</p>
 <pre><code>    <span class="t-namespace">linux</span><span class="t-operator">.</span><span class="t-call">open</span> <span class="t-operator">(</span><span class="t-label">path</span> <span class="t-bind">is</span> <span class="t-plain">path</span><span class="t-operator">,</span> <span class="t-label">flags</span> <span class="t-bind">is</span> <span class="t-number">0</span><span class="t-operator">,</span> <span class="t-label">mode</span> <span class="t-bind">is</span> <span class="t-number">0</span><span class="t-operator">,</span> <span class="t-label">descriptor</span> <span class="t-bind">is</span> <span class="t-plain">descriptor</span><span class="t-operator">)</span>

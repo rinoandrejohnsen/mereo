@@ -125,6 +125,17 @@ def render(lines):
             i += 1
         elif s == "---":
             flush(); out.append("<hr>"); i += 1
+        elif s.startswith("> "):
+            # An aside: something worth knowing that is not the thread of the
+            # section. GitHub renders `>` as a blockquote natively, so the wiki
+            # gets it for free and this is only the HTML half.
+            flush(); note = []
+            while i < n and lines[i].strip().startswith(">"):
+                note.append(lines[i].strip()[1:].strip()); i += 1
+            paras = []
+            for chunk in " \n".join(note).split(" \n \n"):
+                paras.append("<p>" + inline(" ".join(chunk.split())) + "</p>")
+            out.append("<blockquote>" + "".join(paras) + "</blockquote>")
         elif s.startswith("- "):
             flush(); items = []
             while i < n:
@@ -184,6 +195,10 @@ hr{border:none;border-top:1px solid #e2e8f0;margin:26px 0}
 ul{padding-left:22px;margin:10px 0}
 li{margin:4px 0}
 strong{color:#0f172a}
+blockquote{margin:18px 0;padding:12px 18px;background:#f8fafc;border-left:3px solid #94a3b8;border-radius:0 6px 6px 0}
+blockquote p{margin:6px 0;font-size:.95em;color:#334155}
+blockquote p:first-child{margin-top:0}
+blockquote p:last-child{margin-bottom:0}
 /* The lead's first table is the infobox: an encyclopedia article's summary
    panel, floated beside the opening paragraphs the way one is. Keyed on
    position rather than a class because the pages are plain markdown. */

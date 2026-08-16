@@ -109,6 +109,25 @@ A **single-call** acquire needs no marker: the boundary is unambiguous. And
 `release` carries no test at any step — a failed release cannot reroute
 anything.
 
+> **Is `acquired` a drop flag by another name?** It carries the same question a
+> drop flag answers — *had we got it yet?* — so it is worth being precise about
+> the difference, which is where that answer lives.
+>
+> A drop flag is a runtime boolean: written as ownership changes, read at
+> cleanup, and branched on. `acquired` leaves nothing behind at all — it is read
+> by the transpiler and never reaches the output. What it does is decide which
+> **label** each failure jumps to: a fault before the marker goes to a release
+> point that skips this resource, one after it goes to a release point that
+> includes it. The answer ends up in the program counter rather than in a bit.
+> Across all 79 programs in this repository there is not one boolean
+> declaration, and no cleanup is gated on stored ownership state.
+>
+> It is manual, which a drop flag is not — the compiler cannot tell which of
+> `socket`, `bind`, `setsockopt` takes the thing, so you say. But a misplaced
+> marker is a mistake at compile time, and a test can catch it: scenario 48 in
+> `tests/scopes` moves one up by a single call and the release order stops
+> matching its C++ twin. A mishandled drop flag is a leak at run time.
+
 ### A boundary of your own
 
 `acquired` keeps the test the call already carries: `linux.open` promises
