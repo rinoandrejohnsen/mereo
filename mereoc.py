@@ -1807,8 +1807,11 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     for _a in _arguments(m.group(3) or "", n):
                         take_arg(inblock, _a, n)
                     continue
-                if method["prim"] is None and not method["delegate"]:
-                    fail(f"line {n}: `ensure` before the method's body")
+                # `acquired when` is matched BEFORE the has-a-body check, so
+                # that writing it first in the body is told what is wrong with
+                # IT rather than being told about `ensure`, which is not what
+                # was written. That check made this branch's own
+                # "must follow the call" message unreachable.
                 m = re.match(r"^acquired when (.+?) (<=|>=|==|!=|<|>) (.+)$", s)
                 if m:
                     if method["role"] != "acquire":
@@ -1826,6 +1829,8 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     curcall["ensure"].append(
                         (m.group(1), m.group(2), m.group(3), n))
                     continue
+                if method["prim"] is None and not method["delegate"]:
+                    fail(f"line {n}: `ensure` before the method's body")
                 m = re.match(r"^ensure (.+?) (<=|>=|==|!=|<|>) (.+)$", s)
                 if m:
                     (curcall or method)["ensure"].append(

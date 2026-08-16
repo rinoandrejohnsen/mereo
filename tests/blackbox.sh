@@ -346,6 +346,14 @@ bb   branch/leave-hot  branch_leave ""  0  "-"   -- x
 # ... but a road has no START -- it is entered by the dispatch
 rejects branch/no-repeat  branch_repeat  "a road has no start to go back to"
 
+# `acquired when` marks where ownership BEGINS in a multi-call acquire -- the
+# test before which a fault releases nothing and after which it releases the one
+# thing. Its four refusals, none of which had a test:
+rejects acquired/missing    acquired_missing    "which one takes ownership"
+rejects acquired/twice      acquired_twice      "already marks an acquisition"
+rejects acquired/in-release acquired_in_release "belongs in \`acquire\`"
+rejects acquired/no-call    acquired_no_call    "must follow the call"
+
 # A NAME BECOMES A C IDENTIFIER as written, and a scope name becomes a C LABEL.
 # All three of these used to pass mereo and fail in GCC, with a message about
 # generated code the author never saw.

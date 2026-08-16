@@ -1,0 +1,22 @@
+include "../../linux.mereo"
+
+-- `acquired when` marks a CALL -- it says that call is the one that took the
+-- thing. Opening the body with it marks nothing.
+
+holder is
+  descriptor is 4 bytes as signed
+
+  acquire (path) is
+    acquired when descriptor >= 0
+    linux.open (path is path, flags is 0, mode is 0, descriptor is descriptor)
+  end
+
+  release is
+    linux.close (descriptor is descriptor)
+  end
+end
+
+program is
+  h is holder (path is "/dev/null")
+  ensure h.descriptor >= 0
+end

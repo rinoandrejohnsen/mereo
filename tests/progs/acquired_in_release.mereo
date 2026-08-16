@@ -1,0 +1,22 @@
+include "../../linux.mereo"
+
+-- `acquired when` marks where ownership BEGINS, so it belongs in `acquire`.
+-- A release cannot reroute: a failed one has nothing left to decide.
+
+holder is
+  descriptor is 4 bytes as signed
+
+  acquire (path) is
+    linux.open (path is path, flags is 0, mode is 0, descriptor is descriptor)
+  end
+
+  release is
+    linux.close (descriptor is descriptor)
+    acquired when descriptor >= 0
+  end
+end
+
+program is
+  h is holder (path is "/dev/null")
+  ensure h.descriptor >= 0
+end

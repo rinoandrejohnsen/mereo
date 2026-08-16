@@ -1,0 +1,41 @@
+include "markers.mereo"
+
+-- The `acquired when` marker on a call OTHER than the first. 24 and 25 both put
+-- it on the opening call, so the untested shape is a preparatory step that runs
+-- and SUCCEEDS before ownership begins.
+--
+-- The access check passes -- /dev/null is there -- and the open then fails, so
+-- the boundary is never crossed and `staged` owns nothing: its release must not
+-- run, not even the part that would close the sentinel. `keep`, acquired
+-- earlier, still unwinds.
+--
+-- This is the scenario that pins the marker's POSITION. Move it up onto the
+-- access check and the first call would begin ownership, so the failing open
+-- would release -- close(101) would appear and the parity would break.
+-- Expect close(102) alone -- and never close(101).
+
+staged is
+  handle is 0
+  status is 0
+  fd_mark is 101
+
+  acquire (probe, path) is
+    linux.faccessat2 (base is -100,       -- succeeds: owns nothing regardless
+                      path is probe,
+                      mode is 0,
+                      flags is 0,
+                      result is status)
+    linux.open (path is path, flags is 0, mode is 0, descriptor is handle)
+    acquired when handle >= 0             -- <- ownership starts HERE, not above
+  end
+
+  release is
+    linux.close (descriptor is handle)
+    linux.close (descriptor is fd_mark)
+  end
+end
+
+program is
+  keep is adopted mark_b (descriptor is 102)
+  thing is staged (probe is "/dev/null", path is "/nonexistent/mereo")
+end

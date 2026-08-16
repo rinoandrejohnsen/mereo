@@ -1,0 +1,28 @@
+include "../../linux.mereo"
+
+-- Two `acquired when` in one acquire. A resource owns exactly ONE thing, so
+-- there is exactly one ownership boundary; a second thing is a layer.
+
+holder is
+  descriptor is 4 bytes as signed
+  status is 8 bytes as signed
+
+  acquire (path) is
+    linux.open (path is path, flags is 0, mode is 0, descriptor is descriptor)
+    acquired when descriptor >= 0
+    linux.lseek (descriptor is descriptor,
+                 offset is 0,
+                 whence is 0,
+                 position is status)
+    acquired when status >= 0
+  end
+
+  release is
+    linux.close (descriptor is descriptor)
+  end
+end
+
+program is
+  h is holder (path is "/dev/null")
+  ensure h.descriptor >= 0
+end

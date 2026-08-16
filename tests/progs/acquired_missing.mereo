@@ -1,0 +1,26 @@
+include "../../linux.mereo"
+
+-- A multi-call `acquire` that never says which call takes ownership. The tower
+-- would have to guess where the boundary is, so it is refused.
+
+holder is
+  descriptor is 4 bytes as signed
+  status is 8 bytes as signed
+
+  acquire (path) is
+    linux.open (path is path, flags is 0, mode is 0, descriptor is descriptor)
+    linux.lseek (descriptor is descriptor,
+                 offset is 0,
+                 whence is 0,
+                 position is status)
+  end
+
+  release is
+    linux.close (descriptor is descriptor)
+  end
+end
+
+program is
+  h is holder (path is "/dev/null")
+  ensure h.descriptor >= 0
+end
