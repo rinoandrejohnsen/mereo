@@ -108,6 +108,10 @@ bb view/byte-order    view_byteorder "" 0 "18 18 4660"
 # a view laid over another view's FIELD -- the offset comes from the backing
 # layout, so it is not written twice. Both spellings must read the same bits.
 bb view/over-field    view_over_field "" 0 "1 0 5 1 0 5"
+# a resource method reading its OWN state bytes: `duct` owns the pipe and hands
+# each end out of the pair it holds. The in-instance buffer had no registration
+# as a backing, so the method could not address it.
+bb view/own-state     own_state_bytes "" 0 "76 111 114"
 bb view/flag-template view_flagtpl "" 0 "B"   # ... at bit grain: mask/shift RMW
 bb word/in-register   word_register "" 0 "H"  # `N bytes in register`: every
                                               # slice agrees with `in stack`

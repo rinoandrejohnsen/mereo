@@ -178,7 +178,8 @@ meanwhile is the same for both: put it in a template and splice it.
 
 ## What the linux.mereo half hit: seven places the language stopped short
 
-**Status:** 1, 2 and 3 are DONE; the other four are open. All were found by writing
+**Status:** 1, 2 and 3 are DONE, 7 is done for procedure methods; the rest
+are open. All were found by writing
 real code against the new library rather than by reading the compiler, and each
 is stated with the program that wanted it.
 
@@ -308,7 +309,34 @@ It IS in a resource, which is why the message misleads. The consequence is that
 a method may either do several steps OR make one syscall, never both — so
 `watch` cannot fill the `poll_entry` it then polls, and the caller fills it.
 
-### 7. A resource method cannot read its own state bytes
+### 7. A resource method cannot read its own state bytes — **DONE (procedures)**
+
+**Closed for procedure methods.** An in-instance buffer was emitted as
+`char INST_field[N]` but never registered as a backing, so a method's
+`[block + i : 1]` substituted the C cell and then failed to re-parse as mereo.
+It is registered now, and the splice substitutes the emitter's name rather than
+the cell. `tests/progs/own_state_bytes.mereo` is a resource that fills its own
+block and reads bytes back out of it; the corpus is 80 for 80 unchanged.
+
+**Still open for SINGLE-CALL methods.** `acquire` and `release` resolve their
+arguments by name, so `linux.close (descriptor is [pair + 0 : 4])` is still
+refused. That is why a `pipe` resource owning both ends remains unwritable: it
+can now hand each end out, but it cannot close them. `channel` still ships.
+
+Two things found while doing it, worth their own entries if they bite again:
+
+- **mereoraii miscounted pipes.** `pipe2` returns its two descriptors through
+  the ARGUMENT array and returns 0, and the audit read the return value -- so
+  both ends went untracked and a stray `close(0)` counted as releasing "it". A
+  program leaking a whole pipe pair passed. Fixed; it now reads the array.
+- **An unsigned state field makes a syscall's `ensure` vacuous.** A field is
+  unsigned by default, so binding `read`'s result to `count is 8 bytes` compiles
+  `count >= 0` into a comparison that is always true, and a failed read is not
+  noticed. The library gets this right by convention (`as signed` everywhere it
+  matters) and nothing checks it. It is detectable: a primitive whose `ensure`
+  is `OUT >= 0` bound to an unsigned field is always-true by construction.
+
+The original entry follows.
 
 ```
   reader (descriptor) is

@@ -1,0 +1,68 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- A resource method reading its OWN state bytes.
+--
+-- `header` owns one descriptor and keeps a block of its own. `load` fills that
+-- block from the file; `at` reads a byte back out of it. That last part could
+-- not be written before: an in-instance buffer was emitted as
+-- `char INST_field[N]` but never registered as a backing, so a method's
+-- `[block + i : 1]` substituted the C cell and then failed to re-parse:
+--
+--   unknown name 'long' in expression '[(long)h_block + 0 : 1] as signed'
+--
+-- Reading lorem_ipsum.txt, the first three bytes are "Lor".
+--
+--   prints:  76 111 114
+
+header is
+  descriptor is 4 bytes as signed
+  block is 64 bytes
+  count is 8 bytes as signed      -- signed, or read's `count >= 0` is vacuous
+
+  acquire (path) is
+    linux.open (path is path, flags is 0, mode is 0, descriptor is descriptor)
+  end
+
+  load (capacity) is
+    linux.read (descriptor is descriptor,
+                buffer is block,
+                capacity is capacity,
+                count is count)
+  end
+
+  at (offset, value) is             -- reads the instance's own bytes
+    v is [block + offset : 1]
+    value is v
+  end
+
+  release is
+    linux.close (descriptor is descriptor)
+  end
+end
+
+program is
+  room is 64 bytes
+  b is 0
+
+  page is already builder (data is room, count is 0, limit is 64)
+
+  doc is header (path is "lorem_ipsum.txt")
+
+  doc.load (capacity is 16)
+
+  doc.at (offset is 0, value is b)
+  page.number (value is b)
+  page.byte (value is 32)
+  doc.at (offset is 1, value is b)
+  page.number (value is b)
+  page.byte (value is 32)
+  doc.at (offset is 2, value is b)
+  page.number (value is b)
+  page.byte (value is 10)
+
+  terminal is already linux.file (descriptor is 1)
+
+  terminal.write (buffer is page.data, count is page.count)
+
+end

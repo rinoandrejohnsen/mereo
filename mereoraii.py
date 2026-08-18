@@ -85,6 +85,15 @@ def parse(traced):
             # double-close -- whose second close fails -- is still seen
             fd = int(argstr.split(",")[0].split(")")[0])
             events.append(("rel", fd))
+        elif name in ("pipe", "pipe2") and rv == 0:
+            # pipe/pipe2 are the odd ones out: they hand back TWO descriptors,
+            # through the ARGUMENT array, and return 0. Reading the return value
+            # recorded fd 0 as the acquisition -- so both ends of every pipe went
+            # untracked, and a stray close(0) counted as releasing "it". A
+            # program leaking a whole pipe pair passed this audit.
+            for fd in re.findall(r"-?\d+", argstr.split("]")[0]):
+                if int(fd) >= 0:
+                    events.append(("acq", int(fd)))
         elif name in FD_ACQUIRE and rv >= 0:
             events.append(("acq", rv))
         if name == "write" and argstr.startswith("2,") and rv > 0:

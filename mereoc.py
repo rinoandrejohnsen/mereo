@@ -3449,6 +3449,18 @@ def check_slots(definitions, slots):
                      "PART is INSTANCE`) (v1)")
             instances[slot["name"]] = slot
             publish_state(slot, defn)
+            # A resource's IN-INSTANCE BUFFER is emitted as `char INST_field[N]`
+            # and its name is its address, but it was never registered as a
+            # buffer -- so a method reading its own bytes (`[pair + 0 : 4]`)
+            # substituted the C cell and then failed to re-parse as mereo.
+            # Register it under the name the emitter uses, so the ordinary
+            # expression path resolves it like any other backing.
+            for _arr in defn.get("arrays", ()):
+                buffers[f"{slot['name']}_{_arr.replace(' ', '_')}"] = {
+                    "kind": "buffer",
+                    "name": f"{slot['name']}_{_arr.replace(' ', '_')}",
+                    "size": str(defn["playout"][_arr][1]),
+                    "line": slot["line"]}
         elif slot["kind"] == "buffer":
             if slot.get("place") == "register":
                 # one word, so the size must be a literal 1/2/4/8: a runtime size
@@ -4707,6 +4719,12 @@ def inline_procedure(meth, st, cid, definitions, slots, prims):
                         # a bit is not a C lvalue -- so substitute the mereo
                         # access and let the ordinary emitter mask and shift.
                         rmap[path] = f"{inst['name']}.{path}"
+                    elif path in (idefn.get("arrays") or ()):
+                        # an in-instance buffer: substitute the NAME the emitter
+                        # gives it, which is registered as a backing, so the
+                        # body's `[field + k : w]` resolves like any other. The
+                        # C cell (`(long)NAME`) would not re-parse as mereo.
+                        rmap[path] = f"{inst['name']}_{path.replace(' ', '_')}"
                     else:
                         rmap[path] = state_cell(inst["name"], path, idefn,
                                                 inst.get("backing"))
