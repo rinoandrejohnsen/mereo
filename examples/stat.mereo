@@ -33,7 +33,7 @@ program (arguments) is
   perms is constant "rwxrwxrwx"
 
   info is meta as linux.file_status
-  bits is meta + 28 as linux.file_mode         -- the mode field's two bytes
+  bits is info.mode as linux.file_mode         -- the offset is the layout's
 
   j is 0
   at is 0

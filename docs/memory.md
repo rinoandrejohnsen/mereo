@@ -64,8 +64,22 @@ field is the load the view describes:
 program never states the offset or the swap again; both came from the
 declaration.
 
-The same view may be laid at an offset, or over an address only known while the
-program runs — a run of variable-length records, for instance, where the
+A view may also be laid over **another view's field**, which is how a record's
+own bits get named. `file_status` says where `mode` is, so the mode's flag view
+takes the offset from there rather than repeating it:
+
+```
+  info is meta as linux.file_status
+  bits is info.mode as linux.file_mode
+```
+
+The alternative is `meta + 28`, with 28 written out beside a layout that already
+knows it — two places to keep in step, and the offset is exactly what a layout
+view exists to remove. The field's own width is what the fit is checked against,
+so a view too wide for it is refused.
+
+The same view may be laid at a plain offset, or over an address only known while
+the program runs — a run of variable-length records, for instance, where the
 programmer supplies the width the compiler checks against the layout's size:
 
 ```

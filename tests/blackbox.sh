@@ -105,6 +105,9 @@ bb view/writes-field  view_write   "" 0 "E"   # a template WRITES its own fields
 # ...and all three ways of writing a field must agree on its BYTE ORDER. The
 # construction form used to store the value raw and read back byte-reversed.
 bb view/byte-order    view_byteorder "" 0 "18 18 4660"
+# a view laid over another view's FIELD -- the offset comes from the backing
+# layout, so it is not written twice. Both spellings must read the same bits.
+bb view/over-field    view_over_field "" 0 "1 0 5 1 0 5"
 bb view/flag-template view_flagtpl "" 0 "B"   # ... at bit grain: mask/shift RMW
 bb word/in-register   word_register "" 0 "H"  # `N bytes in register`: every
                                               # slice agrees with `in stack`

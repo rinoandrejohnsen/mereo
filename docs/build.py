@@ -301,16 +301,28 @@ RETIRED_QUOTABLE = {r"\bstructs?\b", r"\bclass(?:es)?\b"}
 def check_retired(pages):
     out = []
     for name, text in sorted(pages.items()):
+        # Code spans, paired properly and in order. A pattern that targets a
+        # span is tested against THESE, never against the raw text: applied to
+        # the text, "`...`" happily pairs one span's closing backtick with the
+        # next span's opening one, so an ordinary English clause between two
+        # code spans reads as code. That flagged "`file_status` says where
+        # `mode` is" as a retired call -- the third time this class of false
+        # positive cost a rewrite of correct prose.
+        spans = [(m.start(), m.group(0)) for m in re.finditer(r"`[^`\n]*`", text)]
         for pat, truth, allow in RETIRED:
             if name in QUOTES_ANOTHER_LANGUAGE and pat in RETIRED_QUOTABLE:
                 continue        # it is naming C's construct, not mereo's
-            for m in re.finditer(pat, text):
-                line_no = text[:m.start()].count("\n") + 1
+            if pat.startswith("`"):
+                hits = [(pos, sp) for pos, sp in spans if re.search(pat, sp)]
+            else:
+                hits = [(m.start(), m.group(0)) for m in re.finditer(pat, text)]
+            for pos, got in hits:
+                line_no = text[:pos].count("\n") + 1
                 line = text.splitlines()[line_no - 1]
                 if allow and re.search(allow, line):
                     continue
-                out.append(f"{name}.md:{line_no} [{section_of(text, m.start())}] "
-                           f"says {m.group(0)!r} -- {truth}")
+                out.append(f"{name}.md:{line_no} [{section_of(text, pos)}] "
+                           f"says {got!r} -- {truth}")
     return out
 
 

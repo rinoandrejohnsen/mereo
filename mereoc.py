@@ -2340,7 +2340,12 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                 # known once the current is read, and a named backing cannot say
                 # that. The programmer supplies the width and the compiler checks
                 # it covers the layout, exactly as it checks a backing's size.
-                m = re.match(r"^(\w+) is (\w+|\[[^\]]+\])(?: \+ (.+?))? as "
+                # The backing may also be another view's FIELD --
+                # `bits is info.mode as linux.file_mode` -- so the offset comes
+                # from the layout that already declares it rather than being
+                # written out a second time.
+                m = re.match(r"^(\w+) is (\w+\.\w+|\w+|\[[^\]]+\])"
+                             r"(?: \+ (.+?))? as "
                              r"(adopted )?([\w.]+)( in \w+)?$", s)
                 if m and bare(m.group(5), ns_of_line.get(n)) in definitions and m.group(5) not in VIEW_WORDS:
                     if m.group(6):
@@ -3107,6 +3112,33 @@ def lens_target(slot, definitions, buffers, psize, scalars=None):
             fail(f"line {slot['line']}: view '{slot['name']}' needs {psize} "
                  f"byte(s), but `[{addr} : {width}]` promises {width}")
         return f"({parse_expr(addr, scalars or {}, buffers, slot['line'])})"
+
+    # `NAME is OTHER.FIELD as VIEW` -- a view over another view's field. The
+    # offset is the one the backing layout already declares, so it is not
+    # written a second time; getting it wrong in one of the two places was the
+    # whole hazard. The field's own WIDTH is what the fit is checked against.
+    m = re.match(r"^(\w+)\.(\w+)$", back)
+    if m:
+        host, field = m.group(1), m.group(2)
+        if host not in buffers or not buffers[host].get("playout"):
+            fail(f"line {slot['line']}: lens '{slot['name']}' over "
+                 f"'{back}' -- '{host}' is not a layout view, so it has no "
+                 "field to lay this over")
+        pl = buffers[host]["playout"]
+        if field not in pl:
+            fail(f"line {slot['line']}: layout '{host}' has no field "
+                 f"'{field}' (has: {', '.join(pl)})")
+        foff, fwidth, _sg, _bg = pl[field]
+        if str(slot.get("lens_off", "0")) != "0":
+            fail(f"line {slot['line']}: '{slot['name']}' views '{back}', whose "
+                 "offset comes from the layout -- adding one to it would be the "
+                 "hand-written offset this spelling exists to remove")
+        if psize > fwidth:
+            fail(f"line {slot['line']}: view '{slot['name']}' needs {psize} "
+                 f"byte(s), but '{back}' is {fwidth}")
+        base = buffers[host].get("addr", f"(long){host}")
+        return f"({base} + {foff})" if foff else base
+
     off = const_offset(slot.get("lens_off", "0"), definitions, buffers, slot["line"])
     if back in REGISTER_WORDS or back in SCALAR_WORDS:
         # a register word is a backing like any other, so a view lays over it --

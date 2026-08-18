@@ -1,0 +1,47 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- A view laid over another view's FIELD. The backing layout already says where
+-- the field is, so the offset is not written a second time -- writing it twice
+-- and getting one of them wrong was the hazard.
+--
+--   info is meta as linux.file_status
+--   bits is info.mode as linux.file_mode     -- not `meta + 28`
+--
+-- Checked against the hand-written form: a mode word built by hand here, then
+-- read back through both spellings, which must agree bit for bit.
+--
+--   prints:  1 0 5 1 0 5
+
+program is
+  meta is 256 bytes
+  room is 64 bytes
+
+  page is already builder (data is room, count is 0, limit is 64)
+
+  info is meta as linux.file_status
+
+  byhand is meta + 28 as linux.file_mode      -- the offset written out
+  byfield is info.mode as linux.file_mode     -- ...and taken from the layout
+
+  -- 0x5800: kind 5, setuid set, setgid clear
+  info.mode is 22528
+
+  page.number (value is byhand.setuid)
+  page.byte (value is 32)
+  page.number (value is byhand.setgid)
+  page.byte (value is 32)
+  page.number (value is byhand.kind)
+  page.byte (value is 32)
+  page.number (value is byfield.setuid)
+  page.byte (value is 32)
+  page.number (value is byfield.setgid)
+  page.byte (value is 32)
+  page.number (value is byfield.kind)
+  page.byte (value is 10)
+
+  terminal is already linux.file (descriptor is 1)
+
+  terminal.write (buffer is page.data, count is page.count)
+
+end

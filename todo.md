@@ -178,7 +178,7 @@ meanwhile is the same for both: put it in a template and splice it.
 
 ## What the linux.mereo half hit: seven places the language stopped short
 
-**Status:** 1 and 3 are DONE; the other five are open. All were found by writing
+**Status:** 1, 2 and 3 are DONE; the other four are open. All were found by writing
 real code against the new library rather than by reading the compiler, and each
 is stated with the program that wanted it.
 
@@ -224,7 +224,18 @@ as it checks a backing's size today. This is the one of the seven worth doing.
 **Workaround, and what ships:** `[at + 16 : 2]` and friends, with the offset
 table in a comment on `getdents64`. See `examples/ls.mereo`.
 
-### 2. A view over another view's field
+### 2. A view over another view's field — **DONE**
+
+**Closed.** A lens may take another view's field as its backing --
+`bits is info.mode as linux.file_mode` -- and the offset comes from the layout
+that declares the field, so it is not written twice. The field's own width is
+what the fit is checked against. `examples/stat.mereo` uses it and its generated
+C is byte-identical to the `meta + 28` it replaces; the corpus is unchanged.
+
+The entry below proposed a different spelling -- a field carrying a view,
+`mode is 2 bytes as file_mode` -- which would need nested member access
+(`info.mode.setuid`) that the expression grammar does not have. This closes the
+same gap without it. The original entry follows.
 
 `file_mode` is the flag view over `statx`'s `mode`, which is at offset 28 of the
 block `file_status` already describes. Laying one over the other means writing
