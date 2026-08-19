@@ -1870,9 +1870,19 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                 # blocks only, so a body that began by writing memory fell
                 # through to the `ensure` check and was told about `ensure` --
                 # a message with nothing to do with the line.
+                # ...and so does a CALL to anything that is not a primitive.
+                # A simple method's body IS a call -- `linux.close (...)` -- so
+                # the two cannot be told apart by shape, only by what is being
+                # called: a primitive makes this a simple method, a sibling
+                # method or a template makes it a procedure. Without this a
+                # method whose body began by calling its neighbour was read as a
+                # simple method and refused with `unknown primitive 'bump'`.
+                _c = re.match(r"^([\w.]+)\s*\(", s)
+                _cp = bare(_c.group(1), ns_of_line.get(n)) if _c else None
                 if (method["prim"] is None and not method["delegate"]
-                        and re.match(r"^\w+ is .+$|^\w+ goes$|^scope$"
-                                     r"|^\[.+\] is .+$|^\w+\.\w+ is .+$", s)):
+                        and (re.match(r"^\w+ is .+$|^\w+ goes$|^scope$"
+                                      r"|^\[.+\] is .+$|^\w+\.\w+ is .+$", s)
+                             or (_c is not None and _cp not in prims))):
                     if method["role"] != "op":
                         _role = ("acquires" if method["role"] == "acquire"
                                  else "releases")
@@ -4868,7 +4878,12 @@ def inline_procedure(meth, st, cid, definitions, slots, prims):
                  "not connected")
     inst = next((sl for sl in slots if sl.get("kind") == "instance"
                  and sl.get("name") == st["inst"]), None)
-    idefn = definitions.get(inst["definition"]) if inst is not None else None
+    idefn = (definitions.get(inst["definition"]) if inst is not None
+             # a STATELESS group is called by name, so it has no instance slot
+             # -- the same fallback `procedure_call` makes to find the method
+             # in the first place. Without it a sibling call inside one was
+             # left bare and arrived at the planner as an unknown primitive.
+             else definitions.get(st.get("inst")))
     bound = set(meth["params"])
     if idefn is not None:                 # the resource's own state is not local
         bound |= {p for p in idefn.get("flat", ()) if re.fullmatch(r"\w+", p)}
@@ -4879,11 +4894,29 @@ def inline_procedure(meth, st, cid, definitions, slots, prims):
     # a TEMPLATE BODY is its own parse, so it needs its own check -- and it is
     # the half that matters, because a splice is where a mis-declared field
     # turns into the caller's names being read by the callee
-    for _bs in bsteps:
-        if _bs.get("type") == "bare":
-            # written inside a resource method, so it HAS a tower to fail into;
-            # after splicing nothing else could tell it from a program-level one.
-            _bs["from_method"] = meth["name"]
+    for _bs in _walk_steps(bsteps):
+        if _bs.get("type") != "bare":
+            continue
+        # A SIBLING call -- `bump (value is v)` in another of `grp`'s methods.
+        # It arrives BARE because the body is re-parsed as its own program, and
+        # nothing there knows the method has neighbours. Rewrite it as a call on
+        # the same receiver and let the fixpoint splice it, exactly as a call on
+        # any other instance is already spliced.
+        #
+        # A PRIMITIVE of the same name wins: `linux.file`'s `read` method has
+        # `read (...)` for a body, meaning the syscall. Reading that as the
+        # sibling would splice the method into itself.
+        if (_bs["op"] not in prims and idefn is not None
+                and _bs["op"] in (idefn.get("methods") or {})):
+            _bs["type"] = "call"
+            _bs["method"] = _bs.pop("op")
+            _bs["inst"] = st["inst"]
+            _bs.setdefault("recover", None)
+            _bs.setdefault("alts", [])
+            continue
+        # written inside a resource method, so it HAS a tower to fail into;
+        # after splicing nothing else could tell it from a program-level one.
+        _bs["from_method"] = meth["name"]
     check_steps(bsteps, f"in template '{meth['name']}': ")
     # A template's locals are PRIVATE to the splice -- they are renamed per call
     # site, so nothing outside can read one. That makes a local nobody reads as

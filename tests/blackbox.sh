@@ -126,6 +126,11 @@ bb view/method-syscall method_syscall "" 0 "1 1"
 # `definition 'rec' redefined`. The tables are keyed by the canonical path now.
 # The two `rec`s are different shapes, so a collision could not pass unnoticed.
 bb view/namespace-separate namespace_separate "" 0 "7 4660 18"
+# a member calling a SIBLING member, which the language could not do: nothing in
+# either library file does it. The body detector knew stores and loops but not a
+# CALL, and past that the call reached the planner still bare. A primitive of the
+# same name still wins -- `linux.file.read` calls the syscall, not itself.
+bb view/sibling-call  sibling_call "" 0 "7 1"
 # a SINGLE-CALL method reading its own state bytes. `acquire`/`release` resolve
 # arguments by name, so a resource could hand out a descriptor it held in its
 # own buffer but not close it -- which is why `duct`, a resource owning a whole
@@ -514,6 +519,9 @@ raii view/method-syscall-raii method_syscall
 # of its own bytes, so the audit has to see two acquired and two closed -- on
 # the happy path and on a fault at each of the four syscalls after them.
 raii view/release-own-bytes-raii release_own_bytes
+# a resource method calling its SIBLING: the spliced sibling sits inside the
+# caller's scope, so a fault in it must still route into the same tower.
+raii view/sibling-call-raii sibling_call
 rm -f "$DIR/copy_out.txt"
 
 echo "---"

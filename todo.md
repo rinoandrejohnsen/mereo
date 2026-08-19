@@ -628,10 +628,19 @@ aliases. Qualification stays mandatory.
 
 ### Still open, found on the way
 
-- A **group member cannot call a sibling** — confirmed by scanning both library
-  files: not one method calls another of its own group. `text.measure` looks
-  like a counter-example but `scan` is a helper primitive. This matters more now
-  that a namespace is a definition and its members are siblings.
+- A member calling a **sibling** — **DONE**. Two things stood in the way. The
+  procedure-body detector knew stores, assignments, loops and blocks but not a
+  CALL, and a simple method's body *is* a call (`linux.close (...)`), so shape
+  alone cannot separate them — what separates them is what is being called: a
+  primitive makes a simple method, anything else makes a procedure. Past that
+  the call reached the planner still bare, because a body is re-parsed as its
+  own program and nothing there knows the method has neighbours; it is rewritten
+  as a call on the same receiver now and the ordinary fixpoint splices it.
+  Precedence matters and the shipped library is the test of it: `linux.file`'s
+  `read` has `read (...)` for a body meaning the SYSCALL, so a primitive wins
+  over a sibling of the same name — otherwise that method would splice into
+  itself. `tests/progs/sibling_call` covers a stateless group and a resource;
+  164 files byte-identical.
 - A **free-standing template inside a namespace is unreachable**
   (`lib.bump (...)` → *not an instance*). The library has none, so nothing ever
   exercised it.

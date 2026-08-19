@@ -1,0 +1,94 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- A member calling a SIBLING member.
+--
+-- The capability did not exist. Scanning both library files turns up not one
+-- method calling another of its own group -- `text.measure` looks like a
+-- counter-example, but `scan` is a helper primitive rather than a sibling. Two
+-- things stood in the way, and they showed up as two different wrong messages:
+--
+--   user (value) goes
+--     bump (value is value)          -- `ensure` before the method's body
+--   end
+--
+-- because a method's body is re-parsed as its own program and the detector knew
+-- stores, assignments, loops and blocks but not a CALL -- and a simple method's
+-- body IS a call (`linux.close (...)`), so shape alone cannot separate them.
+-- What separates them is WHAT is called: a primitive makes a simple method,
+-- anything else makes a procedure.
+--
+-- Past that, the call arrived at the planner still bare:
+--
+--     bump (value is value)          -- unknown primitive 'bump'
+--
+-- because nothing in the re-parsed body knows the method has neighbours. It is
+-- rewritten as a call on the same receiver now, and the ordinary fixpoint
+-- splices it like a call on any other instance.
+--
+-- PRECEDENCE is the subtle part, and the SHIPPED LIBRARY is the test of it:
+-- `linux.file`'s `read` method has `read (...)` for a body, meaning the
+-- syscall, and its `write` and `seek` are the same shape. If a sibling won over
+-- a primitive of the same name, each of those would splice into itself and the
+-- compiler would not terminate. It builds, so the primitive wins -- and that is
+-- checked on every run of this suite rather than by a case invented here.
+--
+--   prints:  7 1
+
+counter is
+  bump (value) goes
+    value is value + 1
+  end
+
+  twice (value) goes                 -- a sibling, called twice
+    bump (value is value)
+    bump (value is value)
+  end
+end
+
+watcher is
+  descriptor is 4 bytes as signed
+  slot is 16 bytes
+
+  acquire (path) goes
+    linux.open (path is path, flags is 0, mode is 0, descriptor is descriptor)
+  end
+
+  arm (events) goes
+    [slot + 0 : 4] is descriptor
+    [slot + 4 : 2] is events
+  end
+
+  ready (value) goes                 -- a RESOURCE method calling its sibling
+    arm (events is 1)
+    v is [slot + 4 : 2]
+    value is v
+  end
+
+  release goes
+    linux.close (descriptor is descriptor)
+  end
+end
+
+program goes
+  n is 5
+  m is 0
+  room is 64 bytes
+
+  page is already builder (data is room, count is 0, limit is 64)
+
+  counter.twice (value is n)
+
+  source is watcher (path is "/dev/null")
+  source.ready (value is m)
+
+  page.number (value is n)
+  page.byte (value is 32)
+  page.number (value is m)
+  page.byte (value is 10)
+
+  screen is already linux.file (descriptor is 1)
+
+  screen.write (buffer is page.data, count is page.count)
+
+end
