@@ -1,0 +1,54 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- A free-standing TEMPLATE declared inside a namespace, beside a definition.
+--
+-- It was unreachable. `lib.bump (...)` reads as a method call on `lib`, so it
+-- met the receiver rule first and was refused -- *'lib' is a namespace, not an
+-- instance* -- while the rule that resolves a lone template sat below it and
+-- never ran. Neither library declares one, so nothing exercised it.
+--
+-- What decides a namespace is that it holds a DEFINITION. Templates alone
+-- cannot make one, because a GROUP is exactly a block of templates: reading
+-- `text is` as a namespace would scatter `find`, `compare` and fifteen more
+-- across the top level, to collide with `span`'s. And a FIELD makes it neither
+-- -- a namespace has members, not bytes -- which is what keeps a view or a
+-- resource from ever being read as one.
+--
+-- So `lib` below is a namespace: `rec` is a member definition, `bump` a member
+-- template, and both are reached through it.
+--
+--   prints:  5 1
+
+lib is
+  rec is
+    tag is 1 bytes
+  end
+
+  bump (value) goes                  -- a template, beside the definition
+    value is value + 1
+  end
+end
+
+program goes
+  buf is 8 bytes
+  n is 0
+  room is 64 bytes
+
+  page is already builder (data is room, count is 0, limit is 64)
+
+  h is buf as lib.rec                -- the member definition
+  h.tag is 5
+
+  lib.bump (value is n)              -- ...and the member template
+
+  page.number (value is h.tag)
+  page.byte (value is 32)
+  page.number (value is n)
+  page.byte (value is 10)
+
+  screen is already linux.file (descriptor is 1)
+
+  screen.write (buffer is page.data, count is page.count)
+
+end

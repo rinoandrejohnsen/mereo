@@ -658,11 +658,23 @@ _NS_OPEN = re.compile(r"^(\w+) contains$")
 # and `file is` the same line is gone.
 _DEF_OPEN = re.compile(r"^\w+(?: extends [\w.]+(?: and [\w.]+)*)? is$")
 _PRIM_OPEN = re.compile(r"^\w+ is (?:final )?assembly\b")
+_TMPL_OPEN = re.compile(r"^\w+ \([^)]*\) goes$")
 
 
 def _declares_only(lines, i, open_indent):
-    """Does the block opened at `lines[i]` hold only declarations?"""
-    kids = 0
+    """Does the block opened at `lines[i]` hold declarations, and one DEFINITION?
+
+    A namespace's members are declarations. A template is one too -- it is
+    declared here and only its body runs -- but templates alone cannot make a
+    namespace, because a GROUP is exactly a block of templates and reading
+    `text is` as a namespace would scatter `find`, `compare` and fifteen more
+    across the top level to collide with `span`'s. So the deciding member is a
+    DEFINITION: a block holding one is a namespace, and any templates beside it
+    are its members. A block with none is a group.
+
+    A field (`tag is 1 bytes`) matches neither, which is what keeps a view or a
+    resource from ever being read as a namespace."""
+    kids = defs = 0
     for raw in lines[i + 1:]:
         code = _uncomment(raw)
         if not code.strip():
@@ -675,10 +687,12 @@ def _declares_only(lines, i, open_indent):
         s = code.strip()
         if s == "end":
             continue                    # a child's closer sits at this indent
-        if not (_DEF_OPEN.fullmatch(s) or _PRIM_OPEN.match(s)):
+        if _DEF_OPEN.fullmatch(s) or _PRIM_OPEN.match(s):
+            defs += 1
+        elif not _TMPL_OPEN.fullmatch(s):
             return False
         kids += 1
-    return kids > 0
+    return kids > 0 and defs > 0
 
 
 def _namespace_fold(src):
@@ -1164,7 +1178,7 @@ def load(path, loaded, stack, importer=None):
 # A TEMPLATE STANDING ALONE: `NAME with PORTS is` at column 0. The anchor does
 # the indent check -- a nested line starts with a space, which `\w` will not
 # match -- so this reads a raw line as safely as a stripped one.
-FREE_TEMPLATE = re.compile(r"^(\w+) \((.*)\) is$")
+FREE_TEMPLATE = re.compile(r"^(\w+) \((.*)\) goes$")
 
 
 def take_arg(inblock, s, n):
@@ -1848,12 +1862,13 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     if m.group(2) is not None:
                         fail(f"line {n}: `{m.group(1)} (...) is` -- a method "
                              f"runs, so it opens with `goes`")
-                    fail(f"line {n}: `{m.group(1)} is` inside '{defn['name']}' -- a "
-                         "method runs, so it opens with `goes`. If a DEFINITION "
-                         "was meant, a block holding definitions is a NAMESPACE "
-                         f"and holds nothing else, so either move `{m.group(1)} "
-                         f"is` out to the left margin, or drop the fields and "
-                         f"methods from '{defn['name']}'.")
+                    fail(f"line {n}: `{m.group(1)} is` inside '{defn['name']}' "
+                         "-- a method runs, so it opens with `goes`. If a "
+                         "DEFINITION was meant: a block holding one is a "
+                         "NAMESPACE, and a namespace holds definitions and "
+                         f"templates but no FIELDS. '{defn['name']}' has fields, "
+                         f"so either move `{m.group(1)} is` out to the left "
+                         f"margin, or drop the fields from '{defn['name']}'.")
                 fail(f"line {n}: unrecognized definition line: {s!r}")
             if ind == 4 and method is not None:
                 # a procedure method opens its body with slot decls / a loop --
@@ -2665,6 +2680,17 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     laststep = step
                     for _a in _arguments(m.group(2) or "", n):
                         take_arg(inblock, _a, n)
+                    continue
+                # A NAMESPACED FREE TEMPLATE (`lib.bump (...)`) reads as a
+                # method call on `lib`, so it has to be recognised before the
+                # rule below refuses `lib` for not being an instance. `free_call`
+                # answers only when the name really resolves to a template, so
+                # `page.number (...)` and `linux.files.remove (...)` fall past it.
+                step = free_call(s, definitions, n, free_here, ns_of_line.get(n))
+                if step is not None:
+                    steps.append(step)
+                    inblock = ("step", step)
+                    laststep = step
                     continue
                 m = re.match(r"^([\w.]+)\.(\w+)\s*(?:\((.*)\))?$", s)
                 if m:

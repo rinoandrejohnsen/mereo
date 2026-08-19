@@ -1,13 +1,13 @@
 include "../../linux.mereo"
 
--- A DEFINITION written inside a definition that holds fields and methods.
+-- A DEFINITION written inside something that is not a namespace.
 --
--- This used to be read as something else entirely. `rec is` and `acquire is`
--- were the same line, and which one you got depended on what enclosed it, so
--- the parser took `rec` for a no-parameter method whose body declared a local.
--- Nothing called it, and a procedure method was otherwise checked only when it
--- was INLINED -- so nothing ever looked at it again, and the complaint arrived
--- at the USE:
+-- The two used to be the same line. `rec is` and `acquire is` were spelled
+-- identically and which one you got depended on what enclosed it, so the parser
+-- took `rec` for a no-parameter method whose body declared a local. Nothing
+-- called it, and a procedure method was otherwise checked only when it was
+-- INLINED -- so nothing ever looked at it again, and the complaint arrived at
+-- the USE:
 --
 --   h is buf as grp.rec
 --   ^  mereoc: error: `as` needs a view (signed/unsigned/big/little/...)
@@ -15,16 +15,22 @@ include "../../linux.mereo"
 -- naming neither the nesting nor the group.
 --
 -- The keyword decides now. A method RUNS, so it opens with `goes`; `rec is` is
--- therefore not a method, and the refusal lands on the declaration. A block
--- that holds definitions is a NAMESPACE and holds nothing else, which is the
--- other half of the message: `grp` has a field and a method, so it is not one.
+-- therefore not a method, and the refusal lands on the declaration.
 --
---   refused:  `rec is` inside 'grp' -- a method runs, so it opens with `goes`
+-- Note what is NOT an error: a block holding a definition and a template is a
+-- NAMESPACE, and `tests/progs/namespace_template` is exactly that. What makes
+-- `holder` below a definition rather than a namespace is its FIELD -- a
+-- namespace has members, not bytes -- so the definition inside it has nowhere
+-- to live.
+--
+--   refused:  `rec is` inside 'holder' -- a method runs, so it opens with `goes`
 
-grp is
-  rec is                             -- meant as a view; not a method, and not
-    tag is 1 bytes                   -- a nested definition either, because
-  end                                -- `grp` is not a namespace
+holder is
+  tag is 1 bytes                     -- a field: so this is a view, not a
+                                     -- namespace, and `rec` has nowhere to go
+  rec is
+    other is 1 bytes
+  end
 
   go (value) goes
     value is 7
@@ -34,7 +40,10 @@ end
 program goes
   n is 0
 
-  grp.go (value is n)
+  buf is 8 bytes
+  h is buf as holder
+
+  h.go (value is n)
 
   ensure n == 7
 end

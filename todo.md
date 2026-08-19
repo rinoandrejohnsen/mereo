@@ -641,9 +641,22 @@ aliases. Qualification stays mandatory.
   over a sibling of the same name — otherwise that method would splice into
   itself. `tests/progs/sibling_call` covers a stateless group and a resource;
   164 files byte-identical.
-- A **free-standing template inside a namespace is unreachable**
-  (`lib.bump (...)` → *not an instance*). The library has none, so nothing ever
-  exercised it.
+- A **free-standing template inside a namespace** — **DONE**. `lib.bump (...)`
+  reads as a method call on `lib`, so it met the receiver rule first and was
+  refused for `lib` not being an instance, while the rule that resolves a lone
+  template sat below it and never ran; it is tried first now, and answers only
+  when the name really resolves to a template. What decides a namespace is that
+  it holds a DEFINITION: templates alone cannot make one, because a group is
+  exactly a block of templates and reading `text is` as a namespace would
+  scatter `find`, `compare` and fifteen more across the top level to collide
+  with `span`'s. A FIELD makes it neither, which is what keeps a view or a
+  resource from being read as one. `tests/progs/namespace_template` covers it.
+
+  Found while doing it: the `goes` migration left the `free_templates` pre-pass
+  matching `NAME (ports) is`, so a template declared BELOW the program stopped
+  being found — silently, because nothing in the corpus declared one there. That
+  is exactly the case the pre-pass exists for, so `tests/progs/tmpl_alone` now
+  declares its template below the program; reverting the pattern breaks it.
 - A **procedure body cannot open with a call**, which is the same family as the
   body-detector gaps closed earlier: the detector knows stores, assignments,
   loops and blocks, but not a call. It surfaces as ``ensure` before the method's

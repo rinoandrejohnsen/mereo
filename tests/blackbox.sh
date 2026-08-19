@@ -131,6 +131,11 @@ bb view/namespace-separate namespace_separate "" 0 "7 4660 18"
 # CALL, and past that the call reached the planner still bare. A primitive of the
 # same name still wins -- `linux.file.read` calls the syscall, not itself.
 bb view/sibling-call  sibling_call "" 0 "7 1"
+# a free-standing TEMPLATE inside a namespace, beside a definition. It read as a
+# method call on the namespace and was refused before the rule that resolves a
+# lone template ever ran. What decides a namespace is that it holds a DEFINITION
+# -- templates alone would make `text is` a namespace and scatter its methods.
+bb view/namespace-template namespace_template "" 0 "5 1"
 # a SINGLE-CALL method reading its own state bytes. `acquire`/`release` resolve
 # arguments by name, so a resource could hand out a descriptor it held in its
 # own buffer but not close it -- which is why `duct`, a resource owning a whole
@@ -399,7 +404,7 @@ rejects acquired/no-call    acquired_no_call    "must follow the call"
 # it is INLINED, so one nothing calls was never checked at all. The complaint
 # arrived at the USE, naming neither the nesting nor the group. The keyword
 # decides now, and the refusal lands on the declaration.
-rejects nested/definition nested_definition "a method runs, so it opens with"
+rejects nested/definition nested_definition "a namespace holds definitions and templates but no FIELDS"
 
 rejects name/c-keyword  name_ckeyword   "is a C keyword"
 rejects name/label      name_label      "collides with a label the emitter makes"
