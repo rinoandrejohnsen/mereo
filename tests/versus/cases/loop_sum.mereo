@@ -5,7 +5,7 @@ include "../../../linux.mereo"
 -- formatting it would compare two itoa implementations, which is a question
 -- about libraries, not about what a loop costs.
 
-program is
+program goes
   word is 8 bytes
   total is 0
   i is 1

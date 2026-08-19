@@ -12,41 +12,41 @@ mark_a is
   probe is 0
   -- a fallible method for fault-injection tests: reads the (never-open) sentinel
   -- fd, so it returns -EBADF and the ensure fails -> the release tower.
-  boom is
+  boom goes
     linux.read (descriptor is descriptor,
           buffer is descriptor,
           capacity is 1,
           count is probe)
   end
-  release is
+  release goes
     linux.close (descriptor is descriptor)
   end
 end
 
 mark_b is
   descriptor is 102
-  release is
+  release goes
     linux.close (descriptor is descriptor)
   end
 end
 
 mark_c is
   descriptor is 103
-  release is
+  release goes
     linux.close (descriptor is descriptor)
   end
 end
 
 mark_d is
   descriptor is 104
-  release is
+  release goes
     linux.close (descriptor is descriptor)
   end
 end
 
 mark_e is
   descriptor is 105
-  release is
+  release goes
     linux.close (descriptor is descriptor)
   end
 end

@@ -7,7 +7,7 @@ include "../../../core.mereo"
 --
 --   printf 'alpha:beta:gamma' | ./span_scan   ->  alpha
 
-program is
+program goes
   block is 64 bytes
   count is 0
   n is 0

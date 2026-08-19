@@ -5,11 +5,11 @@ include "../../linux.mereo"
 -- and bind to that program's loop by name alone, which no renaming can make
 -- hygienic. The template must leave a loop it opens itself, or hand the decision
 -- back through a port.
-bail (v) is
+bail (v) goes
   leave serve when v > 2
 end
 
-program is
+program goes
   i is 0
   serve goes
     bail (v is i)

@@ -13,7 +13,7 @@ include "markers.mereo"
 --
 -- `late` is acquired AFTER the leaving scope, so on this path it never exists.
 -- argc is 1, so it leaves. Expect 101 102 104 -- 101 exactly once, no 103.
-program (arguments) is
+program (arguments) goes
   n is arguments.count
   keep is adopted mark_d (descriptor is 104)
 

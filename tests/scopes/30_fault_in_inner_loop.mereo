@@ -7,7 +7,7 @@ include "markers.mereo"
 --
 -- n reaches the limit on the second outer pass, first inner pass.
 -- Expect 101 101 103   101 103 104.
-program (arguments) is
+program (arguments) goes
   keep is adopted mark_d (descriptor is 104)
   limit is arguments.count
   i is 0

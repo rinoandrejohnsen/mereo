@@ -10,13 +10,13 @@ include "../../linux.mereo"
 --
 --   ./guarded_scope        ->  7    (argc 1: the road's guard holds)
 --   ./guarded_scope x      ->  1
-clamp (value) is
+clamp (value) goes
   value > 5 goes
     value is 5
   end
 end
 
-program (arguments) is
+program (arguments) goes
   argc is arguments.count
   buf is 8 bytes
   i is 0

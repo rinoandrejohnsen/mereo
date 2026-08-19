@@ -7,21 +7,21 @@ stream is
   descriptor is 4 bytes as signed
   status is 8 bytes as signed
 
-  acquire (domain, type, protocol) is
+  acquire (domain, type, protocol) goes
     linux.socket (domain is domain,
                   type is type,
                   protocol is protocol,
                   descriptor is descriptor)
   end
 
-  dial (address, length) is
+  dial (address, length) goes
     linux.connect (descriptor is descriptor,
                    address is address,
                    length is length,
                    result is status)
   end
 
-  transmit (buffer, length) is
+  transmit (buffer, length) goes
     linux.write (descriptor is descriptor,
                  buffer is buffer,
                  count is length,
@@ -29,7 +29,7 @@ stream is
     ensure status == length
   end
 
-  receive (buffer, capacity, count) is
+  receive (buffer, capacity, count) goes
     linux.read (descriptor is descriptor,
                 buffer is buffer,
                 capacity is capacity,
@@ -37,7 +37,7 @@ stream is
     ensure count >= 1
   end
 
-  option (level, name, value, length) is
+  option (level, name, value, length) goes
     linux.setsockopt (descriptor is descriptor,
                       level is level,
                       optname is name,
@@ -46,7 +46,7 @@ stream is
                       result is status)
   end
 
-  release is
+  release goes
     linux.close (descriptor is descriptor)
   end
 end

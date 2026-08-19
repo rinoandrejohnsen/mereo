@@ -19,7 +19,7 @@ staged is
   status is 0
   fd_mark is 101
 
-  acquire (probe, path) is
+  acquire (probe, path) goes
     linux.faccessat2 (base is -100,       -- succeeds: owns nothing regardless
                       path is probe,
                       mode is 0,
@@ -29,13 +29,13 @@ staged is
     acquired             -- <- ownership starts HERE, not above
   end
 
-  release is
+  release goes
     linux.close (descriptor is handle)
     linux.close (descriptor is fd_mark)
   end
 end
 
-program is
+program goes
   keep is adopted mark_b (descriptor is 102)
   thing is staged (probe is "/dev/null", path is "/nonexistent/mereo")
 end

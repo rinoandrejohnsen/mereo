@@ -5,17 +5,17 @@ include "../linux.mereo"  -- for `exit`: the asm primitives above need no kernel
 -- A template group wrapping the asm primitives -- they compose with ensure and the
 -- rest of the machinery exactly like syscalls do.
 math is
-  count (source, result) is
+  count (source, result) goes
     population_count (source is source, result is result)
     ensure result >= 0
   end
 
-  barrier is
+  barrier goes
     memory_fence
   end
 end
 
-program is
+program goes
   bits is 0
 
   -- `math` holds nothing, so it needs no instance -- a stateless group is

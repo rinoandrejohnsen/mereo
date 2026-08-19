@@ -7,7 +7,7 @@ include "markers.mereo"
 --
 -- argc=1 run bare, so the leave fires on the first inner iteration.
 -- Expect close(101) close(103) close(104).
-program (arguments) is
+program (arguments) goes
   keep is adopted mark_d (descriptor is 104)
   n is arguments.count
   i is 0

@@ -2,7 +2,7 @@ include "../../linux.mereo"
 
 -- REFUSED: a leading underscore is the emitter's own namespace (`_status`,
 -- `_sink`, `_run`, `_write_value`), and C reserves it as well.
-program is
+program goes
   _status is 5
   buf is 8 bytes
   [buf + 0 : 1] is 48 + _status

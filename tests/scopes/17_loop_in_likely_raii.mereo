@@ -2,7 +2,7 @@ include "markers.mereo"
 
 -- A loop inside the likely road, adopting a resource each of 3 iterations;
 -- keep at exit. n=5 so the likely road runs. Expect: 101 101 101 104
-program (arguments) is
+program (arguments) goes
   keep is adopted mark_d (descriptor is 104)
   n is arguments.count
   -- 1 when run bare -- and unknowable at compile time, so the crossroad

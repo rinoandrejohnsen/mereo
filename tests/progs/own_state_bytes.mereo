@@ -20,28 +20,28 @@ header is
   block is 64 bytes
   count is 8 bytes as signed      -- signed, or read's `count >= 0` is vacuous
 
-  acquire (path) is
+  acquire (path) goes
     linux.open (path is path, flags is 0, mode is 0, descriptor is descriptor)
   end
 
-  load (capacity) is
+  load (capacity) goes
     linux.read (descriptor is descriptor,
                 buffer is block,
                 capacity is capacity,
                 count is count)
   end
 
-  at (offset, value) is             -- reads the instance's own bytes
+  at (offset, value) goes           -- reads the instance's own bytes
     v is [block + offset : 1]
     value is v
   end
 
-  release is
+  release goes
     linux.close (descriptor is descriptor)
   end
 end
 
-program is
+program goes
   room is 64 bytes
   b is 0
 

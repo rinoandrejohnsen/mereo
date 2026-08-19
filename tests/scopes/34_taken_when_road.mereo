@@ -7,7 +7,7 @@ include "markers.mereo"
 --
 -- argc is 1, so the cold road runs: cold is released before rejoining, keep at
 -- exit. Expect 102 103.
-program (arguments) is
+program (arguments) goes
   keep is adopted mark_c (descriptor is 103)
   n is arguments.count
 

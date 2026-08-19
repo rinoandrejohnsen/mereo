@@ -10,7 +10,7 @@ transform is
   -- there is no window in which one exists without its algorithm attached. The
   -- socket is the one thing owned -- `acquired when` marks it, so a failed bind
   -- still closes the fd.
-  acquire (domain, type, protocol, address, length) is
+  acquire (domain, type, protocol, address, length) goes
     linux.socket (domain is domain,
                   type is type,
                   protocol is protocol,
@@ -21,7 +21,7 @@ transform is
                 length is length,
                 result is status)
   end
-  option (level, name, value, length) is
+  option (level, name, value, length) goes
     linux.setsockopt (descriptor is descriptor,
                       level is level,
                       optname is name,
@@ -29,13 +29,13 @@ transform is
                       length is length,
                       result is status)
   end
-  reap (accepted) is
+  reap (accepted) goes
     linux.accept (descriptor is descriptor,
                   address is 0,
                   length is 0,
                   connection is accepted)
   end
-  release is
+  release goes
     linux.close (descriptor is descriptor)
   end
 end
@@ -49,7 +49,7 @@ end
 aead_socket is
   descriptor is 4 bytes as signed
   status is 8 bytes as signed
-  acquire (key) is
+  acquire (key) goes
     linux.socket (domain is 38,
                   type is 5,
                   protocol is 0,
@@ -72,7 +72,7 @@ aead_socket is
                       length is 16,
                       result is status)
   end
-  release is
+  release goes
     linux.close (descriptor is descriptor)
   end
 end
@@ -83,26 +83,26 @@ end
 -- between. Release order is derived: the connection, then the socket.
 duplex extends aead_socket is
   connection is 4 bytes as signed
-  acquire is
+  acquire goes
     linux.accept (descriptor is descriptor,
                   address is 0,
                   length is 0,
                   connection is connection)
     acquired
   end
-  send (message) is
+  send (message) goes
     linux.sendmsg (descriptor is connection,
                    message is message,
                    flags is 0,
                    sent is status)
   end
-  receive (message, got) is
+  receive (message, got) goes
     linux.recvmsg (descriptor is connection,
                    message is message,
                    flags is 0,
                    received is got)
   end
-  release is
+  release goes
     linux.close (descriptor is connection)
   end
 end
@@ -110,7 +110,7 @@ end
 crypto is
 
   -- SHA-256(data[datalen]) -> digest[32]
-  sha256 (data, datalen, digest) is
+  sha256 (data, datalen, digest) goes
     peer is -1
     count is 0
     written is 0
@@ -124,7 +124,7 @@ crypto is
     op.write (buffer is data, count is datalen, written is written)
     op.read (buffer is digest, capacity is 32, count is count)
   end
-  hmac (key, keylen, data, datalen, digest) is
+  hmac (key, keylen, data, datalen, digest) goes
     peer is -1
     count is 0
     written is 0
@@ -142,7 +142,7 @@ crypto is
 
   -- HKDF-Expand, single output block (out_len <= 32 -- all TLS derivations):
   -- out = HMAC(prk, info || 0x01)[0 .. out_len]
-  expand (prk, info, infolen, sink, outlen) is
+  expand (prk, info, infolen, sink, outlen) goes
     t is 32 bytes
     buf is 600 bytes
     p is 0
@@ -160,7 +160,7 @@ crypto is
   end
   -- AES-128-GCM AEAD. mode 1=encrypt (sink <- body||tag, outlen=bodylen+16),
   -- 0=decrypt (sink <- plaintext, outlen=bodylen-16). aad is the record header.
-  aead (mode, key, iv, aad, aadlen, body, bodylen, sink, outlen) is
+  aead (mode, key, iv, aad, aadlen, body, bodylen, sink, outlen) goes
     cbuf is 96 bytes
     siov is 32 bytes
     smsg is 56 bytes
@@ -210,7 +210,7 @@ crypto is
 
   -- TLS 1.3 per-record nonce = static iv XOR the 8-byte big-endian sequence
   -- number, right-aligned into the 12-byte iv.
-  record_nonce (iv, seq, nonce) is
+  record_nonce (iv, seq, nonce) goes
     ni is 0
     v is 0
     sh is 0
@@ -235,7 +235,7 @@ crypto is
   -- plaintext is content || type (TLS 1.3 TLSInnerPlaintext), so the record is
   -- always application_data(23) on the wire with the true `type` encrypted. aad
   -- is the header. Total length = ptlen + 1 + 5 + 16.
-  seal (key, iv, seq, pt, ptlen, type, sink) is
+  seal (key, iv, seq, pt, ptlen, type, sink) goes
     nonce is 16 bytes
     inbuf is 2048 bytes
     ctlen is 0
@@ -263,7 +263,7 @@ crypto is
   end
 
   -- open: rec (header || ct || tag) -> sink (plaintext). aad is rec[0..5].
-  open (key, iv, seq, rec, reclen, sink) is
+  open (key, iv, seq, rec, reclen, sink) goes
     nonce is 16 bytes
     src is 0
     inner is 0
@@ -286,7 +286,7 @@ crypto is
   -- TLS 1.3 ClientHello writer. Offers TLS_AES_128_GCM_SHA256 + x25519 only.
   -- rand/sid/pub are 32-byte buffers, host is the SNI hostname. sink gets the
   -- whole record (5-byte header included); total length = 162 + hostlen.
-  client_hello (rand, sid, pub, host, hostlen, sink) is
+  client_hello (rand, sid, pub, host, hostlen, sink) goes
     c is 0
     hl is 0
     ext_total is 0
@@ -408,7 +408,7 @@ crypto is
   end
   -- HKDF-Expand-Label(secret, label, "", outlen) -- empty context (key/iv/fin).
   -- HkdfLabel = uint16(outlen) | uint8(6+labellen) | "tls13 "+label | uint8(0)
-  expand_label_empty (secret, label, labellen, sink, outlen) is
+  expand_label_empty (secret, label, labellen, sink, outlen) goes
     info is 64 bytes
     ilen is 0
     v is 0
@@ -434,7 +434,7 @@ crypto is
 
   -- Derive-Secret(secret, label, msgs) = HKDF-Expand-Label(secret, label,
   -- thash, 32); the caller passes the 32-byte transcript hash as context.
-  derive_secret (secret, label, labellen, thash, sink) is
+  derive_secret (secret, label, labellen, thash, sink) goes
     info is 64 bytes
     ilen is 0
     v is 0
@@ -465,7 +465,7 @@ crypto is
   -- message (from type byte 02). Walks the extension list to the key_share and
   -- stops there, then copies 32 B. `ks_off` stays 0 if the list has no key_share,
   -- which is what the `ensure` on the caller's shared secret ends up catching.
-  server_hello (rec, pub) is
+  server_hello (rec, pub) goes
     sidlen is 0
     c is 0
     et is 0

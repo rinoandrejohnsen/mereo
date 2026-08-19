@@ -3,7 +3,7 @@ include "field.mereo"
 
 -- X25519(scalar, point) via the Montgomery ladder (crypto.h++). Writes the
 -- 32-byte shared secret to stdout. Test input = RFC 7748 s5.2.
-program is
+program goes
   z is 32 bytes
   pt is 128 bytes
   la is 128 bytes

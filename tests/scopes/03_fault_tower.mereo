@@ -3,7 +3,7 @@ include "markers.mereo"
 -- A standalone `ensure` that fails is mereo's unwind: the tower releases every
 -- live resource in reverse order, exactly as C++ destructors run when a scope
 -- is left early. Expect close(102) close(101).
-program is
+program goes
   a is adopted mark_a (descriptor is 101)
   b is adopted mark_b (descriptor is 102)
   guard is 0

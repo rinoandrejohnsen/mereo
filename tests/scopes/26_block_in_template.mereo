@@ -8,7 +8,7 @@ include "markers.mereo"
 -- program's own resource.
 
 work is
-  run (sink) is
+  run (sink) goes
     sink is 0
     scope
       a is adopted mark_a (descriptor is 101)
@@ -20,7 +20,7 @@ work is
   end
 end
 
-program is
+program goes
   c is adopted mark_c (descriptor is 103)
   r is 0
   work.run (sink is r)

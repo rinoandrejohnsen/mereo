@@ -22,23 +22,23 @@ header is
   block is 64 bytes
   count is 8 bytes                 -- unsigned, on purpose
 
-  acquire (path) is
+  acquire (path) goes
     linux.open (path is path, flags is 0, mode is 0, descriptor is descriptor)
   end
 
-  load (capacity) is
+  load (capacity) goes
     linux.read (descriptor is descriptor,
                 buffer is block,
                 capacity is capacity,
                 count is count)
   end
 
-  release is
+  release goes
     linux.close (descriptor is descriptor)
   end
 end
 
-program is
+program goes
   doc is header (path is "docs")    -- a directory: the read cannot succeed
 
   doc.load (capacity is 16)

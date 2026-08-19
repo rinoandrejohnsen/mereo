@@ -8,10 +8,10 @@ include "../../linux.mereo"
 
 sib_a is
   fd_a is 101
-  acquire is
+  acquire goes
     linux.close (descriptor is 201)
   end
-  release is
+  release goes
     linux.close (descriptor is fd_a)
   end
 end
@@ -19,20 +19,20 @@ end
 sib_b is
   fd_b is 102
   probe is 0
-  acquire is
+  acquire goes
     linux.read (descriptor is 199, buffer is fd_b, capacity is 1, count is probe)
   end
-  release is
+  release goes
     linux.close (descriptor is fd_b)
   end
 end
 
 sib_c is
   fd_c is 103
-  acquire is
+  acquire goes
     linux.close (descriptor is 203)
   end
-  release is
+  release goes
     linux.close (descriptor is fd_c)
   end
 end
@@ -40,6 +40,6 @@ end
 sib_trio extends sib_a and sib_b and sib_c is
 end
 
-program is
+program goes
   all_three is sib_trio
 end

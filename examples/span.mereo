@@ -21,7 +21,7 @@ include "../core.mereo"
 --   * the last line needs no newline -- `find` answers `length` when the byte is
 --     absent, and `skip (count is n + 1)` then clamps and empties the view
 --   * a line with no `=` is a key with an empty value, for the same reason
-program is
+program goes
   capacity is 65536
   block is capacity bytes
   room is capacity bytes

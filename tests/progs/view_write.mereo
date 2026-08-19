@@ -9,13 +9,13 @@ record is
   tag is 1 bytes
   span is 2 bytes as big
 
-  fill (a, b) is
+  fill (a, b) goes
     tag is a                   -- a plain byte field
     span is b                  -- ... and a big-endian one, so byte order holds
   end
 end
 
-program is
+program goes
   buf is 8 bytes
   h is buf as record
   h.fill (a is 5,

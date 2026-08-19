@@ -8,7 +8,7 @@ include "../../linux.mereo"
 field is
 
   -- o = 0 (16 limbs)
-  blank (o) is
+  blank (o) goes
     bi is 0
     off is 0
     step goes
@@ -20,7 +20,7 @@ field is
   end
 
   -- o = a (16 limbs)
-  dup (o, a) is
+  dup (o, a) goes
     di is 0
     off is 0
     v is 0
@@ -34,7 +34,7 @@ field is
   end
 
   -- o[i] = a[i] + b[i]
-  add (o, a, b) is
+  add (o, a, b) goes
     i is 0
     off is 0
     va is 0
@@ -52,7 +52,7 @@ field is
   end
 
   -- o[i] = a[i] - b[i]
-  sub (o, a, b) is
+  sub (o, a, b) goes
     i is 0
     off is 0
     va is 0
@@ -70,7 +70,7 @@ field is
   end
 
   -- constant-time conditional swap of p and q when bit==1 (mask = -bit)
-  swap (p, q, bit) is
+  swap (p, q, bit) goes
     c is 0
     i is 0
     off is 0
@@ -95,7 +95,7 @@ field is
 
   -- radix-2^16 carry: o[i]+=1<<16; c=o[i]>>16; o[(i+1)%16 or 0]+=c-1(+37c-1 at 15);
   -- o[i]-=c<<16
-  carry (o) is
+  carry (o) goes
     i is 0
     off is 0
     v is 0
@@ -138,7 +138,7 @@ field is
   -- separate counter per loop; that was once required, because a bare `X is 0`
   -- only declared and so never reset. It now assigns as well, so the counters
   -- could be shared -- left as they are since the code is correct either way.
-  mul (o, a, b) is
+  mul (o, a, b) goes
     t is 248 bytes
     zi is 0
     mi is 0
@@ -211,7 +211,7 @@ field is
 
   -- o = a^(2^255-21) = 1/a. The TweetNaCl chain squares 254 times and multiplies
   -- by a except at bit positions 2 and 4 -- unrolled here (no conditional call).
-  invert (o, a) is
+  invert (o, a) goes
     c is 128 bytes
     ci is 0
     off is 0
@@ -249,7 +249,7 @@ field is
   end
 
   -- o (gf) from 32 little-endian bytes; clear the top bit of the last limb
-  unpack (o, n) is
+  unpack (o, n) goes
     ui is 0
     off is 0
     noff is 0
@@ -269,7 +269,7 @@ field is
 
   -- 32 bytes from o (gf): freeze mod 2^255-19 (two conditional subtractions),
   -- then emit little-endian.
-  pack (o, n) is
+  pack (o, n) goes
     t is 128 bytes
     m is 128 bytes
     pi is 0

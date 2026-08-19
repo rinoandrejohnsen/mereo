@@ -9,7 +9,7 @@ structure is
   c is 8 bytes
 end
 
-program is
+program goes
   data is structure
 
   data.a is 4702111234474983745         -- 'AAAAAAAA'

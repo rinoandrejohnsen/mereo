@@ -11,7 +11,7 @@ staged is
   status is 0
   fd_mark is 101
 
-  acquire (path, spot) is
+  acquire (path, spot) goes
     linux.open (path is path, flags is 0, mode is 0, descriptor is handle)
     acquired        -- <- never reached: the open failed
     linux.lseek (descriptor is handle,
@@ -20,13 +20,13 @@ staged is
                  position is status)
   end
 
-  release is
+  release goes
     linux.close (descriptor is handle)
     linux.close (descriptor is fd_mark)
   end
 end
 
-program is
+program goes
   keep is adopted mark_b (descriptor is 102)
   thing is staged (path is "/nonexistent/mereo-test", spot is 0)
 end

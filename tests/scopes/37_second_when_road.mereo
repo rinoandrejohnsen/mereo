@@ -5,7 +5,7 @@ include "markers.mereo"
 -- bookkeeping does not leak into the second -- a leak would release 102 as well,
 -- or release nothing.
 -- Expect 103 104.
-program (arguments) is
+program (arguments) goes
   keep is adopted mark_d (descriptor is 104)
   n is arguments.count
 

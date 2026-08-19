@@ -7,7 +7,7 @@ include "../../linux.mereo"
 --
 --   ./tmpl_road       -> CCCCC   (the cold road)
 --   ./tmpl_road x     -> HHH     (the hot road)
-shout (mark, area, length) is
+shout (mark, area, length) goes
   ensure length >= 1
   i is 0
   fill goes
@@ -17,7 +17,7 @@ shout (mark, area, length) is
   end
 end
 
-program (arguments) is
+program (arguments) goes
   argc is arguments.count
   buf is 8 bytes
   n is 0

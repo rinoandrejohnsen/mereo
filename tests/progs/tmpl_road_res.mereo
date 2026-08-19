@@ -7,7 +7,7 @@ include "../../linux.mereo"
 --
 -- Run from the repo root (the path is relative), with no arguments so the cold
 -- road is the one that runs.
-dump (path, screen) is
+dump (path, screen) goes
   cap is 4096
   buf is cap bytes
   n is 0
@@ -19,7 +19,7 @@ dump (path, screen) is
   screen.write (buffer is buf, count is n)
 end
 
-program (arguments) is
+program (arguments) goes
   argc is arguments.count
   n is 0
 

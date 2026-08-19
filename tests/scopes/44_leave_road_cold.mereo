@@ -17,7 +17,7 @@ include "markers.mereo"
 -- argc: a loop-invariant guard let GCC UNSWITCH the loop into two specialised
 -- copies, which dissolves the road just as thoroughly. The trip count comes
 -- from argc so the loop cannot be unrolled and the guard folded.
-program (arguments) is
+program (arguments) goes
   keep is adopted mark_d (descriptor is 104)
   n is arguments.count
   i is 0

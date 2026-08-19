@@ -7,7 +7,7 @@ record is
   tag is 1 bytes
   span is 2 bytes
 
-  bump (sink) is               -- a template over its own fields, as ever
+  bump (sink) goes             -- a template over its own fields, as ever
     tag is tag + 1
     sink is tag
   end
@@ -18,7 +18,7 @@ mode is
   raw is bit 1
 end
 
-program is
+program goes
   w is 8 bytes in register
   r is w + 1 as record         -- at an offset into the word
   f is w + 6 as mode

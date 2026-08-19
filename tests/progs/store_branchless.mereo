@@ -3,7 +3,7 @@ include "../../linux.mereo"
 -- REJECTED on purpose: `branchless` is a REQUIREMENT of no branch, and there is
 -- no conditional store on x86-64 or A64 to honour it with. The suite asserts the
 -- transpiler says so instead of quietly emitting the branch it asked not to.
-program (arguments) is
+program (arguments) goes
   argc is arguments.count
   buf is 8 bytes
   [buf : 1] is 65 when argc > 1 branchless

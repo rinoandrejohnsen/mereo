@@ -7,7 +7,7 @@ include "../../linux.mereo"
 --
 -- Run from the repo root (the path is relative). Prints the first byte of
 -- lorem_ipsum.txt once, then leaves.
-program is
+program goes
   cap is 64
   buffer is cap bytes
   n is 0

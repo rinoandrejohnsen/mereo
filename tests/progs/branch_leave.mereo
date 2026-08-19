@@ -16,13 +16,13 @@ include "../../linux.mereo"
 --
 --   ./branch_leave      ->  L    (argc 1, the cold road)
 --   ./branch_leave x    ->  --    (the hot road)
-peek (path, area, count) is
+peek (path, area, count) goes
   source is linux.file (path is path, flags is 0, mode is 0)
 
   source.read (buffer is area, capacity is 1, count is count)
 end
 
-program (arguments) is
+program (arguments) goes
   argc is arguments.count
   cap is 64
   buf is cap bytes

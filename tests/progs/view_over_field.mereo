@@ -13,7 +13,7 @@ include "../../core.mereo"
 --
 --   prints:  1 0 5 1 0 5
 
-program is
+program goes
   meta is 256 bytes
   room is 64 bytes
 

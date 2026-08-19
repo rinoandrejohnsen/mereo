@@ -6,7 +6,7 @@ include "markers.mereo"
 --
 -- Here the bound is already met, so the body never runs and nothing but `keep`
 -- is ever released. Expect 103 alone.
-program (arguments) is
+program (arguments) goes
   keep is adopted mark_c (descriptor is 103)
   i is arguments.count           -- 1, and the bound is 1
 

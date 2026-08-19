@@ -8,7 +8,7 @@ include "../../linux.mereo"
 --
 -- The old forced-cmov path took the value as an ordinary asm input operand, so
 -- it computed the load unconditionally with nothing to say about it.
-program is
+program goes
   raw is 16 bytes
   n is 0
   p is 0

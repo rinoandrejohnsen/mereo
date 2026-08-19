@@ -33,7 +33,7 @@ end
 -- a TEMPLATE GROUP -- spliced at each use, never called
 digitry is
   -- how many decimal digits VALUE needs (at least one, for zero)
-  width (value, count) is
+  width (value, count) goes
     left is value
     count is 1
     step goes
@@ -46,13 +46,13 @@ digitry is
 
   -- a raw instruction needs a group to carry its `ensure`, so it lives here
   -- rather than being called from the program
-  bits_set (source, result) is
+  bits_set (source, result) goes
     ones (source is source, result is result)
     ensure result >= 0
   end
 end
 
-program (arguments) is
+program (arguments) goes
   block is 4096 bytes
   counts is 16 bytes
   digits is 24 bytes

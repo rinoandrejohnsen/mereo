@@ -5,7 +5,7 @@ include "markers.mereo"
 -- `skipped` is opened after the leave and must never be reached: 102 never
 -- closes, and the road's fall-through release (skipped then h) is dead.
 -- Expect 101 103, three times, then 104.
-program (arguments) is
+program (arguments) goes
   keep is adopted mark_d (descriptor is 104)
   n is arguments.count
   i is 0

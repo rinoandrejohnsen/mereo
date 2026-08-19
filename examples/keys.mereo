@@ -11,7 +11,7 @@ include "../linux.mereo"
 -- and on a Ctrl-C. Nothing below says so.
 --
 --   ./keys      -- type; each key comes back upper-cased; `q` quits
-program is
+program goes
   key is 1 bytes
   work is linux.terminal_settings
   character is 0

@@ -4,7 +4,7 @@ include "../../../linux.mereo"
 -- to have moved every byte, a short write reports the step, and EPIPE is a
 -- clean exit rather than a failure.
 
-program is
+program goes
   message is "hello, world\n"
 
   terminal is already linux.file (descriptor is 1)

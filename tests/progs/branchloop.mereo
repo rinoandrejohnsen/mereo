@@ -1,6 +1,6 @@
 include "../../linux.mereo"
 
-program is
+program goes
   n is 0
   written is 0
   terminal is already linux.file (descriptor is 1)

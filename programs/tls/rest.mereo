@@ -3,7 +3,7 @@ include "client.mereo"
 -- Fetch over HTTPS from a real server. No DNS (hardcoded IP) and no certificate
 -- validation yet -- encrypted transport, unverified identity (like `curl -k`).
 -- `secure_fetch` does the whole TLS 1.3 handshake, kTLS, and the exchange.
-program is
+program goes
   host is constant "example.com"
   request is constant "GET / HTTP/1.0\r\nHost: example.com\r\n\r\n"
   page is 16384 bytes

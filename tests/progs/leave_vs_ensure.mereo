@@ -9,7 +9,7 @@ include "../scopes/markers.mereo"
 --   ./leave_vs_ensure x    argc 2: the `ensure` fails     -> exit 1 + record
 --
 -- Both must close 102, 101, 103. The suite compares the two traces.
-program (arguments) is
+program (arguments) goes
   n is arguments.count
   keep is adopted mark_c (descriptor is 103)
 

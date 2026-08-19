@@ -5,17 +5,17 @@ include "markers.mereo"
 worker is
   descriptor is 0
 
-  run is
+  run goes
     p is adopted mark_a (descriptor is 101)
     q is adopted mark_b (descriptor is 102)
   end
 
-  release is
+  release goes
     linux.close (descriptor is descriptor)
   end
 end
 
-program is
+program goes
   w is adopted worker (descriptor is 100)
   w.run
 end

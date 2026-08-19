@@ -2,7 +2,7 @@
 include "../linux.mereo"
 include "../core.mereo"
 
-program is
+program goes
   raw is constant "{\"name\":\"mereo\",\"port\":443,\"secure\":true}"
   start is 0
   vlen is 0

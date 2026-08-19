@@ -2,7 +2,7 @@ include "markers.mereo"
 
 -- A fault while a block-local resource is live must release it, then the outer.
 -- Expect close(101) close(103).
-program is
+program goes
   keep is adopted mark_c (descriptor is 103)
   g is 0
   scope

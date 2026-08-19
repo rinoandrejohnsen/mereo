@@ -5,13 +5,13 @@ include "../../linux.mereo"
 -- and print chr(64 + value) so a wrong value shows up in stdout, not just exit.
 record is
   tag is 1 bytes
-  total (sink) is
+  total (sink) goes
     sink is tag
   end
 end
 
 -- 2. STATE GIVEN: not laid over anything -- the fields are handed to it.
-program is
+program goes
   h is already record (tag is 5)
   n is 0
   h.total (sink is n)

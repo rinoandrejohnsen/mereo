@@ -7,19 +7,19 @@ include "../../linux.mereo"
 transform is
   descriptor is -1
   status is 0
-  acquire (domain, type, protocol) is
+  acquire (domain, type, protocol) goes
     linux.socket (domain is domain,
                   type is type,
                   protocol is protocol,
                   descriptor is descriptor)
   end
-  attach (address, length) is
+  attach (address, length) goes
     linux.bind (descriptor is descriptor,
                 address is address,
                 length is length,
                 result is status)
   end
-  option (level, name, value, length) is
+  option (level, name, value, length) goes
     linux.setsockopt (descriptor is descriptor,
                       level is level,
                       optname is name,
@@ -27,13 +27,13 @@ transform is
                       length is length,
                       result is status)
   end
-  reap (accepted) is
+  reap (accepted) goes
     linux.accept (descriptor is descriptor,
                   address is 0,
                   length is 0,
                   connection is accepted)
   end
-  release is
+  release goes
     linux.close (descriptor is descriptor)
   end
 end
@@ -41,24 +41,24 @@ end
 duplex is
   descriptor is -1
   status is 0
-  send (message) is
+  send (message) goes
     linux.sendmsg (descriptor is descriptor,
                    message is message,
                    flags is 0,
                    sent is status)
   end
-  receive (message, got) is
+  receive (message, got) goes
     linux.recvmsg (descriptor is descriptor,
                    message is message,
                    flags is 0,
                    received is got)
   end
-  release is
+  release goes
     linux.close (descriptor is descriptor)
   end
 end
 
-program is
+program goes
   key is 16 bytes
   ivb is 16 bytes
   pt is 16 bytes

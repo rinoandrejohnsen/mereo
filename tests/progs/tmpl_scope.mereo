@@ -10,13 +10,13 @@ include "../../linux.mereo"
 --                    restart, exactly as they are on every call.
 --
 --   ./tmpl_scope       ->  A5     (clamped to 0, then 1+2+3+4+5 = 15 -> 'A' + ...)
-clamp (v, sink) is
+clamp (v, sink) goes
   sink is 0
   leave clamp when v < 0           -- early return
   sink is v
 end
 
-sum_to (limit, total, i) is
+sum_to (limit, total, i) goes
   scratch is 0                     -- a local: reset on every restart
   scratch is i + 1
   i is scratch
@@ -24,7 +24,7 @@ sum_to (limit, total, i) is
   repeat sum_to when i < limit     -- a port drives it, so it terminates
 end
 
-program is
+program goes
   a is 0
   b is 0
   n is 0

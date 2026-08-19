@@ -6,7 +6,7 @@ include "markers.mereo"
 -- then child, then parent, before landing past `parent`.
 --
 -- argc is 1, so the jump is taken. Expect 103 102 101 104.
-program (arguments) is
+program (arguments) goes
   keep is adopted mark_d (descriptor is 104)
   n is arguments.count
 

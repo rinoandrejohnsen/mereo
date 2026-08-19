@@ -9,7 +9,7 @@ include "../../linux.mereo"
 --   printf abxde | ./loop_leave   ->  2
 --   printf abcde | ./loop_leave   ->  5
 --   printf xyz   | ./loop_leave   ->  0
-program is
+program goes
   capacity is 64
   buffer is capacity bytes
   count is 0

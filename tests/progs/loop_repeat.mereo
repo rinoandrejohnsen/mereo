@@ -14,7 +14,7 @@ include "../../linux.mereo"
 --   printf axbxc | ./loop_repeat ->  3
 --   printf abzcd | ./loop_repeat ->  2
 --   printf xxxxx | ./loop_repeat ->  0
-program is
+program goes
   capacity is 64
   buffer is capacity bytes
   count is 0

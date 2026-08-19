@@ -15,7 +15,7 @@ include "../core.mereo"
 -- Each entry is `NAME=VALUE`, NUL-terminated. A `span` names one, `until`
 -- trims it to its NUL, `find` locates the `=`, and `take`/`skip` cut the entry
 -- into the two halves -- no offset arithmetic anywhere.
-program (arguments, environment) is
+program (arguments, environment) goes
   argc is arguments.count
   ensure argc >= 2
 

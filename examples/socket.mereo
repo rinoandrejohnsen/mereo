@@ -14,33 +14,33 @@ connection is
   descriptor is -1
   status is 0
 
-  acquire (domain, type, protocol) is
+  acquire (domain, type, protocol) goes
     linux.socket (domain is domain,
                   type is type,
                   protocol is protocol,
                   descriptor is descriptor)
   end
 
-  reach (address, length) is
+  reach (address, length) goes
     linux.connect (descriptor is descriptor,
                    address is address,
                    length is length,
                    result is status)
   end
 
-  read (buffer, capacity, count) is
+  read (buffer, capacity, count) goes
     linux.read (descriptor is descriptor,
                 buffer is buffer,
                 capacity is capacity,
                 count is count)
   end
 
-  release is
+  release goes
     linux.close (descriptor is descriptor)
   end
 end
 
-program is
+program goes
   capacity is 4096
   buffer is capacity bytes
   count is 0

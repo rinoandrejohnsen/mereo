@@ -2,7 +2,7 @@ include "markers.mereo"
 
 -- tmp is acquired this iteration; a fault mid-iteration must release tmp first,
 -- then the outer keep. Expect close(101) close(103).
-program is
+program goes
   n is 0
   keep is adopted mark_c (descriptor is 103)
   serve goes

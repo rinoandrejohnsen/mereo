@@ -19,7 +19,7 @@ include "../../linux.mereo"
 --
 --   prints:  LoremLoremLorem
 
-program is
+program goes
   buffer is 64 bytes
   count is 0
   i is 0

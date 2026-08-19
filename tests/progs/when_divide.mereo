@@ -8,7 +8,7 @@ include "../../linux.mereo"
 --
 -- `x / 4` would be fine: a non-zero literal divisor cannot trap. So would the
 -- same line without `branchless`, which branches.
-program is
+program goes
   raw is 16 bytes
   n is 0
   y is 0

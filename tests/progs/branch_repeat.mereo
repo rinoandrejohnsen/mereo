@@ -4,7 +4,7 @@ include "../../linux.mereo"
 -- merge) but no start -- it is entered by the dispatch, not from its own top --
 -- so there is nothing for `repeat` to go back to. Re-testing the guards is a
 -- loop, and mereo already has one.
-program (arguments) is
+program (arguments) goes
   n is arguments.count
 
   pick likely goes

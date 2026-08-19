@@ -12,7 +12,7 @@ structure is
   c is 8 bytes
 end
 
-program is
+program goes
   data is structure (a is 4702111234474983745,  -- 'AAAAAAAA'
                      b is 4774451407313060418,  -- 'BBBBBBBB'
                      c is 4846791580151137091)  -- 'CCCCCCCC'

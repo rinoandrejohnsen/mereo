@@ -4,7 +4,7 @@ include "../../linux.mereo"
 -- syscall. Overwriting it immediately after is a dead store only if the syscall
 -- cannot read it -- so a clobber that is too narrow makes the first store vanish
 -- and the kernel sees the wrong byte.
-program is
+program goes
   msg is 1 bytes
   screen is already linux.file (descriptor is 1)
   [msg : 1] is 65

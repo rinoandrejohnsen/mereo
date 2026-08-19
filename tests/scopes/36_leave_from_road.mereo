@@ -4,7 +4,7 @@ include "markers.mereo"
 -- hold something. It has to release the ROAD's resource, then the PASS's, then
 -- land past the loop -- the road never reaches its merge.
 -- Expect 102 103 104.
-program (arguments) is
+program (arguments) goes
   keep is adopted mark_d (descriptor is 104)
   n is arguments.count
   i is 0

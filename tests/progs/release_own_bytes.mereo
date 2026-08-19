@@ -27,27 +27,27 @@ duct is
                                        -- bytes only when it is wider than a
                                        -- register. pipe2 writes the first 8.
 
-  acquire is
+  acquire goes
     linux.pipe2 (pair is pair, flags is 0)
   end
 
-  head (value) is                      -- the read end, at offset 0
+  head (value) goes                    -- the read end, at offset 0
     v is [pair + 0 : 4] as signed
     value is v
   end
 
-  tail (value) is                      -- ...and the write end, at 4
+  tail (value) goes                    -- ...and the write end, at 4
     v is [pair + 4 : 4] as signed
     value is v
   end
 
-  release is                           -- both, out of its own bytes
+  release goes                         -- both, out of its own bytes
     linux.close (descriptor is [pair + 0 : 4] as signed)
     linux.close (descriptor is [pair + 4 : 4] as signed)
   end
 end
 
-program is
+program goes
   block is 8 bytes
   n is 0
   r is 0

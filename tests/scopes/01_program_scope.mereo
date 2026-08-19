@@ -2,7 +2,7 @@ include "markers.mereo"
 
 -- Program scope: acquire a, b, c -> release c, b, a (LIFO). The baseline the
 -- release tower already handles today.
-program is
+program goes
   a is adopted mark_a (descriptor is 101)
   b is adopted mark_b (descriptor is 102)
   c is adopted mark_c (descriptor is 103)

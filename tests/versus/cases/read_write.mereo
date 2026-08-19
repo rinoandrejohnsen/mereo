@@ -3,7 +3,7 @@ include "../../../linux.mereo"
 -- Two syscalls and the checks between them. `read`'s contract is `count >= 0`;
 -- `write`'s is that every byte moved.
 
-program is
+program goes
   buffer is 4096 bytes
   count is 0
 

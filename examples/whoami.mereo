@@ -7,7 +7,7 @@
 include "../linux.mereo"
 include "../core.mereo"
 
-program is
+program goes
   uid is 0
   name_ptr is 0
   name_len is 0

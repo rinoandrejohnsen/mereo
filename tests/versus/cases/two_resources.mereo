@@ -6,7 +6,7 @@ include "../../../linux.mereo"
 -- drop flags exist to handle -- mereo needs neither, because how far
 -- acquisition got is known statically at every point.
 
-program is
+program goes
   buffer is 64 bytes
   count is 0
 

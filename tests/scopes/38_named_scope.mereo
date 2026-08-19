@@ -7,7 +7,7 @@ include "markers.mereo"
 -- `leave setup` releases what the scope holds AT THE JUMP (t alone); the
 -- fall-through path would release u then t. argc is 1, so it leaves.
 -- Expect 101 103, not 102 101 103.
-program (arguments) is
+program (arguments) goes
   keep is adopted mark_c (descriptor is 103)
   n is arguments.count
 

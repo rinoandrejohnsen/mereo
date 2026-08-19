@@ -14,7 +14,7 @@
 include "../linux.mereo"
 include "../core.mereo"
 
-program (arguments) is
+program (arguments) goes
   argument_count is arguments.count
 
   my_number is 40 when argument_count > 2 or

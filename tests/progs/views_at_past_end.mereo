@@ -6,7 +6,7 @@ include "../../core.mereo"
 -- must END the program with a record naming the step, not answer with whatever
 -- byte happened to follow.
 
-program is
+program goes
   line is "abc"
   v is already span (data is line, length is 3)
   b is 0

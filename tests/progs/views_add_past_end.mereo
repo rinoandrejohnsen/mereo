@@ -5,7 +5,7 @@ include "../../core.mereo"
 -- hand-written `text.copy` calls this replaces checked nothing: the copy would
 -- run, and the damage would show up somewhere else entirely.
 
-program is
+program goes
   room is 8 bytes
   page is already builder (data is room, count is 0, limit is room.size)
 

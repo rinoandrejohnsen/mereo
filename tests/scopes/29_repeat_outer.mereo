@@ -6,7 +6,7 @@ include "markers.mereo"
 --
 -- argc=1 run bare, so the very first inner pass takes that jump; after that `i`
 -- has moved on and the loops run to their bounds.
-program (arguments) is
+program (arguments) goes
   keep is adopted mark_d (descriptor is 104)
   n is arguments.count
   i is 0

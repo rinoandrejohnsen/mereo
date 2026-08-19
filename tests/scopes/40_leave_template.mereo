@@ -4,7 +4,7 @@ include "markers.mereo"
 -- return -- and it releases what the body holds AT THE JUMP. `t` is taken before
 -- the guard, `u` only after it, so the early path releases t alone.
 -- Expect 101 103, not 102 101 103.
-peek (mode, sink) is
+peek (mode, sink) goes
   t is adopted mark_a (descriptor is 101)
   sink is 1
   leave peek when mode == 1
@@ -12,7 +12,7 @@ peek (mode, sink) is
   sink is 2
 end
 
-program (arguments) is
+program (arguments) goes
   keep is adopted mark_c (descriptor is 103)
   n is arguments.count
   r is 0

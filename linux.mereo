@@ -36,7 +36,7 @@
 --
 -- These are declarations, not code: nothing is emitted for one you never call.
 
-linux contains
+linux is
 
   read is assembly "syscall"
     count out rax
@@ -601,21 +601,21 @@ linux contains
   file is
     descriptor is 4 bytes as signed
 
-    acquire (path, flags, mode) is
+    acquire (path, flags, mode) goes
       open (path is path,
                   flags is flags,
                   mode is mode,
                   descriptor is descriptor)
     end
 
-    read (buffer, capacity, count) is
+    read (buffer, capacity, count) goes
       read (descriptor is descriptor,
                   buffer is buffer,
                   capacity is capacity,
                   count is count)
     end
 
-    write (buffer, count, written) is
+    write (buffer, count, written) goes
       write (descriptor is descriptor,
                    buffer is buffer,
                    count is count,
@@ -627,14 +627,14 @@ linux contains
       -- write both fail it, and the cold block still tells them apart
       -- (-EINTR/-EPIPE stay graceful there)
 
-    seek (offset, whence, position) is
+    seek (offset, whence, position) goes
       lseek (descriptor is descriptor,
                    offset is offset,
                    whence is whence,
                    position is position)
     end
 
-    sync (result) is
+    sync (result) goes
       fsync (descriptor is descriptor, result is result)
     end
 
@@ -644,7 +644,7 @@ linux contains
     -- name -- is what closes the race where the path is replaced between the two
     -- calls, so a program that has the file open should always ask it and not
     -- the directory.
-    status (buffer, mask, result) is
+    status (buffer, mask, result) goes
       statx (base is descriptor,
                    path is "",
                    flags is 4096,
@@ -660,7 +660,7 @@ linux contains
     -- The copy is NOT owned by anything: two descriptors now name one open file,
     -- this resource releases only its own, and the target is the caller's to
     -- close. That asymmetry is why this is a method and not a second instance.
-    redirect (target, result) is
+    redirect (target, result) goes
       dup3 (descriptor is descriptor,
                   target is target,
                   flags is 0,
@@ -685,7 +685,7 @@ linux contains
     -- name any descriptors at all -- this is a method on `file` because a fallible
     -- primitive needs a resource to carry its `ensure`, and calling it on the file
     -- being waited for is what reads correctly.
-    watch (entries, count, timeout, ready) is
+    watch (entries, count, timeout, ready) goes
       ppoll (entries is entries,
                    count is count,
                    timeout is timeout,
@@ -694,7 +694,7 @@ linux contains
                    ready is ready)
     end
 
-    release is
+    release goes
       close (descriptor is descriptor)
     end
   end
@@ -724,28 +724,28 @@ linux contains
     backup is 36 bytes
     status is 4 bytes as signed
 
-    acquire is
+    acquire goes
       ioctl (descriptor is descriptor,
              request is 21505,
              argument is backup,
              result is status)
     end
 
-    snapshot (buffer) is
+    snapshot (buffer) goes
       ioctl (descriptor is descriptor,
              request is 21505,
              argument is buffer,
              result is status)
     end
 
-    apply (buffer) is
+    apply (buffer) goes
       ioctl (descriptor is descriptor,
              request is 21506,
              argument is buffer,
              result is status)
     end
 
-    release is
+    release goes
       ioctl (descriptor is descriptor,
              request is 21506,
              argument is backup,
@@ -774,7 +774,7 @@ linux contains
   -- write end to signal end-of-input while still reading is the ordinary way to
   -- use a pipe, and an owner of both cannot express it.
   channel is
-    make (pair, flags, result) is
+    make (pair, flags, result) goes
       pipe2 (pair is pair, flags is flags, result is result)
     end
   end
@@ -797,7 +797,7 @@ linux contains
   directory is
     descriptor is 4 bytes as signed
 
-    acquire (path) is
+    acquire (path) goes
       openat (base is -100,
                     path is path,
                     flags is 65536,
@@ -805,14 +805,14 @@ linux contains
                     descriptor is descriptor)
     end
 
-    read (buffer, capacity, count) is
+    read (buffer, capacity, count) goes
       getdents64 (descriptor is descriptor,
                         buffer is buffer,
                         capacity is capacity,
                         count is count)
     end
 
-    release is
+    release goes
       close (descriptor is descriptor)
     end
   end
@@ -842,7 +842,7 @@ linux contains
     -- descriptor, and is the one to prefer when you have the file open, since a
     -- name can be replaced between two calls. `flags is 0` follows symlinks;
     -- `flags is 256` (AT_SYMLINK_NOFOLLOW) reports on the link itself.
-    inspect (name, buffer, mask, flags, result) is
+    inspect (name, buffer, mask, flags, result) goes
       statx (base is -100,
                    path is name,
                    flags is flags,
@@ -853,20 +853,20 @@ linux contains
 
     -- unlink, and rmdir: `flags is 0` for a file, `flags is 512` (AT_REMOVEDIR)
     -- for a directory.
-    remove (name, flags, result) is
+    remove (name, flags, result) goes
       unlinkat (base is -100,
                       path is name,
                       flags is flags,
                       result is result)
     end
 
-    make_directory (name, mode, result) is
+    make_directory (name, mode, result) goes
       mkdirat (base is -100, path is name, mode is mode, result is result)
     end
 
     -- `flags is 0` replaces an existing target; 1 (RENAME_NOREPLACE) refuses to,
     -- and 2 (RENAME_EXCHANGE) swaps the two names atomically.
-    rename (name, new_name, flags, result) is
+    rename (name, new_name, flags, result) goes
       renameat2 (base is -100,
                        path is name,
                        new_base is -100,
@@ -875,7 +875,7 @@ linux contains
                        result is result)
     end
 
-    make_link (name, new_name, result) is
+    make_link (name, new_name, result) goes
       linkat (base is -100,
                     path is name,
                     new_base is -100,
@@ -886,7 +886,7 @@ linux contains
 
     -- NAME becomes a symlink whose text is TARGET. The target is stored as
     -- written and is never resolved here, so it may point at nothing.
-    make_symlink (target, name, result) is
+    make_symlink (target, name, result) goes
       symlinkat (target is target,
                        base is -100,
                        path is name,
@@ -896,7 +896,7 @@ linux contains
     -- the text of a symlink. Not terminated, and truncated rather than failed
     -- when the buffer is short -- a count equal to CAPACITY means "there may be
     -- more".
-    read_link (name, buffer, capacity, count) is
+    read_link (name, buffer, capacity, count) goes
       readlinkat (base is -100,
                         path is name,
                         buffer is buffer,
@@ -904,7 +904,7 @@ linux contains
                         count is count)
     end
 
-    permit (name, mode, result) is
+    permit (name, mode, result) goes
       fchmodat (base is -100, path is name, mode is mode, result is result)
     end
 
@@ -912,7 +912,7 @@ linux contains
     -- they combine. This FAILS when the answer is no, which is the useful shape
     -- inside a program that needs the access -- to ask without failing, use
     -- `or continue`.
-    reachable (name, mode, result) is
+    reachable (name, mode, result) goes
       faccessat2 (base is -100,
                         path is name,
                         mode is mode,
@@ -920,7 +920,7 @@ linux contains
                         result is result)
     end
 
-    enter (name, result) is
+    enter (name, result) goes
       chdir (path is name, result is result)
     end
   end
@@ -938,19 +938,19 @@ linux contains
   clock is
     -- wall-clock time, seconds since 1970. Jumps when the system clock is set, so
     -- it answers "what time is it" and must not be used to measure a duration.
-    now (buffer, result) is
+    now (buffer, result) goes
       clock_gettime (clock is 0, buffer is buffer, result is result)
     end
 
     -- time since boot. Never jumps -- this is the one to measure with.
-    elapsed (buffer, result) is
+    elapsed (buffer, result) goes
       clock_gettime (clock is 1, buffer is buffer, result is result)
     end
 
     -- sleep for the span in REQUEST. A signal cuts it short, and the time left
     -- is written into REMAIN, so a caller that must sleep the whole span loops
     -- while the remainder is non-zero.
-    wait (request, remain, result) is
+    wait (request, remain, result) goes
       nanosleep (request is request, remain is remain, result is result)
     end
   end
@@ -959,7 +959,7 @@ linux contains
     address is 0
     length is 4096
 
-    acquire (protection) is
+    acquire (protection) goes
       mmap (hint is 0,
                   length is length,
                   protection is protection,
@@ -969,7 +969,7 @@ linux contains
                   address is address)
     end
 
-    release is
+    release goes
       munmap (address is address, length is length)
     end
   end
@@ -1145,11 +1145,11 @@ linux contains
   process is
     pid is -1
 
-    kill (signal, result) is
+    kill (signal, result) goes
       kill (pid is pid, signal is signal, result is result)
     end
 
-    probe (result) is
+    probe (result) goes
       kill (pid is pid, signal is 0, result is result)
     end
   end
@@ -1165,19 +1165,19 @@ linux contains
   -- error path -- getpwuid cleans up after itself. Needs the byte layer (`text`);
   -- a caller of getpwuid therefore also `use`s core.mereo.
   identity is
-    user (euid) is
+    user (euid) goes
       geteuid (euid is euid)
     end
 
     -- the REAL user id, which differs from the effective one only under setuid.
     -- `whoami` wants `user`; `id -r` wants this.
-    real (uid) is
+    real (uid) goes
       getuid (uid is uid)
     end
 
     -- the caller's own process id. On `identity` rather than on `process` because
     -- `process` wraps a pid you already know, and this is how you learn one.
-    process_id (pid) is
+    process_id (pid) goes
       getpid (pid is pid)
     end
 
@@ -1187,11 +1187,11 @@ linux contains
     --   host is block as linux.utsname
     --   who is already span (data is host.nodename, length is 65)
     --   who.until (byte is 0)
-    machine (buffer, result) is
+    machine (buffer, result) goes
       uname (buffer is buffer, result is result)
     end
 
-    getpwuid (uid, name, length) is
+    getpwuid (uid, name, length) goes
       capacity is 65536
       buffer is capacity bytes
       count is 0

@@ -4,7 +4,7 @@ include "../linux.mereo"
 -- `program (arguments) is` asks for a view over Linux's argument vector;
 -- `arguments.pointer + 1` is argv[1] (a char*), fed straight to open.
 
-program (arguments) is
+program (arguments) goes
   capacity is 4096
   buffer is capacity bytes
   count is 0

@@ -3,7 +3,7 @@ include "../../linux.mereo"
 -- de-risk: a gf field op as a procedure method over 16-limb buffers (each limb
 -- a signed 8-byte word at [buf + i*8]). add: o[i] = a[i] + b[i].
 field is
-  add (o, a, b) is
+  add (o, a, b) goes
     i is 0
     off is 0
     va is 0
@@ -21,7 +21,7 @@ field is
   end
 end
 
-program is
+program goes
   av is 128 bytes
   bv is 128 bytes
   res is 128 bytes

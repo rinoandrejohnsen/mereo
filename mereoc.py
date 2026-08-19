@@ -629,6 +629,36 @@ class _Everywhere(dict):
 # also holds names nothing outside it ever asks for.
 _NS_OPEN = re.compile(r"^(\w+) contains$")
 
+# ...and its replacement. A namespace is no longer spelled with a word of its
+# own: it is an `is` block, and what makes it one is that its children DECLARE.
+# After the `goes` migration that is a one-level question -- a namespace holds
+# definitions and primitives, a definition holds fields and `goes` methods -- so
+# nothing deeper has to be looked at, and the ambiguity that made `acquire is`
+# and `file is` the same line is gone.
+_DEF_OPEN = re.compile(r"^\w+(?: extends [\w.]+(?: and [\w.]+)*)? is$")
+_PRIM_OPEN = re.compile(r"^\w+ is (?:final )?assembly\b")
+
+
+def _declares_only(lines, i, open_indent):
+    """Does the block opened at `lines[i]` hold only declarations?"""
+    kids = 0
+    for raw in lines[i + 1:]:
+        code = _uncomment(raw)
+        if not code.strip():
+            continue
+        ind = _indent(code)
+        if ind <= open_indent:
+            break                       # the block ended
+        if ind != open_indent + 2:
+            continue                    # deeper: belongs to a child
+        s = code.strip()
+        if s == "end":
+            continue                    # a child's closer sits at this indent
+        if not (_DEF_OPEN.fullmatch(s) or _PRIM_OPEN.match(s)):
+            return False
+        kids += 1
+    return kids > 0
+
 
 def _namespace_fold(src):
     """Take the `namespace NAME is ... end` blocks out of the line stream, and
@@ -643,10 +673,14 @@ def _namespace_fold(src):
 
     -> (source, {line number -> namespace})"""
     lines, out, owner, ns = src.splitlines(), [], {}, None
-    for raw in lines:
+    for i, raw in enumerate(lines):
         code = _uncomment(raw)
         s = code.strip()
         m = _NS_OPEN.fullmatch(s)
+        if (m is None and ns is None and _indent(code) == 0
+                and _DEF_OPEN.fullmatch(s) and "extends" not in s
+                and _declares_only(lines, i, 0)):
+            m = re.fullmatch(r"^(\w+) is$", s)      # a namespace, in the new spelling
         if m and ns is not None:
             # at ANY indent: a namespace opened inside one is a mistake worth
             # naming, and an indented one used to fall through to
@@ -1495,7 +1529,7 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                                          "noreturn": False, "contract": None,
                                          "args": [], "out": None}
                 continue
-            m = re.match(r"^program(?: \((.*)\))? is$", s)
+            m = re.match(r"^program(?: \((.*)\))? (?:is|goes)$", s)
             if m:
                 if flags.get("program"):
                     fail(f"line {n}: a program section already appeared "
@@ -1518,7 +1552,7 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
             if s == "failures is":
                 section = "failures"
                 continue
-            m = re.match(r"^(\w+) \((.*)\) is$", s)
+            m = re.match(r"^(\w+) \((.*)\) (?:is|goes)$", s)
             if m:
                 # A TEMPLATE STANDING ALONE. It is the same line as `program with
                 # ... is` one rule above -- a name, the ports the work reaches the
@@ -1653,7 +1687,7 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
             defn = section
             if ind == 2:
                 method = inblock = curcall = None
-                m = re.match(r"^(\w+)(?: \((.*)\))? is$", s)
+                m = re.match(r"^(\w+)(?: \((.*)\))? (?:is|goes)$", s)
                 if m:
                     mname, params = m.group(1), []
                     if m.group(2):

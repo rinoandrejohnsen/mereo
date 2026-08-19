@@ -24,12 +24,12 @@ header is
   tag is 1 bytes
   length is 2 bytes as big
 
-  fill (v) is
+  fill (v) goes
     length is v
   end
 end
 
-program is
+program goes
   room is 32 bytes
   stored is 8 bytes
   templated is 8 bytes

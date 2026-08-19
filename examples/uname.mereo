@@ -11,7 +11,7 @@ include "../core.mereo"
 --
 --   ./uname   ->  Linux x86_64
 
-program is
+program goes
   block is 400 bytes
   room is 512 bytes
   result is 0

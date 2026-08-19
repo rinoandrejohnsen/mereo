@@ -11,7 +11,7 @@ include "../linux.mereo"
 --   printf 'x'   | ./branch_bin   -> one byte
 --   printf 'xyz' | ./branch_bin   -> many bytes   (the hot-path default)
 
-program is
+program goes
   capacity is 4096
   buffer is capacity bytes
   count is 0

@@ -13,7 +13,7 @@ include "../../linux.mereo"
 --
 --   ./tmpl_road_nest      ->  -42   (argc 1: the cold road parses the text)
 --   ./tmpl_road_nest x    ->  7     (the hot road)
-program (arguments) is
+program (arguments) goes
   argc is arguments.count
   v is 0
   digits is "-42"

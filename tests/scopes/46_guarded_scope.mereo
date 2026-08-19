@@ -8,7 +8,7 @@ include "markers.mereo"
 -- The guard holds here (`n` is 1 on a bare run), so both markers open and close
 -- in reverse order at the block's end, before the program's own.
 -- Expect 101 102 103.
-program (arguments) is
+program (arguments) goes
   keep is adopted mark_c (descriptor is 103)
   n is arguments.count
 

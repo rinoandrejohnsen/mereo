@@ -3,7 +3,7 @@ include "../../linux.mereo"
 -- REFUSED: the prose words are not condition operators. They were, and reading
 -- `count is 0` as "equals" was pleasant -- but it made a condition and an
 -- assignment the same shape, and `GUARD goes` needs them to be different.
-program (arguments) is
+program (arguments) goes
   n is arguments.count
   ensure n is 2
 end

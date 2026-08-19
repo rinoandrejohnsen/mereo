@@ -25,7 +25,7 @@
 include "../linux.mereo"
 include "../core.mereo"
 
-program (arguments) is
+program (arguments) goes
   block is 32768 bytes
   count is 0
   at is 0

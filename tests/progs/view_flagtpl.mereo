@@ -8,7 +8,7 @@ mode is
   echo is bit 3
   raw is bit 1
 
-  quiet (sink) is              -- the template WRITES two bits of its backing
+  quiet (sink) goes            -- the template WRITES two bits of its backing
     echo is 0
     raw is 1
     sink is echo + raw         -- ... and READS them back in an expression
@@ -16,7 +16,7 @@ mode is
 end
 
 -- LENSED over a word: the bits are the backing's bits, so the caller sees them.
-program is
+program goes
   w is 4 bytes
   m is w as mode
   m.echo is 1                  -- set bit 3 at the program level -> word is 8

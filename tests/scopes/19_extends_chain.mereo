@@ -9,34 +9,34 @@ include "../../linux.mereo"
 
 chain_a is
   fd_a is 101
-  acquire is
+  acquire goes
     linux.close (descriptor is 201)
   end
-  release is
+  release goes
     linux.close (descriptor is fd_a)
   end
 end
 
 chain_b extends chain_a is
   fd_b is 102
-  acquire is
+  acquire goes
     linux.close (descriptor is 202)
   end
-  release is
+  release goes
     linux.close (descriptor is fd_b)
   end
 end
 
 chain_c extends chain_b is
   fd_c is 103
-  acquire is
+  acquire goes
     linux.close (descriptor is 203)
   end
-  release is
+  release goes
     linux.close (descriptor is fd_c)
   end
 end
 
-program is
+program goes
   stack is chain_c
 end

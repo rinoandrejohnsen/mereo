@@ -3,7 +3,7 @@
 include "../linux.mereo"
 include "../core.mereo"
 
-program is
+program goes
   raw is constant "{ \"id\": 7, \"name\": \"hello world\", \"port\": 8080, \"temp\": -12 }"
   namekey is constant "name"
   portkey is constant "port"

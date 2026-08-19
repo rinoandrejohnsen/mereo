@@ -10,7 +10,7 @@ include "../core.mereo"
 -- the input size, which is the property mereo's no-heap rule buys.
 --
 --   ./wcl < lorem_ipsum.txt
-program is
+program goes
   capacity is 65536
   buffer is capacity bytes
   count is 0

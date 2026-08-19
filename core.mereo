@@ -83,11 +83,11 @@ decimal is helper _decimal
 end
 
 text is
-  find (data, length, byte, offset) is
+  find (data, length, byte, offset) goes
     scan (data is data, length is length, byte is byte, offset is offset)
   end
 
-  compare (data, length, other, other_length, result) is
+  compare (data, length, other, other_length, result) goes
     same (data is data,
           length is length,
           other is other,
@@ -95,7 +95,7 @@ text is
           result is result)
   end
 
-  format (value, buffer, length) is
+  format (value, buffer, length) goes
     decimal (value is value, output is buffer, length is length)
   end
 
@@ -108,7 +108,7 @@ text is
   -- memcpy: LENGTH bytes, SOURCE to TARGET, forwards. Overlapping regions are
   -- safe only when TARGET is at or below SOURCE -- there is no memmove here,
   -- because nothing has wanted one and a direction test is not free.
-  copy (source, target, length) is
+  copy (source, target, length) goes
     i is 0
     step goes
       leave step when i >= length
@@ -119,7 +119,7 @@ text is
   end
 
   -- memset: LENGTH bytes of TARGET set to BYTE.
-  fill (target, length, byte) is
+  fill (target, length, byte) goes
     i is 0
     step goes
       leave step when i >= length
@@ -131,7 +131,7 @@ text is
 
   -- strlen, bounded: the offset of the first zero byte, or LIMIT if there is
   -- none. `find` already answers this; `measure` says which question was asked.
-  measure (data, limit, result) is
+  measure (data, limit, result) goes
     scan (data is data, length is limit, byte is 0, offset is result)
   end
 
@@ -141,7 +141,7 @@ text is
   -- A conditional store rather than a guarded scope, so the loop keeps no
   -- data-dependent branch and stays vectorisable: every pass writes, and the
   -- last write to land is the answer.
-  last (data, length, byte, offset) is
+  last (data, length, byte, offset) goes
     i is 0
     offset is length
     step goes
@@ -154,7 +154,7 @@ text is
 
   -- ASCII case, in place. Branchless for the same reason: the comparison is
   -- arithmetic, not a branch, so a case pass over a buffer vectorises.
-  upper (data, length) is
+  upper (data, length) goes
     i is 0
     step goes
       leave step when i >= length
@@ -166,7 +166,7 @@ text is
     end
   end
 
-  lower (data, length) is
+  lower (data, length) goes
     i is 0
     step goes
       leave step when i >= length
@@ -181,15 +181,15 @@ text is
   -- The three ctype questions this corpus actually asks. nolibc carries
   -- thirteen; the other ten are not here because nothing has wanted one, which
   -- is the same reason there is no memmove.
-  digit (byte, result) is
+  digit (byte, result) goes
     result is byte >= 48 & byte <= 57
   end
 
-  space (byte, result) is
+  space (byte, result) goes
     result is byte == 32 | byte == 9 | byte == 10 | byte == 13
   end
 
-  alpha (byte, result) is
+  alpha (byte, result) goes
     result is byte >= 65 & byte <= 90 | byte >= 97 & byte <= 122
   end
 
@@ -199,7 +199,7 @@ text is
   --
   -- Unsigned: hex of a negative number means its bit pattern, so the shift is
   -- `as unsigned` and the sign bit does not smear.
-  hex (value, buffer, length) is
+  hex (value, buffer, length) goes
     digits is constant "0123456789abcdef"
     v is value
     probe is value
@@ -224,7 +224,7 @@ text is
   -- COUNT bytes as hex, two digits each, no separator: what a digest or a
   -- packet dump wants. `hex` would drop the leading zero of every byte below
   -- 16 and the run would no longer line up.
-  hexbytes (data, count, buffer, length) is
+  hexbytes (data, count, buffer, length) goes
     digits is constant "0123456789abcdef"
     i is 0
     at is 0
@@ -246,7 +246,7 @@ text is
   --
   -- A separate template rather than a `base` port on `number`, because a port
   -- is wired BY NAME and adding one would break every existing call.
-  unhex (data, length, value) is
+  unhex (data, length, value) goes
     i is 0
     v is 0
     d is 0
@@ -270,7 +270,7 @@ text is
   -- (memchr jumps us there), compare the whole needle, stop on a match. The two
   -- ways to stop -- a match, or running out of haystack -- are two `leave`s, so
   -- each says which one it is; the back-edge itself is unconditional.
-  search (data, length, needle, needle_length, offset) is
+  search (data, length, needle, needle_length, offset) goes
     i is 0
     rem is 0
     rel is 0
@@ -309,7 +309,7 @@ text is
   -- over the byte in a cold road that rejoins at the digit loop. The road lands
   -- past the exit in the caller's cold region -- this is a template, so it is
   -- spliced into whatever program uses it.
-  number (data, length, value) is
+  number (data, length, value) goes
     i is 0
     v is 0
     neg is 0
@@ -402,13 +402,13 @@ span is
   length is 8 bytes           -- how many there are
 
   -- find/rfind for one byte: the offset within the view, or `length` if absent.
-  find (byte, offset) is
+  find (byte, offset) goes
     n is 0
     text.find (data is data, length is length, byte is byte, offset is n)
     offset is n
   end
 
-  last (byte, offset) is
+  last (byte, offset) goes
     n is 0
     text.last (data is data, length is length, byte is byte, offset is n)
     offset is n
@@ -416,7 +416,7 @@ span is
 
   -- `find(string_view)`, and C++20's `contains` with the answer thrown in:
   -- the offset of NEEDLE, or `length` when it is not there.
-  search (needle, needle_length, offset) is
+  search (needle, needle_length, offset) goes
     n is 0
     text.search (data is data,
                  length is length,
@@ -429,7 +429,7 @@ span is
   -- `at()`, not `operator[]`: the bounds check is the reason to reach through a
   -- span rather than write `[v.data + i]`, so it is not optional. A read past
   -- the end fails into the caller's release tower, naming this step.
-  at (offset, byte) is
+  at (offset, byte) goes
     b is 0
     ensure offset < length
     b is [data + offset]
@@ -441,14 +441,14 @@ span is
   -- the scan loop above correct with no special case, because `find` answers
   -- `length` when the delimiter is absent and `skip (count is length + 1)` then
   -- empties the view and ends the loop.
-  skip (count) is
+  skip (count) goes
     n is count
     n is length when count > length
     data is data + n
     length is length - n
   end
 
-  trim (count) is
+  trim (count) goes
     n is count
     n is length when count > length
     length is length - n
@@ -460,7 +460,7 @@ span is
   -- subtraction would be arithmetic at the call site, which is the one thing
   -- these views exist to remove. Clamped like the other two, so taking more
   -- than there is keeps what there is.
-  take (count) is
+  take (count) goes
     n is count
     n is length when count > length
     length is n
@@ -480,7 +480,7 @@ span is
   -- limit, and a region with no terminator inside it is left alone -- `find`
   -- answers `length` when the byte is absent, and narrowing to `length` is a
   -- no-op. That is the safe reading of "it did not terminate".
-  until (byte) is
+  until (byte) goes
     n is 0
     text.find (data is data, length is length, byte is byte, offset is n)
     length is n
@@ -489,7 +489,7 @@ span is
   -- `operator==`, `starts_with`, `ends_with`. Each is the same byte compare
   -- over a different window, and each first rules out the length that would
   -- make the compare read past the end.
-  equals (other, other_length, result) is
+  equals (other, other_length, result) goes
     r is 0
     text.compare (data is data,
                   length is length,
@@ -499,7 +499,7 @@ span is
     result is r
   end
 
-  starts (other, other_length, result) is
+  starts (other, other_length, result) goes
     r is 0
     text.compare (data is data,
                   length is other_length,
@@ -513,7 +513,7 @@ span is
   -- the window is the LAST other_length bytes, so the address is computed
   -- before the compare and the short case is ruled out first -- with
   -- `length < other_length` the address would be below `data`.
-  ends (other, other_length, result) is
+  ends (other, other_length, result) goes
     r is 0
     tail is data
     tail is data + length - other_length when length >= other_length
@@ -528,7 +528,7 @@ span is
 
   -- atoi over the view. `text.number` already skips leading spaces and reads an
   -- optional sign, so a field cut out of a line needs no trimming first.
-  number (value) is
+  number (value) goes
     v is 0
     text.number (data is data, length is length, value is v)
     value is v
@@ -563,7 +563,7 @@ builder is
 
   -- `append(ptr, n)`, and the join between the two views: appending a `span` is
   -- `page.add (source is v.data, length is v.length)`.
-  add (source, length) is
+  add (source, length) goes
     n is length
     ensure count + length <= limit
     text.copy (source is source, target is data + count, length is n)
@@ -571,7 +571,7 @@ builder is
   end
 
   -- `push_back`.
-  byte (value) is
+  byte (value) goes
     n is count
     ensure count < limit
     [data + n : 1] is value
@@ -579,7 +579,7 @@ builder is
   end
 
   -- `append(n, ch)`: TIMES copies of one byte, for a column that has to line up.
-  pad (value, times) is
+  pad (value, times) goes
     n is times
     ensure count + times <= limit
     text.fill (target is data + count, length is n, byte is value)
@@ -588,14 +588,14 @@ builder is
 
   -- `to_chars`, in the two bases a systems program reads: signed decimal, and
   -- lowercase hex of the bit pattern.
-  number (value) is
+  number (value) goes
     n is 0
     ensure count + 20 <= limit
     text.format (value is value, buffer is data + count, length is n)
     count is count + n
   end
 
-  hex (value) is
+  hex (value) goes
     n is 0
     ensure count + 16 <= limit
     text.hex (value is value, buffer is data + count, length is n)
@@ -630,7 +630,7 @@ end
 -- shared -- a method has no way to call a sibling on its own instance.
 --
 -- A key that is not there fails here, into the caller's release tower.
-value_at (content, length, key, keylen, offset) is
+value_at (content, length, key, keylen, offset) goes
   keyat is 0
   coloff is 0
   at is 0
@@ -654,7 +654,7 @@ json is
 
   -- the STRING value of KEY -> a byte range within the backing: START (an offset
   -- from `content`) and VLEN (length, excluding the quotes).
-  text (key, keylen, start, vlen) is
+  text (key, keylen, start, vlen) goes
     off is 0
     rem is 0
     q1off is 0
@@ -674,7 +674,7 @@ json is
   end
 
   -- the NUMBER value of KEY -> a signed integer VALUE.
-  number (key, keylen, value) is
+  number (key, keylen, value) goes
     off is 0
     rem is 0
     at is 0

@@ -3,7 +3,7 @@ include "markers.mereo"
 -- The likely road adopts `hot`, then faults (boom). The tower must release the
 -- road-local hot, then keep -- not the untaken road's resource.
 -- Expect close(101) close(103).
-program (arguments) is
+program (arguments) goes
   keep is adopted mark_c (descriptor is 103)
   n is arguments.count
   -- 1 when run bare -- and unknowable at compile time, so the crossroad

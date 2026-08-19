@@ -5,7 +5,7 @@ include "field.mereo"
 -- method carrying its own `ensure`, invoked through an instance.
 entropy is
   count is 0
-  fill (buffer, length) is
+  fill (buffer, length) goes
     linux.getrandom (buffer is buffer,
                      length is length,
                      flags is 0,
@@ -18,7 +18,7 @@ end
 -- (crypto.h++), a reusable procedure over caller buffers.
 curve is
 
-  x25519 (secret, point, shared) is
+  x25519 (secret, point, shared) goes
     z is 32 bytes
     pt is 128 bytes
     la is 128 bytes
@@ -94,7 +94,7 @@ curve is
   end
 
   -- keypair: priv <- 32 fresh random bytes (getrandom), pub <- X25519(priv, 9).
-  keypair (priv, pub) is
+  keypair (priv, pub) goes
     base is 32 bytes
     src is already entropy (count is 0)
     src.fill (buffer is priv, length is 32)

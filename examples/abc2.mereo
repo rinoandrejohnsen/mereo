@@ -4,7 +4,7 @@
 
 include "../linux.mereo"
 
-program is
+program goes
   capacity is 4096
   buffer is capacity bytes
   count is 0

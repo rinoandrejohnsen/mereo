@@ -3,7 +3,7 @@ include "markers.mereo"
 -- Branch in a loop: the likely road adopts `h`, released at the merge each of 3
 -- iterations; keep at exit. when-road (m=5, never 0) not taken.
 -- Expect: 101 101 101 104
-program (arguments) is
+program (arguments) goes
   keep is adopted mark_d (descriptor is 104)
   i is 0
   m is arguments.count

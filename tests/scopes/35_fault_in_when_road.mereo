@@ -4,7 +4,7 @@ include "markers.mereo"
 -- 12_fault_in_road faults in the LIKELY road; the cold road's route into the
 -- tower is a different path and had no test.
 -- Expect 101 103.
-program (arguments) is
+program (arguments) goes
   keep is adopted mark_c (descriptor is 103)
   n is arguments.count
 

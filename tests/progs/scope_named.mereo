@@ -9,7 +9,7 @@ include "../../linux.mereo"
 --
 --   ./scope_named      ->  =    (leaves `setup` early: 10 + 3)
 --   ./scope_named x    ->  G    (runs it through:      20 + 3)
-program (arguments) is
+program (arguments) goes
   argc is arguments.count
   i is 0
   n is 0

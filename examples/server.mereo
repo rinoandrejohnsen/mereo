@@ -15,46 +15,46 @@ connection is
   descriptor is -1
   status is 0
 
-  acquire (domain, type, protocol) is
+  acquire (domain, type, protocol) goes
     linux.socket (domain is domain,
                   type is type,
                   protocol is protocol,
                   descriptor is descriptor)
   end
 
-  bind (address, length) is
+  bind (address, length) goes
     linux.bind (descriptor is descriptor,
                 address is address,
                 length is length,
                 result is status)
   end
 
-  listen (backlog) is
+  listen (backlog) goes
     linux.listen (descriptor is descriptor,
                   backlog is backlog,
                   result is status)
   end
 
-  accept (accepted) is
+  accept (accepted) goes
     linux.accept (descriptor is descriptor,
                   address is 0,
                   length is 0,
                   connection is accepted)
   end
 
-  read (buffer, capacity, count) is
+  read (buffer, capacity, count) goes
     linux.read (descriptor is descriptor,
                 buffer is buffer,
                 capacity is capacity,
                 count is count)
   end
 
-  release is
+  release goes
     linux.close (descriptor is descriptor)
   end
 end
 
-program is
+program goes
   capacity is 4096
   buffer is capacity bytes
   count is 0

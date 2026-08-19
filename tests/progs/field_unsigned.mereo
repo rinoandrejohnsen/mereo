@@ -14,7 +14,7 @@ pair is
   s is 8 bytes as signed
 end
 
-program is
+program goes
   buf is 32 bytes
   h is buf as pair
 

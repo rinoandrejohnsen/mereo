@@ -6,7 +6,7 @@ include "../../linux.mereo"
 --
 -- The name must stay 10 characters -- see tmpl_alone.mereo.
 letters is
-  shout (area, length) is
+  shout (area, length) goes
     i is 0
     scan goes
       c is [area + i]
@@ -22,7 +22,7 @@ letters is
   end
 end
 
-program is
+program goes
   capacity is 4096
   buffer is capacity bytes
   count is 0

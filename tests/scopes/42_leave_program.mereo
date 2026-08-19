@@ -5,7 +5,7 @@ include "markers.mereo"
 -- here rather than emitting its own releases -- one jump, from two scopes deep.
 --
 -- argc is 1, so it leaves. Expect 102 101 103: inner, outer, then the program's.
-program (arguments) is
+program (arguments) goes
   n is arguments.count
   keep is adopted mark_c (descriptor is 103)
 

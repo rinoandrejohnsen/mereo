@@ -2,7 +2,7 @@ include "../../linux.mereo"
 
 -- REFUSED: `LABEL when GUARD goes` is a crossroad ROAD, which may only follow
 -- its own `LABEL likely goes`. A conditional scope carries no `when`.
-program (arguments) is
+program (arguments) goes
   n is arguments.count
   buf is 8 bytes
   k is 0

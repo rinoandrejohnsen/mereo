@@ -10,18 +10,18 @@ include "../../linux.mereo"
 -- unique"). That made a responder -- a template whose whole job is to hand back
 -- a path and a body -- impossible to write.
 greeting is
-  path (at, length) is
+  path (at, length) goes
     at is "/hello"
     length is "/hello".size
   end
 
-  body (at, length) is
+  body (at, length) goes
     at is "hello world!"
     length is "hello world!".size
   end
 end
 
-program is
+program goes
   route is 0
   route_length is 0
   text is 0

@@ -27,7 +27,7 @@ withmethod is
   small is 2 bytes
   wide is 8 bytes
 
-  total (result) is
+  total (result) goes
     r is small + wide
     result is r
   end
@@ -42,13 +42,13 @@ flags_withmethod is
   echo is bit 3
   level is bits 1 to 2
 
-  lit (result) is
+  lit (result) goes
     r is echo
     result is r
   end
 end
 
-program is
+program goes
   room is 128 bytes
   page is already builder (data is room, count is 0, limit is 128)
 

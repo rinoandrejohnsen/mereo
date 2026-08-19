@@ -9,7 +9,7 @@ include "../../linux.mereo"
 -- pass on any path.
 --
 -- Run from the repo root (the path is relative). Prints "LLLL".
-program is
+program goes
   cap is 64
   buf is cap bytes
   n is 0

@@ -8,7 +8,7 @@ include "net.mereo"
 -- asked. LENGTH is the body length the header declares, TOTAL the whole record.
 -- It was these same fourteen steps written twice, differing only in the buffer
 -- and the loop names.
-read_record (link, rec, length, total) is
+read_record (link, rec, length, total) goes
   got is 0
   n is 0
   at is 0
@@ -39,7 +39,7 @@ end
 -- whole handshake + record layer (over kTLS) is hidden here.
 client is
 
-  secure_fetch (address, host, hostlen, request, reqlen, sink, received) is
+  secure_fetch (address, host, hostlen, request, reqlen, sink, received) goes
     cpriv is 32 bytes
     cpub is 32 bytes
     crand is 32 bytes

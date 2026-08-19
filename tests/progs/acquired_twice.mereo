@@ -7,7 +7,7 @@ holder is
   descriptor is 4 bytes as signed
   status is 8 bytes as signed
 
-  acquire (path) is
+  acquire (path) goes
     linux.open (path is path, flags is 0, mode is 0, descriptor is descriptor)
     acquired
     linux.lseek (descriptor is descriptor,
@@ -17,12 +17,12 @@ holder is
     acquired when status >= 0
   end
 
-  release is
+  release goes
     linux.close (descriptor is descriptor)
   end
 end
 
-program is
+program goes
   h is holder (path is "/dev/null")
   ensure h.descriptor >= 0
 end

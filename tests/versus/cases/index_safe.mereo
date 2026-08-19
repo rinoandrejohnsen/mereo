@@ -10,7 +10,7 @@ include "../../../core.mereo"
 -- by `count` instead and the check survives, because nothing ties that local to
 -- the span's length. See docs/fast-and-safe.md, which measures both.
 
-program is
+program goes
   block is 4096 bytes
   word is 8 bytes
   total is 0

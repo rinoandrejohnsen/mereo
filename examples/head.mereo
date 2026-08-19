@@ -10,7 +10,7 @@ include "../core.mereo"
 -- through without a special case.
 --
 --   ./head 3 < lorem_ipsum.txt
-program (arguments) is
+program (arguments) goes
   argc is arguments.count
   ensure argc >= 2
 

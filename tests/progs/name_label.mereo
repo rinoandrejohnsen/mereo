@@ -4,7 +4,7 @@ include "../../linux.mereo"
 -- by that name gives two C labels with one name -- `error: duplicate label`.
 -- Only scopes, crossroads and templates are restricted: C keeps labels and
 -- variables in separate namespaces, so a SLOT called `release_doc` is fine.
-program (arguments) is
+program (arguments) goes
   n is arguments.count
   buf is 8 bytes
   release_doc goes

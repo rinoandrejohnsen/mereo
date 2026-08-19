@@ -12,7 +12,7 @@
 include "../linux.mereo"
 include "../core.mereo"
 
-program (arguments) is
+program (arguments) goes
   off is 0        -- written by find's out-port, and read before it advances,
   out_ptr is 0    -- so it can't be a first-mention declaration
   out_len is 0    -- what to print, chosen by the roads

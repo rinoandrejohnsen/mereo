@@ -11,7 +11,7 @@ span is
   data is 0
   length is 0
 
-  show (descriptor, written) is
+  show (descriptor, written) goes
     linux.write (descriptor is descriptor,
                  buffer is data,
                  count is length,
@@ -25,13 +25,13 @@ record is
   at is 8 bytes
   size is 8 bytes
 
-  span_of (pointer, count) is
+  span_of (pointer, count) goes
     pointer is at
     count is size
   end
 end
 
-program is
+program goes
   raw is constant "hello world"
   written is 0
   p is 0

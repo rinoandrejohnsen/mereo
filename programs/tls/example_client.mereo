@@ -7,7 +7,7 @@ include "client.mereo"
 -- spelling out three constants. They are constants, so they are written as
 -- constants: a `sockaddr_in` construction, and two string literals whose lengths
 -- come from `X.size` rather than being counted by hand alongside them.
-program is
+program goes
   page is 16384 bytes
   got is 0
   written is 0

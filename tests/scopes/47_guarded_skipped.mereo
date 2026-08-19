@@ -5,7 +5,7 @@ include "markers.mereo"
 -- -- skipping both is not a shortcut, it is what "the body is what acquires"
 -- means. The resource taken AFTER the block is untouched by any of it.
 -- Expect 101 103: 102 never opens.
-program (arguments) is
+program (arguments) goes
   keep is adopted mark_c (descriptor is 103)
   n is arguments.count
 

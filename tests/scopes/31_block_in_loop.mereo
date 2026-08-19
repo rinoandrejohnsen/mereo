@@ -4,7 +4,7 @@ include "markers.mereo"
 -- pass, in two different ways: the block's at its dedent, the loop's at the
 -- bottom. Every other block scenario has the block at program or template level.
 -- Expect 101 103   101 103   104.
-program is
+program goes
   keep is adopted mark_d (descriptor is 104)
   n is 0
 

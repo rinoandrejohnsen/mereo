@@ -2,7 +2,7 @@ include "markers.mereo"
 
 -- On iteration 1: adopt o (loop body), the likely road adopts h, then boom
 -- faults. The tower releases h, then o, then keep -- reverse. Expect: 101 103 104
-program (arguments) is
+program (arguments) goes
   keep is adopted mark_d (descriptor is 104)
   argc is arguments.count
   i is argc - 1

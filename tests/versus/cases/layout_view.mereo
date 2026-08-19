@@ -12,7 +12,7 @@ record is
   flags is 1 bytes
 end
 
-program is
+program goes
   block is 8 bytes
   word is 8 bytes
   n is 0

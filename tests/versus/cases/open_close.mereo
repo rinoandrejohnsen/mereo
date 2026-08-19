@@ -3,7 +3,7 @@ include "../../../linux.mereo"
 -- THE release tower claim, at its smallest: one owned descriptor, closed on the
 -- way out and on every failure path, with nothing in the source saying so.
 
-program is
+program goes
   buffer is 64 bytes
   count is 0
 

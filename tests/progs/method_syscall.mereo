@@ -32,17 +32,17 @@ watcher is
                                        -- of register width IS a register word;
                                        -- only a wider one is a run of bytes.
 
-  acquire (path) is
+  acquire (path) goes
     linux.open (path is path, flags is 0, mode is 0, descriptor is descriptor)
   end
 
-  arm (events) is                      -- opens with a STORE, and does no call
+  arm (events) goes                    -- opens with a STORE, and does no call
     [slot + 0 : 4] is descriptor
     [slot + 4 : 2] is events
     [slot + 6 : 2] is 0
   end
 
-  await (ready) is                     -- stores AND a syscall, in one method
+  await (ready) goes                   -- stores AND a syscall, in one method
     [slot + 0 : 4] is descriptor
     [slot + 4 : 2] is 1                -- POLLIN
     [slot + 6 : 2] is 0
@@ -54,17 +54,17 @@ watcher is
                  ready is ready)
   end
 
-  ready (value) is                     -- what the kernel wrote back
+  ready (value) goes                   -- what the kernel wrote back
     v is [slot + 6 : 2]
     value is v
   end
 
-  release is
+  release goes
     linux.close (descriptor is descriptor)
   end
 end
 
-program is
+program goes
   room is 64 bytes
   n is 0
   got is 0

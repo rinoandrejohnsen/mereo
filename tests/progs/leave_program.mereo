@@ -9,7 +9,7 @@ include "../../linux.mereo"
 --
 --   ./leave_program      ->  (nothing)   argc 1: leaves before reading
 --   ./leave_program x    ->  L           reads the first byte
-program (arguments) is
+program (arguments) goes
   argc is arguments.count
   buf is 8 bytes
   n is 0

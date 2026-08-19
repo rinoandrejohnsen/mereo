@@ -18,17 +18,17 @@ include "../../linux.mereo"
 owner is
   descriptor is 4 bytes as signed
 
-  acquire (path) is
+  acquire (path) goes
     linux.open (path is path, flags is 0, mode is 0, descriptor is descriptor)
     acquired when descriptor >= 3
   end
 
-  release is
+  release goes
     linux.close (descriptor is descriptor)
   end
 end
 
-program is
+program goes
   terminal is already linux.file (descriptor is 1)
 
   held is owner (path is "/dev/null")

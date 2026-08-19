@@ -27,7 +27,7 @@
 include "../linux.mereo"
 include "../core.mereo"
 
-program (arguments) is
+program (arguments) goes
   meta is 256 bytes
   line is 512 bytes
   kinds is constant "?pc?d?b?-?l?s"      -- d_type/kind -> the ls -l first column

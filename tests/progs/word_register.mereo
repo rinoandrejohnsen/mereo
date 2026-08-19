@@ -4,7 +4,7 @@ include "../../linux.mereo"
 -- same `[NAME + k : w]` a stack buffer takes, lowered to shift-and-mask. This
 -- program builds the same bytes both ways and asserts they agree, byte for byte
 -- and through every view -- so `in register` and `in stack` really do read alike.
-program is
+program goes
   mem is 8 bytes in stack
   reg is 8 bytes in register
 

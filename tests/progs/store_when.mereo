@@ -16,7 +16,7 @@ record is
   span is 2 bytes as big
 end
 
-program (arguments) is
+program (arguments) goes
   argc is arguments.count
   buf is 8 bytes
   view is buf as record

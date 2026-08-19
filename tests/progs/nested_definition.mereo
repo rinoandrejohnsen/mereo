@@ -29,12 +29,12 @@ grp is
     tag is 1 bytes
   end
 
-  go (value) is
+  go (value) goes
     value is 7
   end
 end
 
-program is
+program goes
   n is 0
 
   grp.go (value is n)

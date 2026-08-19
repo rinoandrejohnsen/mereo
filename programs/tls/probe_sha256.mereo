@@ -8,33 +8,33 @@ transform is
   descriptor is -1
   status is 0
 
-  acquire (domain, type, protocol) is
+  acquire (domain, type, protocol) goes
     linux.socket (domain is domain,
                   type is type,
                   protocol is protocol,
                   descriptor is descriptor)
   end
 
-  attach (address, length) is
+  attach (address, length) goes
     linux.bind (descriptor is descriptor,
                 address is address,
                 length is length,
                 result is status)
   end
 
-  reap (accepted) is
+  reap (accepted) goes
     linux.accept (descriptor is descriptor,
                   address is 0,
                   length is 0,
                   connection is accepted)
   end
 
-  release is
+  release goes
     linux.close (descriptor is descriptor)
   end
 end
 
-program is
+program goes
   digest is 32 bytes
   count is 0
   written is 0

@@ -2,7 +2,7 @@ include "markers.mereo"
 
 -- An explicit lexical block: `tmp` releases at the block's dedent, before the
 -- program-scope `keep`. Expect close(101) close(103).
-program is
+program goes
   keep is adopted mark_c (descriptor is 103)
   scope
     tmp is adopted mark_a (descriptor is 101)
