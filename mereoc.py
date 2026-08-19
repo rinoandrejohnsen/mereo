@@ -1595,7 +1595,15 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                         section["constraints"][port] = cons
                         section["constvals"][port] = int(val)
                         continue
-                    m = re.match(r"^ensure (\w+) (<=|>=|==|!=|<|>) (-?\w+)$", s)
+                    # The port may carry a READING: `ensure count as signed
+                    # >= 0`. A syscall returns a signed word -- negative is
+                    # -errno -- and that is a fact about the CALL, not about
+                    # wherever the caller decides to keep the result. Said here,
+                    # no binding can defeat it; without it, binding the result to
+                    # an unsigned field compiles `>= 0` into a comparison that is
+                    # always true, and a failed call goes unnoticed.
+                    m = re.match(r"^ensure (\w+)(?: as (signed|unsigned))? "
+                                 r"(<=|>=|==|!=|<|>) (-?\w+)$", s)
                     if m:
                         # The syscall's OWN contract -- what "it worked" means
                         # for this call, declared where the call is declared. A
@@ -1605,8 +1613,8 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                         if section["contract"] is not None:
                             fail(f"line {n}: '{name}' already declares a "
                                  "contract -- one `ensure` per assembly")
-                        section["contract"] = (m.group(1), m.group(2),
-                                               m.group(3), n)
+                        section["contract"] = (m.group(1), m.group(3),
+                                               m.group(4), n, m.group(2))
                         continue
                     m = re.match(r"^(\w+) (in|out) (\S+)$", s)
                     if not m:
@@ -1840,10 +1848,14 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     continue
                 if method["prim"] is None and not method["delegate"]:
                     fail(f"line {n}: `ensure` before the method's body")
-                m = re.match(r"^ensure (.+?) (<=|>=|==|!=|<|>) (.+)$", s)
+                m = re.match(r"^ensure (.+?)(?: as (signed|unsigned))? "
+                             r"(<=|>=|==|!=|<|>) (.+)$", s)
                 if m:
+                    # ...and a method's own `ensure` reads the same way a
+                    # primitive's contract does, so `ensure count as signed >= 0`
+                    # means one thing wherever it is written.
                     (curcall or method)["ensure"].append(
-                        (m.group(1), m.group(2), m.group(3), n))
+                        (m.group(1), m.group(3), m.group(4), n, m.group(2)))
                     continue
                 if s == "ensure":
                     method["block"] = (n, len(method["ensure"]))
@@ -2705,7 +2717,8 @@ def validate_method(defn, meth, check_params=True):
     if meth["ensure"] and meth["role"] == "release":
         fail(f"line {meth['ensure'][0][3]}: release may not carry "
              "`ensure` (a failed release cannot reroute)")
-    for lhs, _, rhs, ln in meth["ensure"]:
+    for _e in meth["ensure"]:
+        lhs, rhs, ln = _e[0], _e[2], _e[3]
         for tok, side in ((lhs, "left"), (rhs, "right")):
             if (tok not in meth["params"] and tok not in flat
                     and tok not in defn["bflat"] and not is_int(tok)):
@@ -4327,11 +4340,17 @@ def call_parts(meth, valmap):
         # No contract of its own -- inherit the syscall's. A method that writes
         # any `ensure` REPLACES it (it has taken responsibility), and a release
         # never gets one: a failed release cannot reroute.
-        port, cmp_, val, ln = prim["contract"]
+        port, cmp_, val, ln, reading = prim["contract"]
         if port in meth["bind"]:
-            ens = [(meth["bind"][port][0], cmp_, val, ln)]
-    clauses = [f"{valmap.get(l, l)} {c} {valmap.get(r, r)}"
-               for l, c, r, _ in ens]
+            ens = [(meth["bind"][port][0], cmp_, val, ln, reading)]
+    clauses = []
+    for e in ens:
+        l, c, r, _ = e[0], e[1], e[2], e[3]
+        lhs = valmap.get(l, l)
+        reading = e[4] if len(e) > 4 else None
+        if reading:                       # read the result as the call promises
+            lhs = f"({'long' if reading == 'signed' else 'unsigned long'})({lhs})"
+        clauses.append(f"{lhs} {c} {valmap.get(r, r)}")
     return prim, args, out, clauses
 
 

@@ -329,12 +329,12 @@ Two things found while doing it, worth their own entries if they bite again:
   the ARGUMENT array and returns 0, and the audit read the return value -- so
   both ends went untracked and a stray `close(0)` counted as releasing "it". A
   program leaking a whole pipe pair passed. Fixed; it now reads the array.
-- **An unsigned state field makes a syscall's `ensure` vacuous.** A field is
-  unsigned by default, so binding `read`'s result to `count is 8 bytes` compiles
-  `count >= 0` into a comparison that is always true, and a failed read is not
-  noticed. The library gets this right by convention (`as signed` everywhere it
-  matters) and nothing checks it. It is detectable: a primitive whose `ensure`
-  is `OUT >= 0` bound to an unsigned field is always-true by construction.
+- **An unsigned state field made a syscall's `ensure` vacuous** -- fixed. A
+  contract may now carry a reading, `ensure count as signed >= 0`, and all 35
+  syscalls that promise a non-negative result declare it. The signedness is a
+  fact about the call, so stating it there means no binding can defeat it; the
+  same spelling works in a method's own `ensure`. All 81 binaries came out
+  identical, the cast being free on the signed fields the library already used.
 
 The original entry follows.
 

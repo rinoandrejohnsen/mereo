@@ -45,7 +45,7 @@ linux contains
     buffer in rsi
     capacity in rdx
     clobbers rcx and r11 and memory
-    ensure count >= 0
+    ensure count as signed >= 0
   end
 
   write is assembly "syscall"
@@ -55,7 +55,7 @@ linux contains
     buffer in rsi
     count in rdx
     clobbers rcx and r11 and memory
-    ensure written >= 0
+    ensure written as signed >= 0
   end
 
   open is assembly "syscall"
@@ -65,7 +65,7 @@ linux contains
     flags in rsi
     mode in rdx
     clobbers rcx and r11 and memory
-    ensure descriptor >= 0
+    ensure descriptor as signed >= 0
   end
 
   close is assembly "syscall"
@@ -82,7 +82,7 @@ linux contains
     type in rsi
     protocol in rdx
     clobbers rcx and r11 and memory
-    ensure descriptor >= 0
+    ensure descriptor as signed >= 0
   end
 
   connect is assembly "syscall"
@@ -92,7 +92,7 @@ linux contains
     address in rsi
     length in rdx
     clobbers rcx and r11 and memory
-    ensure result >= 0
+    ensure result as signed >= 0
   end
 
   accept is assembly "syscall"
@@ -102,7 +102,7 @@ linux contains
     address in rsi
     length in rdx
     clobbers rcx and r11 and memory
-    ensure connection >= 0
+    ensure connection as signed >= 0
   end
 
   bind is assembly "syscall"
@@ -112,7 +112,7 @@ linux contains
     address in rsi
     length in rdx
     clobbers rcx and r11 and memory
-    ensure result >= 0
+    ensure result as signed >= 0
   end
 
   listen is assembly "syscall"
@@ -121,7 +121,7 @@ linux contains
     descriptor in rdi
     backlog in rsi
     clobbers rcx and r11 and memory
-    ensure result >= 0
+    ensure result as signed >= 0
   end
 
   -- setsockopt has five arguments: the fourth lands in r10, the fifth in r8.
@@ -134,7 +134,7 @@ linux contains
     value in r10
     length in r8
     clobbers rcx and r11 and memory
-    ensure result >= 0
+    ensure result as signed >= 0
   end
 
   sendmsg is assembly "syscall"
@@ -144,7 +144,7 @@ linux contains
     message in rsi
     flags in rdx
     clobbers rcx and r11 and memory
-    ensure sent >= 0
+    ensure sent as signed >= 0
   end
 
   recvmsg is assembly "syscall"
@@ -154,7 +154,7 @@ linux contains
     message in rsi
     flags in rdx
     clobbers rcx and r11 and memory
-    ensure received >= 0
+    ensure received as signed >= 0
   end
 
   getrandom is assembly "syscall"
@@ -164,7 +164,7 @@ linux contains
     length in rsi
     flags in rdx
     clobbers rcx and r11 and memory
-    ensure count >= 0
+    ensure count as signed >= 0
   end
 
   lseek is assembly "syscall"
@@ -174,7 +174,7 @@ linux contains
     offset in rsi
     whence in rdx
     clobbers rcx and r11 and memory
-    ensure position >= 0
+    ensure position as signed >= 0
   end
 
   ioctl is assembly "syscall"
@@ -184,7 +184,7 @@ linux contains
     request in rsi
     argument in rdx
     clobbers rcx and r11 and memory
-    ensure result >= 0
+    ensure result as signed >= 0
   end
 
   -- mmap has six arguments: the fourth/fifth/sixth land in r10/r8/r9.
@@ -198,7 +198,7 @@ linux contains
     descriptor in r8
     offset in r9
     clobbers rcx and r11 and memory
-    ensure address > 0
+    ensure address as signed > 0
   end
 
   munmap is assembly "syscall"
@@ -207,7 +207,7 @@ linux contains
     address in rdi
     length in rsi
     clobbers rcx and r11 and memory
-    ensure result >= 0
+    ensure result as signed >= 0
   end
 
   -- exit_group (231), not exit (60): terminate the whole process, not just the
@@ -226,7 +226,7 @@ linux contains
     pid in rdi
     signal in rsi
     clobbers rcx and r11 and memory
-    ensure result >= 0
+    ensure result as signed >= 0
   end
 
   fsync is assembly "syscall"
@@ -234,7 +234,7 @@ linux contains
     number is 74 in rax
     descriptor in rdi
     clobbers rcx and r11 and memory
-    ensure result >= 0
+    ensure result as signed >= 0
   end
 
   -- geteuid takes no arguments and cannot fail -- it just reports the caller's
@@ -285,7 +285,7 @@ linux contains
     flags in rdx
     mode in r10
     clobbers rcx and r11 and memory
-    ensure descriptor >= 0
+    ensure descriptor as signed >= 0
   end
 
   -- statx(base, path, flags, mask, buffer) -- the file metadata call, and the one
@@ -310,7 +310,7 @@ linux contains
     mask in r10
     buffer in r8
     clobbers rcx and r11 and memory
-    ensure result >= 0
+    ensure result as signed >= 0
   end
 
   -- getdents64(descriptor, buffer, capacity) -- read directory entries into a
@@ -344,7 +344,7 @@ linux contains
     buffer in rsi
     capacity in rdx
     clobbers rcx and r11 and memory
-    ensure count >= 0
+    ensure count as signed >= 0
   end
 
   -- unlinkat(base, path, flags) -- remove a name. flags is 0 for a file,
@@ -357,7 +357,7 @@ linux contains
     path in rsi
     flags in rdx
     clobbers rcx and r11 and memory
-    ensure result >= 0
+    ensure result as signed >= 0
   end
 
   mkdirat is assembly "syscall"
@@ -367,7 +367,7 @@ linux contains
     path in rsi
     mode in rdx
     clobbers rcx and r11 and memory
-    ensure result >= 0
+    ensure result as signed >= 0
   end
 
   -- renameat2(base, path, new_base, new_path, flags) -- five arguments, so the
@@ -382,7 +382,7 @@ linux contains
     new_path in r10
     flags in r8
     clobbers rcx and r11 and memory
-    ensure result >= 0
+    ensure result as signed >= 0
   end
 
   linkat is assembly "syscall"
@@ -394,7 +394,7 @@ linux contains
     new_path in r10
     flags in r8
     clobbers rcx and r11 and memory
-    ensure result >= 0
+    ensure result as signed >= 0
   end
 
   -- symlinkat(target, base, path) -- note the order: the TARGET comes first and
@@ -406,7 +406,7 @@ linux contains
     base in rsi
     path in rdx
     clobbers rcx and r11 and memory
-    ensure result >= 0
+    ensure result as signed >= 0
   end
 
   -- readlinkat -- symlinkat's other half. Writes the link text into BUFFER and
@@ -421,7 +421,7 @@ linux contains
     buffer in rdx
     capacity in r10
     clobbers rcx and r11 and memory
-    ensure count >= 0
+    ensure count as signed >= 0
   end
 
   fchmodat is assembly "syscall"
@@ -431,7 +431,7 @@ linux contains
     path in rsi
     mode in rdx
     clobbers rcx and r11 and memory
-    ensure result >= 0
+    ensure result as signed >= 0
   end
 
   -- faccessat2(base, path, mode, flags) -- the four-argument form, which is the
@@ -445,7 +445,7 @@ linux contains
     mode in rdx
     flags in r10
     clobbers rcx and r11 and memory
-    ensure result >= 0
+    ensure result as signed >= 0
   end
 
   chdir is assembly "syscall"
@@ -453,7 +453,7 @@ linux contains
     number is 80 in rax
     path in rdi
     clobbers rcx and r11 and memory
-    ensure result >= 0
+    ensure result as signed >= 0
   end
 
   -- ------------------------------------------------------------- time and waiting
@@ -471,7 +471,7 @@ linux contains
     clock in rdi
     buffer in rsi
     clobbers rcx and r11 and memory
-    ensure result >= 0
+    ensure result as signed >= 0
   end
 
   -- nanosleep(request, remain) -- both are `timespec` buffers. A signal cuts the
@@ -484,7 +484,7 @@ linux contains
     request in rdi
     remain in rsi
     clobbers rcx and r11 and memory
-    ensure result >= 0
+    ensure result as signed >= 0
   end
 
   -- ppoll(entries, count, timeout, mask, mask_size) -- five arguments. `entries`
@@ -504,7 +504,7 @@ linux contains
     mask in r10
     mask_size in r8
     clobbers rcx and r11 and memory
-    ensure ready >= 0
+    ensure ready as signed >= 0
   end
 
   -- --------------------------------------------------------------- descriptors
@@ -522,7 +522,7 @@ linux contains
     target in rsi
     flags in rdx
     clobbers rcx and r11 and memory
-    ensure result >= 0
+    ensure result as signed >= 0
   end
 
   -- pipe2(pair, flags) -- writes two descriptors into an 8-byte buffer: the READ
@@ -542,7 +542,7 @@ linux contains
     pair in rdi
     flags in rsi
     clobbers rcx and r11 and memory
-    ensure result >= 0
+    ensure result as signed >= 0
   end
 
   -- uname(buffer) -- six NUL-terminated strings in one 390-byte block, each field
@@ -557,7 +557,7 @@ linux contains
     number is 63 in rax
     buffer in rdi
     clobbers rcx and r11 and memory
-    ensure result >= 0
+    ensure result as signed >= 0
   end
 
   -- -------------------------------------------------------------------------- the resources

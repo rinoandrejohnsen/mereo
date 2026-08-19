@@ -550,6 +550,13 @@ close(3)              = 0</code></pre>
   <span class="t-inside">ensure</span> <span class="t-plain">argc</span> <span class="t-operator">&gt;=</span> <span class="t-number">2</span>
 <span class="t-structure">end</span></code></pre>
 <p>Run with no argument the check fails, the program releases whatever is live, writes a line naming the step, and exits non-zero. Run with one, it exits zero.</p>
+<p>A system call's result is <strong>signed</strong> — negative is <code>-errno</code> — and each primitive says so in its own contract:</p>
+<pre><code>  <span class="t-decl">read</span> <span class="t-structure">is</span> <span class="t-structure">assembly</span> <span class="t-string">"syscall"</span>
+    <span class="t-plain">count</span> <span class="t-inside">out</span> <span class="t-register">rax</span>
+    <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>
+    <span class="t-inside">ensure</span> <span class="t-plain">count</span> <span class="t-inside">as</span> <span class="t-inside">signed</span> <span class="t-operator">&gt;=</span> <span class="t-number">0</span>
+  <span class="t-structure">end</span></code></pre>
+<p>That reading belongs to the call, not to wherever the caller keeps the answer. Without it, binding the result to an unsigned field would compile <code>count &gt;= 0</code> into a comparison that is always true, and a failed read would go unnoticed. A method writing its own <code>ensure</code> may say the same thing the same way.</p>
 <p>Every fallible step carries its own <code>ensure</code> from the primitive underneath, so a call site does not test a result. <code>linux.file.write</code> requires that every byte moved; the raw <code>linux.write</code> requires a non-negative count. That check costs two instructions — a compare and a jump — and the record that names the failure sits in the cold region past the program's exit, so it costs nothing on the path that succeeds.</p>
 <h3>The record</h3>
 <p>A failure writes the program, the stage, the step and the value:</p>

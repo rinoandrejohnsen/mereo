@@ -112,6 +112,10 @@ bb view/over-field    view_over_field "" 0 "1 0 5 1 0 5"
 # each end out of the pair it holds. The in-instance buffer had no registration
 # as a backing, so the method could not address it.
 bb view/own-state     own_state_bytes "" 0 "76 111 114"
+# a syscall's contract carries its own READING, so binding the result to an
+# unsigned field cannot turn `>= 0` into an always-true comparison. The field
+# here is unsigned on purpose and the read fails with EISDIR.
+bb view/unsigned-contract unsigned_contract "" 1 ""
 bb view/flag-template view_flagtpl "" 0 "B"   # ... at bit grain: mask/shift RMW
 bb word/in-register   word_register "" 0 "H"  # `N bytes in register`: every
                                               # slice agrees with `in stack`

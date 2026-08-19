@@ -1,0 +1,46 @@
+include "../../linux.mereo"
+
+-- A syscall's result is SIGNED -- negative is -errno -- and that is a fact
+-- about the call, not about wherever the caller keeps the answer. Each
+-- primitive says so in its own contract (`ensure count as signed >= 0`), so no
+-- binding can defeat it.
+--
+-- `count` here is deliberately left UNSIGNED, which is a field's default. Before
+-- the contract carried its reading, `count >= 0` compiled to a comparison that
+-- is always true for an unsigned word: a failed read was not noticed, and the
+-- program carried on with -EISDIR as a length. The cast in the emitted guard is
+-- what stops that.
+--
+-- Reading a DIRECTORY fails with EISDIR (-21) every time, so this needs no
+-- fault injection to reach the failure.
+--
+--   prints (stderr):  unsigned_contract: 2: load doc: -21
+--   exits:            1
+
+header is
+  descriptor is 4 bytes as signed
+  block is 64 bytes
+  count is 8 bytes                 -- unsigned, on purpose
+
+  acquire (path) is
+    linux.open (path is path, flags is 0, mode is 0, descriptor is descriptor)
+  end
+
+  load (capacity) is
+    linux.read (descriptor is descriptor,
+                buffer is block,
+                capacity is capacity,
+                count is count)
+  end
+
+  release is
+    linux.close (descriptor is descriptor)
+  end
+end
+
+program is
+  doc is header (path is "docs")    -- a directory: the read cannot succeed
+
+  doc.load (capacity is 16)
+
+end

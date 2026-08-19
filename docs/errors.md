@@ -18,6 +18,22 @@ end
 Run with no argument the check fails, the program releases whatever is live,
 writes a line naming the step, and exits non-zero. Run with one, it exits zero.
 
+A system call's result is **signed** — negative is `-errno` — and each primitive
+says so in its own contract:
+
+```
+  read is assembly "syscall"
+    count out rax
+    ...
+    ensure count as signed >= 0
+  end
+```
+
+That reading belongs to the call, not to wherever the caller keeps the answer.
+Without it, binding the result to an unsigned field would compile `count >= 0`
+into a comparison that is always true, and a failed read would go unnoticed. A
+method writing its own `ensure` may say the same thing the same way.
+
 Every fallible step carries its own `ensure` from the primitive underneath, so a
 call site does not test a result. `linux.file.write` requires that every byte
 moved; the raw `linux.write` requires a non-negative count. That check costs two
