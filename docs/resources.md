@@ -216,8 +216,11 @@ does not test for `EINTR` — there is none to see.
 
 The restrictions are the price of the guarantee, and they are real:
 
-- ownership cannot be transferred conditionally, which is what a drop flag
-  would otherwise have to record;
-- a resource cannot be handed to a template as a value, which is why
-  `linux.files` takes a path rather than a directory to work relative to;
+- a resource is released at the end of the scope that acquired it, and that
+  point is fixed when the program is compiled — so ownership cannot be
+  transferred conditionally, which is what a drop flag would otherwise record;
 - a resource cannot be stored in a data structure.
+
+A resource may be handed to a template, which reaches its methods and its state
+like any other receiver — the splice puts the work where the instance already
+is, so nothing is transferred.

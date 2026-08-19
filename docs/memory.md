@@ -206,8 +206,9 @@ An absent byte answers with the region's `length` rather than a sentinel. C++
 needs `npos` because `size_t` has no spare value; the offset one past the end is
 the length, and it is the offset a caller would resume from anyway.
 
-Every `builder` method checks that the write fits before it writes. The 39
-hand-written copy-and-advance pairs it replaced in the corpus checked nothing.
+Every `builder` method checks that the write fits before it writes, which is
+what the type buys over a pointer and a length carried separately: the check has
+one place to live rather than one per call site.
 
 ## Containers
 

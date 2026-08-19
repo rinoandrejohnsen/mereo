@@ -48,15 +48,15 @@ gates run on every test pass:
 | generated machine code | hand-written freestanding C — 9 paired cases |
 | syntax highlighting | the editor's own highlighting library |
 
-Two of those exist because a claim turned out to be false. The highlighting gate
-was added after a stale definition survived three grammar changes unnoticed. The
-release-order comparison uses C++ because that is the behaviour being claimed,
-not a reimplementation of it.
+The release-order comparison uses C++ because that is the behaviour being
+claimed, not a reimplementation of it. The highlighting gate exists because a
+highlighter fails quietly: an unknown construct is still printed, merely
+unstyled, so nothing about a stale definition is visible without a check.
 
-A further habit applies to the gates themselves: a new gate is accompanied by a
-deliberately planted violation to prove it fails. Two gates have passed
-*vacuously* in the project's history — matching nothing, and therefore accepting
-everything — which is why this is a rule rather than a preference.
+A rule applies to the gates themselves: every gate ships with a deliberately
+planted violation, run to prove the gate fails on it. A gate that matches
+nothing accepts everything, and the difference is invisible from a passing
+run.
 
 ## Byte-identical verification
 

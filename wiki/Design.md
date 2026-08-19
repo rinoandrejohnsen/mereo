@@ -51,8 +51,8 @@ release_server:
 Every exit enters that ladder — reaching `end`, a `leave`, a failed check, or an
 interrupt. A generated program holding several descriptors contains no boolean
 guard of any kind. The cost of the guarantee is the restriction that buys it:
-ownership cannot be transferred conditionally, a resource cannot be handed to a
-template as a value, and none can be stored in a data structure.
+ownership cannot be transferred conditionally, and a resource cannot be stored
+in a data structure.
 
 ## Failure is derived from what failed
 
