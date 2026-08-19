@@ -626,6 +626,39 @@ name, because it marks the program's end rather than a syscall's symbol, and
 **Two things deliberately not done**, per the decision: no `using`, and no
 aliases. Qualification stays mandatory.
 
+### Verified against C++
+
+`tests/namespaces/` is `cases.mereo` and `cases.cpp`: the same nine questions
+asked of each language, in two programs that must print the same nine numbers.
+`./test.sh` runs the pair as Suite 4. They agree on `7 18 68 5 1 1 100 1 1000`.
+
+The nine: a top-level name reachable although a namespace declares that name
+too; a namespace member of the same name being a DIFFERENT type; nesting; a
+sibling namespace; outward lookup from an inner namespace to the outer one's
+member, unqualified; shadowing, where the inner declaration wins; reopening;
+qualified access at every depth; unqualified access from within.
+
+Each answer is chosen so a wrong resolution gives a different number -- the four
+`rec`s differ in width and byte order, the templates add 1, 100 and 1000 -- so
+agreement by luck is not available. Checked by planting two wrong resolutions
+and watching the comparison catch both.
+
+**Two divergences it found**, neither visible from the mereo side alone:
+
+- a **top-level name was permanently shadowed** by any namespace member of the
+  same name. `OF_NAMESPACE` was keyed by bare name and the top level was
+  recorded nowhere, so `rec` at the left margin became unreachable the moment
+  any namespace declared a `rec`. Lookup is innermost-first now and walks
+  outward to the top level, which is a scope like any other -- and that is what
+  makes shadowing work rather than merely not crash.
+- **reopening required a definition** in the reopened block, so
+  `namespace alpha { void late(); }` had no equivalent. Reopening is by NAME
+  now, as in C++.
+
+Not compared, because mereo does not have them and says so: `using`, namespace
+aliases, anonymous namespaces (one flat program, no linkage to hide), and
+argument-dependent lookup (no overloading to resolve).
+
 ### Still open, found on the way
 
 - A member calling a **sibling** — **DONE**. Two things stood in the way. The
