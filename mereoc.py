@@ -695,19 +695,14 @@ def _declares_only(lines, i, open_indent):
     return kids > 0 and defs > 0
 
 
-def _namespace_fold(src):
-    """Take the `namespace NAME is ... end` blocks out of the line stream, and
-    say which namespace each surviving line belongs to.
+def _fold_once(src, owner):
+    """Fold the OUTERMOST namespaces out of the line stream. -> (source, folded?)
 
-    A namespace is a scope over NAMES; it has no runtime shape at all. So it is
-    folded away here -- header and `end` blanked, body dedented by one level --
-    and everything after this point sees the declarations exactly where it has
-    always seen them, at column zero. The alternative was to shift all of the
-    parser's indentation arithmetic by two whenever a namespace was open, for a
-    construct that emits nothing.
-
-    -> (source, {line number -> namespace})"""
-    lines, out, owner, ns = src.splitlines(), [], {}, None
+    A line that was inside one is dedented by two and recorded against it. Lines
+    are BLANKED rather than removed, so numbers are stable -- which is what lets
+    this run again on its own output and compose the paths."""
+    lines, out, ns = src.splitlines(), [], None
+    folded = False
     for i, raw in enumerate(lines):
         code = _uncomment(raw)
         s = code.strip()
@@ -717,25 +712,17 @@ def _namespace_fold(src):
                  f"is an `is` block whose children DECLARE, so write "
                  f"`{m.group(1)} is`. One keyword asks one question of every "
                  "block: does its body run? `is` declares, `goes` runs.")
-        if (m is None and ns is None and _indent(code) == 0
-                and _DEF_OPEN.fullmatch(s) and "extends" not in s
-                and _declares_only(lines, i, 0)):
-            m = re.fullmatch(r"^(\w+) is$", s)      # a namespace, in the new spelling
-        if m and ns is not None:
-            # at ANY indent: a namespace opened inside one is a mistake worth
-            # naming, and an indented one used to fall through to
-            # "unrecognized top-level line", which explains nothing
-            fail(f"line {len(out) + 1}: `{m.group(1)} contains` inside "
-                 f"namespace '{ns}' -- namespaces do not nest")
-        if m and _indent(code) != 0:
-            fail(f"line {len(out) + 1}: `{m.group(1)} contains` is indented -- "
-                 "a namespace is declared at the left margin")
-        if m:
-            if ns is not None:
-                fail(f"line {len(out) + 1}: `{m.group(1)} contains` inside "
-                     f"namespace '{ns}' -- namespaces do not nest")
-            ns, _ = m.group(1), NAMESPACES.setdefault(m.group(1), set())
+        if (ns is None and _indent(code) == 0 and "extends" not in s
+                and _DEF_OPEN.fullmatch(s) and _declares_only(lines, i, 0)):
+            # a namespace, opening at this pass's outermost level. Its own path
+            # is whatever enclosed it, which an earlier pass already recorded
+            # against this very line -- numbers do not move.
+            here = len(out) + 1
+            parent = owner.get(here)
+            ns = f"{parent}.{s[:-3]}" if parent else s[:-3]
+            NAMESPACES.setdefault(ns, set())
             out.append("")
+            folded = True
             continue
         if ns is not None and s == "end" and _indent(code) == 0:
             ns = None
@@ -750,7 +737,32 @@ def _namespace_fold(src):
                 owner[len(out)] = ns
     if ns is not None:
         fail(f"line {len(out)}: namespace '{ns}' is never closed")
-    return "\n".join(out), owner
+    return "\n".join(out), folded
+
+
+def _namespace_fold(src):
+    """Take the namespace blocks out of the line stream, and say which namespace
+    each surviving line belongs to.
+
+    A namespace is a scope over NAMES; it has no runtime shape at all. So it is
+    folded away here -- header and `end` blanked, body dedented by one level --
+    and everything after this point sees the declarations exactly where it has
+    always seen them, at column zero. The alternative was to shift all of the
+    parser's indentation arithmetic by two whenever a namespace was open, for a
+    construct that emits nothing.
+
+    NESTED namespaces need no more machinery than running that again: after one
+    pass an inner namespace sits at the left margin, and because folding blanks
+    lines instead of removing them, its header is still the same line number the
+    outer pass recorded a parent against. So each pass composes one more segment
+    of the path, and `alpha.beta.rec` falls out of the same rule applied twice.
+
+    -> (source, {line number -> namespace path})"""
+    owner = {}
+    while True:
+        src, folded = _fold_once(src, owner)
+        if not folded:
+            return src, owner
 
 
 def _paren_fold(src):
@@ -1308,9 +1320,10 @@ def bare(ref, ns):
         if head in NAMESPACES:
             return f"{head}.{tail}" if tail in NAMESPACES[head] else None
         return ref
-    if OF_NAMESPACE.get(ref, ns) != ns:
+    owner = OF_NAMESPACE.get(ref)
+    if owner is not None and not within(ns, owner):
         return None
-    return qualified(ref, ns)
+    return qualified(ref, owner)
 
 
 def not_a_receiver(ref, ln, what="name"):
@@ -1320,6 +1333,16 @@ def not_a_receiver(ref, ln, what="name"):
     if ref in NAMESPACES:
         fail(f"line {ln}: '{ref}' is a namespace, not an instance -- "
              f"and it has no {what} by that name")
+
+
+def within(ns, owner):
+    """Is namespace `ns` inside `owner`?
+
+    A member of an ENCLOSING namespace is in scope without qualification, which
+    is what makes nesting worth having: `alpha.beta` reaches `alpha`'s own
+    members by their bare names, as it does in C++. Paths make the test a prefix
+    check, so no chain has to be walked."""
+    return ns is not None and (ns == owner or ns.startswith(owner + "."))
 
 
 def receiver(ref, slots, ns, ln):
@@ -1354,7 +1377,7 @@ def deref(ref, ns, ln, what="name"):
             return f"{head}.{tail}"
         return ref                      # not a namespace -- an instance's member
     owner = OF_NAMESPACE.get(ref)
-    if owner is not None and owner != ns:
+    if owner is not None and not within(ns, owner):
         fail(f"line {ln}: '{ref}' is declared in namespace '{owner}' -- "
              f"write `{owner}.{ref}`")
     return qualified(ref, owner)
@@ -1652,6 +1675,12 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                 # and the name is one namespace: `add with ... is` and `add is`
                 # are the same name declared twice.
                 name = name_ok(m.group(1), n, "template")
+                # register the BARE name against its namespace before qualifying
+                # -- `in_namespace` records what a member is called, not where it
+                # ends up keyed. Qualifying first put `alpha.tally` in as the
+                # member name, so a bare `tally` inside `alpha` resolved to
+                # nothing and only the fully-written form worked.
+                in_namespace(name, ns_of_line.get(n))
                 name = qualified(name, ns_of_line.get(n))
                 if name in definitions:
                     fail(f"line {n}: definition '{name}' redefined")
@@ -1665,7 +1694,6 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                 # (procedure_call, inline_procedure, the splice) sees exactly what
                 # a group of one would produce, so a lone template is not a second
                 # kind of thing -- only a shorter way to write the one kind.
-                in_namespace(name, ns_of_line.get(n))
                 section = definitions[name] = {
                     "name": name, "state": {}, "parts": {}, "methods": {},
                     "packed": [], "bitdecl": [], "bases": [], "free": True,

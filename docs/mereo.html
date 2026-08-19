@@ -179,10 +179,23 @@ release_server:
 <pre><code>  <span class="t-inside">ensure</span> <span class="t-plain">argc</span> <span class="t-operator">&gt;=</span> <span class="t-number">2</span>
   <span class="t-structure">leave</span> <span class="t-decl">scan</span> <span class="t-inside">when</span> <span class="t-plain">c</span> <span class="t-operator">==</span> <span class="t-number">32</span></code></pre>
 <h3>Namespaces</h3>
-<p>A namespace has no keyword of its own: it is an <code>is</code> block whose children <strong>declare</strong>, and nothing else distinguishes it. The system-call library places everything under <code>linux</code>; the computation library deliberately uses none, so its groups are reached bare:</p>
+<p>A namespace has no keyword of its own: it is an <code>is</code> block that holds a <strong>definition</strong>. Templates alone do not make one — a group is exactly a block of templates — and a <em>field</em> makes it neither, since a namespace has members rather than bytes. The system-call library places everything under <code>linux</code>; the computation library deliberately uses none, so its groups are reached bare:</p>
 <pre><code>  <span class="t-namespace">linux</span><span class="t-operator">.</span><span class="t-member">files</span><span class="t-operator">.</span><span class="t-call">remove</span> <span class="t-operator">(</span><span class="t-label">name</span> <span class="t-bind">is</span> <span class="t-string">"scratch"</span><span class="t-operator">,</span> <span class="t-label">flags</span> <span class="t-bind">is</span> <span class="t-number">0</span><span class="t-operator">)</span>
   <span class="t-namespace">text</span><span class="t-operator">.</span><span class="t-call">find</span> <span class="t-operator">(</span><span class="t-label">data</span> <span class="t-bind">is</span> <span class="t-plain">block</span><span class="t-operator">,</span> <span class="t-label">length</span> <span class="t-bind">is</span> <span class="t-plain">count</span><span class="t-operator">,</span> <span class="t-label">byte</span> <span class="t-bind">is</span> <span class="t-number">10</span><span class="t-operator">,</span> <span class="t-label">offset</span> <span class="t-bind">is</span> <span class="t-plain">at</span><span class="t-operator">)</span></code></pre>
 <p>A name inside one is qualified from outside and bare from within, and the same name in two namespaces is <strong>two things</strong> — declarations are keyed by their full path, so <code>alpha.rec</code> and <code>beta.rec</code> never meet.</p>
+<p>Namespaces nest, and a nested one reaches its enclosing namespace's members by their bare names:</p>
+<pre><code><span class="t-decl">alpha</span> <span class="t-structure">is</span>
+  <span class="t-call">tally</span> <span class="t-operator">(</span><span class="t-plain">value</span><span class="t-operator">)</span> <span class="t-structure">goes</span>
+    <span class="t-plain">value</span> <span class="t-bind">is</span> <span class="t-plain">value</span> <span class="t-operator">+</span> <span class="t-number">1</span>
+  <span class="t-structure">end</span>
+
+  <span class="t-decl">beta</span> <span class="t-structure">is</span>
+    <span class="t-call">reach</span> <span class="t-operator">(</span><span class="t-plain">value</span><span class="t-operator">)</span> <span class="t-structure">goes</span>
+      <span class="t-call">tally</span> <span class="t-operator">(</span><span class="t-label">value</span> <span class="t-bind">is</span> <span class="t-plain">value</span><span class="t-operator">)</span>     <span class="t-comment">-- `alpha`'s, unqualified</span>
+    <span class="t-structure">end</span>
+  <span class="t-structure">end</span>
+<span class="t-structure">end</span></code></pre>
+<p>reached from outside as <code>alpha.beta.reach (...)</code>.</p>
 <h3>Reserved words</h3>
 <p>The reserved words fall into a few groups: block openers and closers (<code>is</code>, <code>goes</code>, <code>end</code>, <code>scope</code>, <code>program</code>), the two jumps (<code>leave</code>, <code>repeat</code>), declarations (<code>bytes</code>, <code>constant</code>, <code>already</code>, <code>adopted</code>, <code>extends</code>, <code>helper</code>, <code>assembly</code>, <code>pure</code>, <code>final</code>), checks and repair (<code>ensure</code>, <code>fails</code>, <code>failures</code>, <code>or</code>, <code>continue</code>, <code>when</code>, <code>likely</code>, <code>branchless</code>), and the words that describe memory and machine detail (<code>as</code>, <code>in</code>, <code>out</code>, <code>to</code>, <code>high</code>, <code>low</code>, <code>whole</code>, <code>atomic</code>, <code>volatile</code>, <code>fence</code>, <code>clobbers</code>, <code>register</code>).</p>
 </section>

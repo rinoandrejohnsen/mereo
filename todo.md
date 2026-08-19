@@ -661,9 +661,19 @@ aliases. Qualification stays mandatory.
   body-detector gaps closed earlier: the detector knows stores, assignments,
   loops and blocks, but not a call. It surfaces as ``ensure` before the method's
   body`, naming the wrong thing.
-- **Nesting is one level deep.** A namespace inside a namespace is still
-  refused. The canonical-path keying would support it; the fold that recognises
-  a namespace does not recurse.
+- **Nesting** — **DONE**. It needed no machinery beyond running the fold again:
+  after a pass an inner namespace sits at the left margin, and because folding
+  BLANKS lines rather than removing them, its header is still the line number
+  the outer pass recorded a parent against — so each pass composes one more
+  segment and `alpha.beta.rec` falls out of the same rule applied twice. A
+  nested namespace reaches its enclosing one's members by bare name, which is a
+  prefix test on the path rather than a chain walk.
+
+  Found while doing it: the path-keying commit registered a free template's
+  ALREADY-QUALIFIED name as its member name, so `alpha.tally` went in where
+  `tally` belonged. Only the fully-written form worked, and `namespace_template`
+  passed anyway because a later fallback matched on the definitions key. Fixed;
+  `tests/progs/namespace_nested` is what caught it.
 - `leave NAME` where NAME denotes something real — **DONE**. It answered *not a
   scope this sits inside* and then explained ancestors at length: all true, and
   none of it about the mistake. Four kinds of name get their own sentence now —

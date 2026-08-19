@@ -136,6 +136,13 @@ bb view/sibling-call  sibling_call "" 0 "7 1"
 # lone template ever ran. What decides a namespace is that it holds a DEFINITION
 # -- templates alone would make `text is` a namespace and scatter its methods.
 bb view/namespace-template namespace_template "" 0 "5 1"
+# NESTED namespaces, which were refused outright. Folding blanks lines rather
+# than removing them, so numbers survive and the same pass can run again on its
+# own output, composing one more path segment each time. Checks two levels, a
+# member of the outer namespace beside the inner one, the same name in two
+# sibling namespaces (different shapes, so a collision could not pass), and a
+# bare name resolving OUTWARD from the inner namespace to the outer one.
+bb view/namespace-nested namespace_nested "" 0 "7 18 1 2"
 # a SINGLE-CALL method reading its own state bytes. `acquire`/`release` resolve
 # arguments by name, so a resource could hand out a descriptor it held in its
 # own buffer but not close it -- which is why `duct`, a resource owning a whole

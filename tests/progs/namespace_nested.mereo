@@ -1,0 +1,84 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- NESTED namespaces, which used to be refused outright: *namespaces do not
+-- nest*.
+--
+-- The fold that removes a namespace from the line stream blanks its header and
+-- `end` and dedents the body, so everything downstream sees declarations where
+-- it always has, at column zero. Running it once handled one level.
+--
+-- Nesting needs no more machinery than running it AGAIN. After a pass the inner
+-- namespace sits at the left margin, and because folding blanks lines rather
+-- than removing them, its header is still the same line number the outer pass
+-- recorded a parent against -- so each pass composes one more segment of the
+-- path, and `alpha.beta.rec` falls out of the same rule applied twice.
+--
+-- What this checks:
+--
+--   * two levels, reached as `alpha.beta.rec`;
+--   * a member of the OUTER namespace beside the inner one (`alpha.tally`),
+--     so the fold is not simply flattening everything into one bag;
+--   * the same name in two SIBLING namespaces, `alpha.beta.rec` and
+--     `alpha.gamma.rec`, deliberately different shapes -- one byte host-order
+--     against two bytes network-order -- so a collision could not pass
+--     unnoticed. This is the separation rule holding one level further down;
+--   * a template inside the inner namespace, called through the whole path;
+--   * a bare name resolving OUTWARD, from `beta` to `alpha`'s own template.
+--
+--   prints:  7 18 1 2
+
+alpha is
+  tally (value) goes                 -- a member of the outer namespace
+    value is value + 1
+  end
+
+  beta is
+    rec is
+      tag is 1 bytes
+    end
+
+    reach (value) goes               -- ...calls `alpha`'s template by bare name
+      tally (value is value)
+    end
+  end
+
+  gamma is
+    rec is                           -- the same name, a different shape
+      tag is 2 bytes as big
+    end
+  end
+end
+
+program goes
+  a is 8 bytes
+  b is 8 bytes
+  room is 64 bytes
+  n is 0
+  m is 1
+
+  page is already builder (data is room, count is 0, limit is 64)
+
+  x is a as alpha.beta.rec
+  y is b as alpha.gamma.rec
+
+  x.tag is 7
+  y.tag is 4660                      -- 0x1234, most-significant byte first
+
+  alpha.tally (value is n)           -- the outer member
+  alpha.beta.reach (value is m)      -- the inner one, reaching outward
+
+  page.number (value is x.tag)
+  page.byte (value is 32)
+  page.number (value is [b + 0 : 1]) -- 0x12 = 18, so gamma.rec really is big
+  page.byte (value is 32)
+  page.number (value is n)
+  page.byte (value is 32)
+  page.number (value is m)
+  page.byte (value is 10)
+
+  screen is already linux.file (descriptor is 1)
+
+  screen.write (buffer is page.data, count is page.count)
+
+end

@@ -82,10 +82,11 @@ Conditions are written in operators, never in words — `==`, `!=`, `<`, `>=`,
 
 ## Namespaces
 
-A namespace has no keyword of its own: it is an `is` block whose children
-**declare**, and nothing else distinguishes it. The system-call library places
-everything under `linux`; the computation library deliberately uses none, so its
-groups are reached bare:
+A namespace has no keyword of its own: it is an `is` block that holds a
+**definition**. Templates alone do not make one — a group is exactly a block of
+templates — and a *field* makes it neither, since a namespace has members rather
+than bytes. The system-call library places everything under `linux`; the
+computation library deliberately uses none, so its groups are reached bare:
 
 ```
   linux.files.remove (name is "scratch", flags is 0)
@@ -95,6 +96,25 @@ groups are reached bare:
 A name inside one is qualified from outside and bare from within, and the same
 name in two namespaces is **two things** — declarations are keyed by their full
 path, so `alpha.rec` and `beta.rec` never meet.
+
+Namespaces nest, and a nested one reaches its enclosing namespace's members by
+their bare names:
+
+```
+alpha is
+  tally (value) goes
+    value is value + 1
+  end
+
+  beta is
+    reach (value) goes
+      tally (value is value)     -- `alpha`'s, unqualified
+    end
+  end
+end
+```
+
+reached from outside as `alpha.beta.reach (...)`.
 
 ## Reserved words
 
