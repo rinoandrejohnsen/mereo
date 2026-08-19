@@ -375,6 +375,13 @@ release_server:
 <span class="t-structure">end</span></code></pre>
 <p>Inside the template, a field is reached by its bare name — <code>tag is a</code> writes the instance's <code>tag</code>, not a local. Nothing is passed in to say which instance: the template is spliced at the use site, so <code>h.fill (...)</code> becomes stores into <code>buf</code>.</p>
 <p>This is how <code>span</code> and <code>builder</code> in <a href="#library">the standard library</a> are built. They are layouts of two or three fields carrying the operations that go with them, which is why <code>rest.find (...)</code> costs no more than the loads it performs.</p>
+<p>A field wider than a register is a <strong>run of bytes</strong> rather than a number, so it answers with its <strong>address</strong> — there is no load of that width. That is how a record holding text describes itself:</p>
+<pre><code><span class="t-decl">utsname</span> <span class="t-structure">is</span>
+  <span class="t-plain">sysname</span> <span class="t-bind">is</span> <span class="t-number">65</span> <span class="t-inside">bytes</span>
+  <span class="t-plain">nodename</span> <span class="t-bind">is</span> <span class="t-number">65</span> <span class="t-inside">bytes</span>
+  <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>
+<span class="t-structure">end</span></code></pre>
+<p><code>host.nodename</code> is where that string starts, ready for a span or the byte layer. Assigning a number to one is refused, since there is no store of that width either.</p>
 <p>A <strong>flag view</strong> names the individual bits of a word, which is what a mode or a set of options is:</p>
 <pre><code><span class="t-decl">local_mode</span> <span class="t-structure">is</span>
   <span class="t-plain">echo</span> <span class="t-bind">is</span> <span class="t-inside">bit</span> <span class="t-number">3</span>

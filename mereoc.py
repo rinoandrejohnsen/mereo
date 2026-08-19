@@ -2906,13 +2906,12 @@ def elaborate_classes(definitions):
             off, playout, arrays = 0, {}, set()
             for fname, width, signed, big, fl in defn["packed"]:
                 if width not in (1, 2, 4, 8):
-                    # a RESOURCE (byte fields + methods) may hold one field wider
-                    # than a register -- an in-instance buffer (a fixed backup /
-                    # scratch), addressed like a buffer. A plain layout stays
-                    # 1/2/4/8-addressable (it IS the addressable block).
-                    if not is_resource(defn):
-                        fail(f"line {fl}: field '{fname}' width must be 1/2/4/8 "
-                             "bytes")
+                    # A field wider than a register is a RUN of bytes rather than
+                    # a number, so it answers with its ADDRESS. In a resource
+                    # that is an in-instance buffer (a fixed backup or scratch);
+                    # in a layout view it is a run of text inside the record --
+                    # `uname` hands back six 65-byte strings in one block, and
+                    # the alternative was writing all six offsets in a comment.
                     arrays.add(fname)
                 if fname in playout:
                     fail(f"line {fl}: field '{fname}' redefined")
@@ -3822,6 +3821,10 @@ def layout_field_c(actual, buffers, ln):
                 off, width, signed, big)
     base = buffers[inst].get("addr", f"(long){inst}")   # a lens -> its backing
     addr = f"({base} + {off})"
+    if width not in (1, 2, 4, 8):
+        # a RUN of bytes: there is no load of that width, and the useful answer
+        # is where it starts -- hand back the address, as a buffer's name does.
+        return (addr, off, width, signed, big)
     cexpr = load_c(addr, width, signed, big, ln)        # the field's baked view
     return (cexpr, off, width, signed, big)
 
@@ -5154,6 +5157,12 @@ def plan(definitions, slots, steps, overrides):
                          f"`{st['inst']}.{st['field']}`")
                 fail(f"line {st['line']}: '{st['inst']}' is not a layout instance")
             _, off, width, _sg, big = sf
+            if width not in (1, 2, 4, 8):
+                fail(f"line {st['line']}: '{st['inst']}.{st['field']}' is a run "
+                     f"of {width} bytes, not a number -- there is no store of "
+                     "that width. It answers with its ADDRESS, so fill it with "
+                     f"`text.copy (target is {st['inst']}.{st['field']}, ...)` "
+                     "or name it with a span.")
             val = resolve_value(st["value"], scalars, buffers, st["line"])
             rl = buffers[st["inst"]].get("reglens")
             if rl:                             # a slice of a register word: the

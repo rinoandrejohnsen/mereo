@@ -141,6 +141,22 @@ built. They are layouts of two or three fields carrying the operations that go
 with them, which is why `rest.find (...)` costs no more than the loads it
 performs.
 
+A field wider than a register is a **run of bytes** rather than a number, so it
+answers with its **address** — there is no load of that width. That is how a
+record holding text describes itself:
+
+```ada
+utsname is
+  sysname is 65 bytes
+  nodename is 65 bytes
+  ...
+end
+```
+
+`host.nodename` is where that string starts, ready for a span or the byte
+layer. Assigning a number to one is refused, since there is no store of
+that width either.
+
 A **flag view** names the individual bits of a word, which is what a mode or a
 set of options is:
 

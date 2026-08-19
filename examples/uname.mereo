@@ -1,0 +1,37 @@
+include "../linux.mereo"
+include "../core.mereo"
+
+-- uname -- what the kernel calls this machine.
+--
+-- The point is `linux.utsname`: uname answers with six NUL-terminated strings
+-- packed into one 390-byte block, and each field of that view is a RUN of text
+-- rather than a number, so it answers with its ADDRESS. A `span` takes it from
+-- there. Before, the six offsets lived in a comment and every caller wrote
+-- `buffer + 260` by hand.
+--
+--   ./uname   ->  Linux x86_64
+
+program is
+  block is 400 bytes
+  room is 512 bytes
+  result is 0
+
+  page is already builder (data is room, count is 0, limit is 512)
+
+  linux.identity.machine (buffer is block, result is result)
+
+  host is block as linux.utsname
+
+  sys is already span (data is host.sysname, length is 65)
+  sys.until (byte is 0)
+  page.add (source is sys.data, length is sys.length)
+  page.byte (value is 32)
+
+  arch is already span (data is host.machine, length is 65)
+  arch.until (byte is 0)
+  page.add (source is arch.data, length is arch.length)
+  page.byte (value is 10)
+
+  terminal is already linux.file (descriptor is 1)
+  terminal.write (buffer is page.data, count is page.count)
+end

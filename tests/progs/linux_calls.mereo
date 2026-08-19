@@ -176,9 +176,14 @@ program is
   -- ---- uname, getuid, getpid
   linux.identity.machine (buffer is utsname)
 
-  sysname is already span (data is utsname, length is 65)
-  sysname.until (byte is 0)            -- utsname's first field, up to its NUL
+  host is utsname as linux.utsname     -- the six strings, each named
+  sysname is already span (data is host.sysname, length is 65)
+  sysname.until (byte is 0)
   ensure sysname.length > 0            -- sysname is a non-empty string
+
+  arch is already span (data is host.machine, length is 65)
+  arch.until (byte is 0)
+  ensure arch.length > 0               -- ...and so is machine, at offset 260
 
   linux.identity.real (uid is uid)
   linux.identity.user (euid is euid)

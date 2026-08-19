@@ -545,13 +545,8 @@ linux contains
     ensure result as signed >= 0
   end
 
-  -- uname(buffer) -- six NUL-terminated strings in one 390-byte block, each field
-  -- 65 bytes: sysname 0, nodename 65, release 130, version 195, machine 260,
-  -- domainname 325.
-  --
-  -- Those offsets are written here rather than in a layout view because a layout
-  -- view's fields are 1/2/4/8 bytes -- they name a NUMBER at an offset, and each
-  -- of these is a run of TEXT. Read them with `measure text` over `buffer + 65`.
+  -- uname(buffer) -- six NUL-terminated strings in one 390-byte block, each
+  -- field 65 bytes. `utsname` below names them, so no caller writes the offsets.
   uname is assembly "syscall"
     result out rax
     number is 63 in rax
@@ -1118,6 +1113,18 @@ linux contains
     revents is 2 bytes
   end
 
+  -- What `uname` fills: six NUL-terminated strings, 65 bytes each, in one
+  -- 390-byte block. Each field is a RUN of text rather than a number, so it
+  -- answers with its ADDRESS -- hand it to a `span` or to the byte layer.
+  utsname is
+    sysname is 65 bytes
+    nodename is 65 bytes
+    revision is 65 bytes        -- POSIX calls this `release`, which is a word
+    version is 65 bytes
+    machine is 65 bytes
+    domainname is 65 bytes
+  end
+
   -- `struct termios`, 36 bytes -- what TCGETS hands back and TCSETS takes. The
   -- fields a program touches get names; the rest of the control-character array
   -- is spanned by padding, so that read_minimum (POSIX VMIN) and read_timeout
@@ -1184,14 +1191,12 @@ linux contains
       getpid (pid is pid)
     end
 
-    -- uname: what the kernel calls this machine. Six NUL-terminated strings in
-    -- one 390-byte block, each field 65 bytes -- sysname 0, nodename 65,
-    -- release 130, version 195, machine 260, domainname 325. Read one with
-    -- `measure text` over `buffer + OFFSET`.
+    -- uname: what the kernel calls this machine, into a 390-byte block. Lay
+    -- `linux.utsname` over it and each of the six strings has a name:
     --
-    -- The offsets stay written here rather than in a layout view because a view's
-    -- fields are 1/2/4/8 bytes: they name a NUMBER at an offset, and every one of
-    -- these is a run of text.
+    --   host is block as linux.utsname
+    --   who is already span (data is host.nodename, length is 65)
+    --   who.until (byte is 0)
     machine (buffer, result) is
       uname (buffer is buffer, result is result)
     end

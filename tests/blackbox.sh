@@ -116,6 +116,9 @@ bb view/own-state     own_state_bytes "" 0 "76 111 114"
 # unsigned field cannot turn `>= 0` into an always-true comparison. The field
 # here is unsigned on purpose and the read fails with EISDIR.
 bb view/unsigned-contract unsigned_contract "" 1 ""
+# a layout field that is a RUN of text answers with its address, so uname's six
+# strings have names instead of six offsets in a comment. Against the system's.
+bb view/uname         uname "" 0 "$(uname -s) $(uname -m)"
 bb view/flag-template view_flagtpl "" 0 "B"   # ... at bit grain: mask/shift RMW
 bb word/in-register   word_register "" 0 "H"  # `N bytes in register`: every
                                               # slice agrees with `in stack`

@@ -178,8 +178,8 @@ meanwhile is the same for both: put it in a template and splice it.
 
 ## What the linux.mereo half hit: seven places the language stopped short
 
-**Status:** 1, 2 and 3 are DONE, 7 is done for procedure methods; the rest
-are open. All were found by writing
+**Status:** 1, 2, 3 and 4 are DONE, 7 is done for procedure methods; 5 and 6
+remain. All were found by writing
 real code against the new library rather than by reading the compiler, and each
 is stated with the program that wanted it.
 
@@ -272,7 +272,16 @@ The original entry follows.
 Every example in the corpus takes exactly one argument, which is why this never
 came up before. `examples/stat.mereo` wanted several and takes one.
 
-### 4. A layout field cannot be a run of text
+### 4. A layout field cannot be a run of text — **DONE**
+
+**Closed.** A field wider than a register is a run of bytes rather than a
+number, so it answers with its ADDRESS; a store to one is refused, there being
+no load or store of that width. `linux.utsname` names uname's six strings, and
+`examples/uname.mereo` reads two of them through spans and agrees with the
+system's own `uname`. 81 binaries unchanged.
+
+One name had to move: POSIX calls the third field `release`, which is a reserved
+word here, so it is `revision`. The original entry follows.
 
 `uname` answers with six 65-byte NUL-terminated strings in one block. A layout
 view's fields are 1/2/4/8 bytes because they name a *number* at an offset, so
