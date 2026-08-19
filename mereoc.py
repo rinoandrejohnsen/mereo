@@ -713,17 +713,23 @@ def _fold_once(src, owner):
                  f"`{m.group(1)} is`. One keyword asks one question of every "
                  "block: does its body run? `is` declares, `goes` runs.")
         if (ns is None and _indent(code) == 0 and "extends" not in s
-                and _DEF_OPEN.fullmatch(s) and _declares_only(lines, i, 0)):
+                and _DEF_OPEN.fullmatch(s)):
             # a namespace, opening at this pass's outermost level. Its own path
             # is whatever enclosed it, which an earlier pass already recorded
             # against this very line -- numbers do not move.
             here = len(out) + 1
             parent = owner.get(here)
-            ns = f"{parent}.{s[:-3]}" if parent else s[:-3]
-            NAMESPACES.setdefault(ns, set())
-            out.append("")
-            folded = True
-            continue
+            cand = f"{parent}.{s[:-3]}" if parent else s[:-3]
+            # REOPENING is by NAME, as it is in C++: a second `alpha is` adds to
+            # the namespace whatever it holds. Without this the reopened block
+            # had to contain a definition of its own to be recognised as one,
+            # so `namespace alpha { void late(); }` had no equivalent.
+            if cand in NAMESPACES or _declares_only(lines, i, 0):
+                ns = cand
+                NAMESPACES.setdefault(ns, set())
+                out.append("")
+                folded = True
+                continue
         if ns is not None and s == "end" and _indent(code) == 0:
             ns = None
             out.append("")
@@ -1288,11 +1294,31 @@ OF_NAMESPACE = {}        # bare name -> the namespace that declares it
 
 
 def in_namespace(name, ns):
-    """Register a top-level declaration as belonging to `ns` (or nowhere)."""
-    if ns is None:
-        return
+    """Record a declaration under the namespace it was written in.
+
+    The TOP LEVEL is recorded too, under `None`. Without it a top-level name had
+    nowhere to be found, so a namespace member of the same name shadowed it
+    permanently -- `rec` at the left margin became unreachable the moment any
+    namespace declared a `rec`."""
     NAMESPACES.setdefault(ns, set()).add(name)
-    OF_NAMESPACE[name] = ns
+    if ns is not None:
+        OF_NAMESPACE[name] = ns
+
+
+def lookup(ref, ns):
+    """Innermost-first name lookup: the namespace path `ref` denotes, or None.
+
+    A name declared in this namespace wins over one inherited from an enclosing
+    namespace, and the search walks outward to the top level -- which is what
+    C++ does, and what lets a namespace shadow a top-level name for its own
+    members without making that name unreachable everywhere else."""
+    scope = ns
+    while True:
+        if ref in NAMESPACES.get(scope, ()):
+            return qualified(ref, scope)
+        if not scope:
+            return None
+        scope = scope.rpartition(".")[0] or None
 
 
 def qualified(name, ns):
@@ -1320,10 +1346,9 @@ def bare(ref, ns):
         if head in NAMESPACES:
             return f"{head}.{tail}" if tail in NAMESPACES[head] else None
         return ref
-    owner = OF_NAMESPACE.get(ref)
-    if owner is not None and not within(ns, owner):
-        return None
-    return qualified(ref, owner)
+    found = lookup(ref, ns)
+    return found if found is not None else (
+        None if OF_NAMESPACE.get(ref) else ref)
 
 
 def not_a_receiver(ref, ln, what="name"):
@@ -1376,11 +1401,14 @@ def deref(ref, ns, ln, what="name"):
                      f"(it has: {near}{', ...' if len(NAMESPACES[head]) > 6 else ''})")
             return f"{head}.{tail}"
         return ref                      # not a namespace -- an instance's member
+    found = lookup(ref, ns)
+    if found is not None:
+        return found
     owner = OF_NAMESPACE.get(ref)
-    if owner is not None and not within(ns, owner):
+    if owner is not None:
         fail(f"line {ln}: '{ref}' is declared in namespace '{owner}' -- "
              f"write `{owner}.{ref}`")
-    return qualified(ref, owner)
+    return ref
 
 
 def free_templates(src):

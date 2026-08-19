@@ -1,0 +1,114 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- Namespace semantics, against the C++ twin beside this file. Both print the
+-- same nine numbers; each is chosen so a wrong resolution gives a different
+-- one, rather than agreeing by luck.
+
+rec is                               -- 1. a TOP-LEVEL name...
+  tag is 1 bytes
+end
+
+alpha is
+  rec is                             -- 2. ...and a namespace member of the same
+    tag is 2 bytes as big            --    name. Two things, different widths.
+  end
+
+  tally (value) goes
+    value is value + 1
+  end
+
+  beta is
+    rec is                           -- 3. nested, and the name again
+      tag is 4 bytes
+    end
+
+    reach (value) goes               -- 5. outward: `alpha`'s own, unqualified
+      tally (value is value)
+    end
+
+    near (value) goes                -- 6. innermost wins over the outer one
+      inner (value is value)
+    end
+
+    inner (value) goes
+      value is value + 100
+    end
+  end
+end
+
+alpha is                             -- 7. REOPENING adds to the same namespace
+  late (value) goes
+    value is value + 1000
+  end
+end
+
+delta is
+  rec is                             -- 8. a SIBLING namespace, name again
+    tag is 1 bytes
+  end
+end
+
+inner (value) goes                   -- a top-level `inner`, shadowed inside beta
+  value is value + 1
+end
+
+program goes
+  a is 8 bytes
+  b is 8 bytes
+  c is 8 bytes
+  d is 8 bytes
+  room is 128 bytes
+  n is 0
+
+  page is already builder (data is room, count is 0, limit is 128)
+
+  top is a as rec                    -- 1 byte, host order
+  mid is b as alpha.rec              -- 2 bytes, network order
+  deep is c as alpha.beta.rec        -- 4 bytes, host order
+  sib is d as delta.rec              -- 1 byte
+
+  top.tag is 7
+  mid.tag is 4660                    -- 0x1234
+  deep.tag is 287454020              -- 0x11223344
+  sib.tag is 5
+
+  page.number (value is top.tag)
+  page.byte (value is 32)
+  page.number (value is [b + 0 : 1])
+  page.byte (value is 32)
+  page.number (value is [c + 0 : 1])
+  page.byte (value is 32)
+  page.number (value is sib.tag)
+  page.byte (value is 32)
+
+  n is 0
+  alpha.tally (value is n)
+  page.number (value is n)
+  page.byte (value is 32)
+
+  n is 0
+  alpha.beta.reach (value is n)
+  page.number (value is n)
+  page.byte (value is 32)
+
+  n is 0
+  alpha.beta.near (value is n)
+  page.number (value is n)
+  page.byte (value is 32)
+
+  n is 0
+  inner (value is n)
+  page.number (value is n)
+  page.byte (value is 32)
+
+  n is 0
+  alpha.late (value is n)
+  page.number (value is n)
+  page.byte (value is 10)
+
+  screen is already linux.file (descriptor is 1)
+
+  screen.write (buffer is page.data, count is page.count)
+
+end

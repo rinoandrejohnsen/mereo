@@ -17,6 +17,11 @@
 #      histogram and .text size. Suites 1 and 2 ask whether mereo is CORRECT;
 #      this one asks what its abstractions COST, against C as the oracle.
 #
+#   4. namespaces VERSUS C++                 (tests/namespaces/run.sh)
+#      The same nine questions asked of a mereo namespace and a C++ one, in two
+#      programs that must print the same nine numbers. Suite 3 asks what an
+#      abstraction costs; this asks whether one MEANS what its name claims.
+#
 # Also runs build.sh (mereocheck hot/cold layout gate) and checks every declared
 # syscall number against <asm/unistd_64.h>.
 set -u
@@ -31,6 +36,13 @@ echo "### Suite 2 -- black-box binary tests"
 echo
 echo "### Suite 3 -- mereo versus C, on the generated code"
 "$DIR/tests/versus/run.sh" || rc=1
+
+echo
+# The claim that a mereo namespace IS a namespace in C++'s sense is checked the
+# only way a claim like that can be: the same program written twice, compared on
+# what it prints.
+echo "### Suite 4 -- mereo namespaces versus C++ namespaces"
+"$DIR/tests/namespaces/run.sh" || rc=1
 echo
 echo "### Build + layout gate"
 "$DIR/build.sh" >/dev/null 2>&1 && echo "  build + mereocheck: ok" \
