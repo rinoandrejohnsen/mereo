@@ -53,10 +53,6 @@ of bytes only when it is wider than a register. Both rules are right on their
 own; sharing a spelling is not, and the collision compiles rather than
 complaining.
 
-**A known code-size excess.** The stage markers that make the layout claim
-checkable prevent the compiler merging otherwise identical error blocks. See
-[Performance](Performance).
-
 **No editor support beyond highlighting.** A language server existed and was
 removed; syntax highlighting for Kate and a standalone highlighter remain, kept
 in step with the compiler by a gate.

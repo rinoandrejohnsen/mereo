@@ -48,16 +48,17 @@ Two things, both done:
 ### What is still open
 
 `_write_value` is still spliced into every error block. Making it a real
-`static __attribute__((noinline, cold))` function is worth a **further −23%
-across the corpus**:
+`static __attribute__((noinline, cold))` function is worth a **further −16%
+across the corpus** (re-measured after the stage markers came out, which took
+the corpus from 409144 to 375152 on its own):
 
 | | spliced (now) | shared function |
 | --- | ---: | ---: |
 | `abc` | 1296 | 1120 |
-| `basename` | 2016 | 1520 |
-| `jsontest` | 3792 | 3056 |
-| `https` | 72856 | 56568 |
-| **corpus** | **409144** | **312024** |
+| `basename` | 1328 | 1200 |
+| `jsontest` | 3696 | 3088 |
+| `https` | 68696 | 55096 |
+| **corpus** | **375152** | **313264** |
 
 There is no speed argument against it: every call site is inside an error block
 that runs at most once, immediately before exit.
@@ -207,40 +208,6 @@ meaning so nothing in the corpus moves. Worth deciding before it bites someone.
 The cheap half, if the design half waits: refuse `[FIELD + ...]` when FIELD is a
 register-width state field, naming the width rule. That turns a segfault into a
 message without settling the surface question.
-
-## The stage marker costs a tail merge
-
-**Status:** open, measured, found by `tests/versus` on its first run over
-`layout_view`. Waived there, with the reason printed on every run.
-
-Every error block ends with a marker naming its stage:
-
-```c
-    _status = 1;
-    __asm__("# stage 2" : "+r"(_status));
-```
-
-mereocheck reads those out of the shipped assembly, which is what makes the
-hot/cold layout claim checkable rather than hopeful. But they are DISTINCT per
-stage, so two error blocks that are otherwise byte-identical -- same EPIPE test,
-same `_write_value`, same status -- cannot be tail-merged by GCC. A program with
-two similar failure sites pays for two copies of the record path.
-
-**Measured** on `tests/versus/cases/layout_view`, whose two write failures are
-identical apart from the stage number: 8 syscall sites with the markers, **7
-without**, which is exactly the C twin's count. Stripping the markers from the
-generated C and rebuilding is the whole experiment.
-
-**What to look at, if it is worth it.** The marker is only READ for programs
-mereocheck inspects -- ones with crossroads. `layout_view` has none, so its
-markers are emitted, block a merge, and are never read by anything. Emitting
-them only where a layout claim exists would cost nothing and recover the merge
-everywhere else. The risk is that "where a layout claim exists" is not
-obviously a property of one program, since a template with roads is spliced into
-whatever uses it.
-
-Not urgent: it is a handful of bytes on programs with several similar failure
-sites, and the verifiability it buys is the point of the whole gate.
 
 ## An array view -- a span that counts elements?
 

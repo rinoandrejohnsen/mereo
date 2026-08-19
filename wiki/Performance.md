@@ -39,15 +39,23 @@ means — an added check is a compare and a jump, a spill is a move, a missed
 strength reduction is a multiply where a shift belonged — and register
 allocation is none of those.
 
-## The one known excess
+## An excess that turned out to be avoidable
 
-A program's error blocks each end with a marker naming the stage, which the
-layout checker reads out of the shipped assembly. The markers differ per stage,
-so two otherwise identical error blocks cannot be merged by the compiler. On a
-program with two similar failure sites this costs one extra copy of the record
-path: 8 system-call sites with the markers, 7 without, which is the C twin's
-count exactly. The verifiability is judged worth it, and the cost is recorded
-rather than hidden.
+Error blocks used to end with a marker naming the stage, distinct per stage, so
+that two otherwise identical blocks could not be merged by the compiler. On a
+program with two similar failure sites that cost an extra copy of the record
+path — 8 system-call sites against the C twin's 7.
+
+It was believed to be what made the layout claim checkable. It was not: the
+layout checker works from DWARF labels and the `exit` landmark, and neither
+moves when two tails fuse. Removing the markers cost nothing that could be
+found — the crossroad layouts still verify, the disassembler prints the same
+reconstruction, and all 83 binaries give byte-identical fault records under
+fault injection, because the stage number is in the record's *text*, which is
+what keeps the blocks distinct where it matters.
+
+It was worth 4% of the corpus, and the case above now matches its twin's
+system-call count outright.
 
 ## Checked access
 

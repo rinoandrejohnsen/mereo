@@ -1,12 +1,12 @@
 # mereo vs C -- where each case stands. Regenerate with --bless.
-# toolchain: gcc (GCC) 16.1.1 20260728
+# toolchain: gcc (GCC) 16.2.1 20260810
 # name  mereo_insns  mereo_bytes  c_insns  c_bytes
-index_fast         144 585 143 577
-index_safe         169 680 164 668
-layout_view        113 456 98 389
+index_fast         143 577 143 577
+index_safe         168 672 164 668
+layout_view        100 401 98 389
 loop_sum           62 241 62 241
-open_close         172 701 170 689
-read_write         102 405 100 393
-span_scan          114 433 113 430
-two_resources      220 887 218 875
+open_close         171 696 170 689
+read_write         101 397 100 393
+span_scan          113 425 113 430
+two_resources      219 882 218 875
 write              65 262 65 262

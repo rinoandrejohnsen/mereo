@@ -117,13 +117,15 @@ runspec() {  # runspec CASE -> "stdin<TAB>args"
 # Cases where mereo legitimately makes more syscalls than its twin, and what the
 # extra work buys. Measured, each of them -- the number in the reason is what
 # removing the cause actually produced, not an estimate.
+#
+# EMPTY at present. `layout_view` was the only entry: its two write failures are
+# identical apart from the stage number, and a per-stage `# stage N` marker in
+# each error block stopped GCC tail-merging them. The marker turned out to be
+# read by nothing -- the layout gate works from DWARF labels, which do not move
+# when two tails fuse -- so it was removed rather than waived, and the case now
+# matches its twin's syscall count outright.
 waiver() {
     case "$1" in
-    layout_view)
-        echo "the per-stage \`# stage N\` markers are distinct, so GCC cannot"\
-             "tail-merge two otherwise identical error blocks; stripping them"\
-             "drops mereo to the twin's count exactly. They are what lets"\
-             "mereocheck verify hot/cold layout on the shipped assembly." ;;
     *) echo "" ;;
     esac
 }

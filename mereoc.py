@@ -6788,14 +6788,25 @@ def transpile(sources, prog):
         body.append(f'    _write(2, (long)"{esc}", {len(text.encode())});')
         body.append(f"    _write_value({p['errsrc']});")
         body.append(f"    {stage_slot} = {p['code']};")
-        # the unique asm keeps this block a self-contained unit in the
-        # binary: GCC fuses the identical tails of same-floor blocks (one
-        # block jumping into the middle of another), and neither
-        # -fno-crossjumping nor -fno-tree-tail-merge stops the last
-        # two-insn merge -- a distinct asm template poisons every suffix
-        # containing it, and the "+r" pin stops the scheduler floating it
-        # above the store. Emits zero instructions (an assembler comment).
-        body.append(f'    __asm__("# stage {p["stage"]}" : "+r"({stage_slot}));')
+        # NO per-stage marker here. There used to be one --
+        # `__asm__("# stage N" : "+r"(_status))` -- whose whole job was to be
+        # DISTINCT per stage, so that GCC could not fuse the identical tails of
+        # two error blocks (one block jumping into the middle of another). It
+        # emitted no instructions itself, but it cost the merge.
+        #
+        # Nothing read it. The layout gate does not: `mereocheck` works from
+        # DWARF labels and the `exit` landmark, and neither moves when two tails
+        # fuse -- a fused block is still in the cold region, which is the whole
+        # of the claim. Removing it was checked against everything that could
+        # have depended on it: 18 crossroads still verify, `mereodis` prints the
+        # same reconstruction, and all 83 binaries give byte-identical fault
+        # records under `mereoraii` -- the record text carries the stage number,
+        # so it is the strings that keep the blocks distinct where it matters,
+        # not the marker.
+        #
+        # Worth 18864 bytes across the corpus (4.8%), and it is what let
+        # `tests/versus/layout_view` drop the syscall-count waiver it had
+        # carried since that suite's first run.
         body.append(f"    goto {p['target']};")
 
     # recovery blocks: repair the outs, rejoin the step's resume label.
