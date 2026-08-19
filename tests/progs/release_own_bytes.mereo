@@ -1,0 +1,72 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- A SINGLE-CALL method reading the resource's own state bytes.
+--
+-- A procedure method could already do this. `acquire` and `release` could not:
+-- they resolve their arguments by NAME, so an access fell through to
+--
+--   unknown name '[pair + 0 : 4] as signed' (not a parameter or state slot)
+--
+-- and `release` had a second rule of its own saying it may bind state slots or
+-- literals and nothing else. The consequence was that a resource could hold a
+-- PAIR of descriptors and hand each one out, but could not close them -- which
+-- is why the library ships `channel`, a stateless namespace that makes the pair
+-- and leaves each end to be adopted as an ordinary `file`.
+--
+-- `duct` is the resource that could not be written. It owns the pipe: one
+-- acquisition, and a release that closes both ends out of its own bytes. A byte
+-- is pushed through it to prove the descriptors are real and the right way
+-- round, and `tests/blackbox.sh` runs it under mereoraii, which is what checks
+-- that BOTH fds are closed on the happy path and on every fault.
+--
+--   prints:  x
+
+duct is
+  pair is 16 bytes                     -- 16, not 8: a state field is a run of
+                                       -- bytes only when it is wider than a
+                                       -- register. pipe2 writes the first 8.
+
+  acquire is
+    linux.pipe2 (pair is pair, flags is 0)
+  end
+
+  head (value) is                      -- the read end, at offset 0
+    v is [pair + 0 : 4] as signed
+    value is v
+  end
+
+  tail (value) is                      -- ...and the write end, at 4
+    v is [pair + 4 : 4] as signed
+    value is v
+  end
+
+  release is                           -- both, out of its own bytes
+    linux.close (descriptor is [pair + 0 : 4] as signed)
+    linux.close (descriptor is [pair + 4 : 4] as signed)
+  end
+end
+
+program is
+  block is 8 bytes
+  n is 0
+  r is 0
+  w is 0
+
+  pipe is duct
+
+  pipe.head (value is r)
+  pipe.tail (value is w)
+
+  sink is already linux.file (descriptor is w)
+  sink.write (buffer is "x", count is 1, written is n)
+
+  source is already linux.file (descriptor is r)
+  source.read (buffer is block, capacity is 1, count is n)
+  ensure n == 1
+
+  terminal is already linux.file (descriptor is 1)
+  terminal.write (buffer is block, count is 1, written is n)
+  terminal.write (buffer is "\n", count is 1, written is n)
+
+end

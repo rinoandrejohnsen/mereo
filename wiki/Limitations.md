@@ -38,19 +38,14 @@ decimal and hexadecimal, no sorting and no data structures.
 
 **Language gaps found by writing real programs.** A run of seven, all of the
 same shape — a view is a lens over a named backing, and several things wanted to
-be a view but could not be. Six are closed: a view may now sit at an address
-computed while running or over another view's field; a layout field may be a run
-of text; the argument and environment vectors may be indexed by a value rather
-than a literal; and a procedure body may both open with a memory store and call
-a primitive, so one method can fill a record and then make the syscall that
-takes it.
-
-What remains of that run is the last one, and only half of it. A **procedure**
-method may read its own state as bytes; a **single-call** method — an `acquire`
-or a `release`, which resolve their arguments by name — may not. So
-`linux.close (descriptor is [pair + 0 : 4])` is still refused, which is why
-there is no `pipe` resource owning both ends: it can hand each one out but
-cannot close them.
+be a view but could not be. All seven are now closed: a view may sit at an
+address computed while running or over another view's field; a layout field may
+be a run of text; the argument and environment vectors may be indexed by a value
+rather than a literal; a procedure body may both open with a memory store and
+call a primitive, so one method can fill a record and then make the syscall that
+takes it; and a method may read its own state as bytes, which held for procedure
+methods before it held for `acquire` and `release`, so a resource may now close
+a descriptor it kept in its own buffer.
 
 **One spelling, two meanings.** `slot is 8 bytes` is storage in a program body
 and a register word as a resource's state field, because a state field is a run

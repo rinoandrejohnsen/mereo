@@ -178,13 +178,12 @@ meanwhile is the same for both: put it in a template and splice it.
 
 ## What the linux.mereo half hit: seven places the language stopped short
 
-**Status:** 1, 2, 3, 4, 5 and 6 are DONE; 7 is done for procedure methods and
-still open for single-call ones. All were found by writing
-real code against the new library rather than by reading the compiler, and each
-is stated with the program that wanted it.
+**Status:** all seven are DONE. All were found by writing real code against
+the new library rather than by reading the compiler, and each is stated with
+the program that wanted it.
 
-None of these blocked the work — every one has a workaround, and the workaround
-is in the shipped code. They are listed because they were found together and
+None of these blocked the work — every one had a workaround, and the workaround
+was in the shipped code. They are kept because they were found together and
 because five of the seven are the same shape: **a view is a lens at a
 compile-time offset into a named backing, and nothing else.**
 
@@ -336,7 +335,7 @@ the pre-fix compiler stops at 5, and with 5 alone backported it stops at 6.
 standing audit; it is now, and faulting it closes the descriptor. The corpus is
 88 for 88 byte-identical.
 
-### 7. A resource method cannot read its own state bytes — **DONE (procedures)**
+### 7. A resource method cannot read its own state bytes — **DONE**
 
 **Closed for procedure methods.** An in-instance buffer was emitted as
 `char INST_field[N]` but never registered as a backing, so a method's
@@ -345,10 +344,30 @@ It is registered now, and the splice substitutes the emitter's name rather than
 the cell. `tests/progs/own_state_bytes.mereo` is a resource that fills its own
 block and reads bytes back out of it; the corpus is 80 for 80 unchanged.
 
-**Still open for SINGLE-CALL methods.** `acquire` and `release` resolve their
-arguments by name, so `linux.close (descriptor is [pair + 0 : 4])` is still
-refused. That is why a `pipe` resource owning both ends remains unwritable: it
-can now hand each end out, but it cannot close them. `channel` still ships.
+**And closed for SINGLE-CALL methods.** `acquire` and `release` resolve their
+arguments by name, so an access fell through to "unknown name"; `release` had a
+second rule of its own admitting only state slots and literals. Both now accept
+a read of the resource's own bytes, resolved the way a splice does -- substitute
+the in-instance buffer's emitter name, which is registered as a backing, and use
+the ordinary expression path. Three release emitters were building their
+arguments with the same copied expression; they now share one resolver.
+
+Two guards came with it, each checked to fire: a name inside the brackets that
+is not this resource's state or the method's parameter, and an access over a
+register-width field, which has no address to read from. That second message is
+the `N bytes` ambiguity below, caught in this one position rather than left to
+segfault.
+
+`tests/progs/release_own_bytes.mereo` is `duct`, the resource that could not be
+written: it owns a whole pipe and closes both ends out of its own buffer. A byte
+is pushed through it, and mereoraii sees two descriptors acquired and both closed
+on the happy path and on a fault at each of the four syscalls after them.
+
+`channel` still ships, for a better reason than the one first given. The comment
+said a `pipe` resource would have to hand its descriptors out and could not; the
+real reason is that a resource owns ONE thing, and closing the write end to
+signal end-of-input while still reading is the ordinary way to use a pipe --
+which an owner of both cannot express.
 
 Two things found while doing it, worth their own entries if they bite again:
 

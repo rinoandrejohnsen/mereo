@@ -121,6 +121,11 @@ bb view/unsigned-contract unsigned_contract "" 1 ""
 # primitive arrived bare and was refused as "must live in a resource" when it
 # already did. `watcher` fills its own poll entry and then polls it.
 bb view/method-syscall method_syscall "" 0 "1 1"
+# a SINGLE-CALL method reading its own state bytes. `acquire`/`release` resolve
+# arguments by name, so a resource could hand out a descriptor it held in its
+# own buffer but not close it -- which is why `duct`, a resource owning a whole
+# pipe, could not be written. A byte through it proves the ends are real.
+bb view/release-own-bytes release_own_bytes "" 0 "x"
 # a layout field that is a RUN of text answers with its address, so uname's six
 # strings have names instead of six offsets in a comment. Against the system's.
 bb view/uname         uname "" 0 "$(uname -s) $(uname -m)"
@@ -493,6 +498,10 @@ RIN="hi" raii abc/raii  abc
 # own `ensure` and has to route into the tower like any other call -- faulting
 # the ppoll must still close the descriptor.
 raii view/method-syscall-raii method_syscall
+# a resource owning TWO descriptors in one buffer: the release closes both out
+# of its own bytes, so the audit has to see two acquired and two closed -- on
+# the happy path and on a fault at each of the four syscalls after them.
+raii view/release-own-bytes-raii release_own_bytes
 rm -f "$DIR/copy_out.txt"
 
 echo "---"

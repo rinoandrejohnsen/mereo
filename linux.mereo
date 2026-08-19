@@ -765,10 +765,14 @@ linux contains
   --   source is adopted linux.file (descriptor is head)
   --   sink is adopted linux.file (descriptor is tail)
   --
-  -- A `pipe` resource owning both was the first shape tried and is the wrong one:
-  -- it would have to hand its descriptors out, and a method cannot read its own
-  -- state bytes to do it. Two adoptions say the same thing with what is already
-  -- here.
+  -- A `pipe` resource owning both was the first shape tried. It is writable now
+  -- -- a single-call method may read its own state bytes, so a release can close
+  -- both ends out of the buffer it holds, and `tests/progs/release_own_bytes`
+  -- is exactly that resource. `channel` still ships, for the reason above rather
+  -- than the one first given: a resource owns ONE thing, and two descriptors are
+  -- two things whose lifetimes a caller may well want to separate -- closing the
+  -- write end to signal end-of-input while still reading is the ordinary way to
+  -- use a pipe, and an owner of both cannot express it.
   channel is
     make (pair, flags, result) is
       pipe2 (pair is pair, flags is flags, result is result)

@@ -2671,6 +2671,59 @@ def new_call(method, prim, n):
     return call
 
 
+_OWN_ACCESS = re.compile(r"^\[\s*(?P<addr>[^\]]+?)\s*:\s*\d+\s*\]"
+                         r"(?:\s+as\s+[\w ]+)?$")
+
+
+def own_state_access(actual, defn, meth, ln):
+    """Is `actual` a `[FIELD + N : W]` read of this resource's OWN bytes?
+
+    A single-call method (`acquire`, `release`) resolves its arguments by NAME,
+    so a descriptor the resource had stored in its own buffer could be handed
+    out by a procedure method but not passed to the call that closes it. That
+    is what kept a `pipe` owning both ends unwritable.
+
+    Everything inside the brackets must be this resource's state or one of the
+    method's parameters -- a single-call body has nothing else in scope -- and
+    the access must be over an in-instance BUFFER, since that is the only state
+    with bytes to address."""
+    m = _OWN_ACCESS.match(actual.strip())
+    if not m:
+        return False
+    names = set(re.findall(r"[A-Za-z_]\w*", m.group("addr")))
+    known = set(defn["flat"]) | set(defn.get("bflat") or ()) | set(meth["params"])
+    unknown = names - known
+    if unknown:
+        fail(f"line {ln}: '{sorted(unknown)[0]}' in '{actual}' is not state of "
+             f"'{defn['name']}' or a parameter of '{meth['name']}'")
+    arrays = set(defn.get("arrays") or ())
+    if not names & arrays:
+        fail(f"line {ln}: '{actual}' addresses no buffer -- a state field is a "
+             "run of bytes only when it is wider than a register, so a "
+             "register-width field has no address to read from")
+    return True
+
+
+def cleanup_arg(inst_name, a, defn, backing, scalars, buffers):
+    """One argument of a release call, as a C expression.
+
+    Normally a state slot or a literal. It may also be a read of the resource's
+    OWN bytes, which is how a resource holding a PAIR of descriptors closes
+    them: `linux.close (descriptor is [pair + 0 : 4] as signed)`. The
+    substitution is the same one a splice does -- the in-instance buffer's
+    emitter name, which is registered as a backing -- because the C cell
+    (`(long)NAME`) would not parse back as mereo."""
+    if is_int(a) or is_str(a):
+        return lit_c(a)
+    if _OWN_ACCESS.match(a.strip()):
+        text = a
+        for arr in sorted(defn.get("arrays") or (), key=len, reverse=True):
+            text = re.sub(rf"\b{re.escape(arr)}\b",
+                          f"{inst_name}_{arr.replace(' ', '_')}", text)
+        return resolve_value(text, scalars, buffers, defn.get("line", 0))
+    return state_cell(inst_name, a, defn, backing)
+
+
 def validate_method(defn, meth, check_params=True):
     """Validate one primitive-bodied method against its resource's flat state."""
     if meth["prim"] not in PRIMITIVES:
@@ -2692,7 +2745,8 @@ def validate_method(defn, meth, check_params=True):
             fail(f"line {ln}: '{meth['prim']}' has no port '{port}'")
         if (actual not in meth["params"] and actual not in flat
                 and actual not in defn["bflat"]
-                and not is_int(actual) and not is_str(actual)):
+                and not is_int(actual) and not is_str(actual)
+                and not own_state_access(actual, defn, meth, ln)):
             fail(f"line {ln}: unknown name '{actual}' (not a parameter "
                  "or state slot)")
         if actual in meth["params"]:
@@ -2732,9 +2786,10 @@ def validate_method(defn, meth, check_params=True):
                      "a parameter, state slot, or number")
     if meth["role"] == "release":
         for port, (actual, ln) in meth["bind"].items():
-            if actual not in flat and not is_int(actual):
-                fail(f"line {ln}: release may only bind state slots "
-                     "or literals")
+            if (actual not in flat and not is_int(actual)
+                    and not own_state_access(actual, defn, meth, ln)):
+                fail(f"line {ln}: release may only bind state slots, "
+                     "literals, or a read of its own bytes")
 
 
 def elaborate_delegate(defn, meth, definitions):
@@ -4327,6 +4382,22 @@ def wire_call(meth, defn, inst, conns_list, scalars, buffers, line):
     for path in defn["flat"]:
         valmap[path] = state_cell(inst["name"], path, defn, inst.get("backing"))
     valmap.update(inst["borrowmap"])
+    # A single-call body may read its OWN bytes (`[pair + 0 : 4] as signed`).
+    # `call_parts` resolves an actual by looking it up here, so the access has to
+    # arrive already resolved. Substitute each in-instance buffer with the name
+    # the emitter gives it -- which is registered as a backing -- and hand the
+    # result to the ordinary expression path, exactly as a splice does. The C
+    # cell cannot be substituted instead: it would not parse back as mereo.
+    for _port, (_actual, _ln) in meth["bind"].items():
+        if _actual in valmap or is_int(_actual) or is_str(_actual):
+            continue
+        if not _OWN_ACCESS.match(_actual.strip()):
+            continue
+        _text = _actual
+        for _arr in sorted(defn.get("arrays") or (), key=len, reverse=True):
+            _text = re.sub(rf"\b{re.escape(_arr)}\b",
+                           f"{inst['name']}_{_arr.replace(' ', '_')}", _text)
+        valmap[_actual] = resolve_value(_text, scalars, buffers, _ln)
     return valmap
 
 
@@ -4971,8 +5042,9 @@ def plan(definitions, slots, steps, overrides):
             idefn = definitions[instances[name]["definition"]]
             for cprim, cargs in idefn["cleanup"]:
                 out.append({"pname": cprim,
-                            "args": [lit_c(a) if is_int(a) or is_str(a)
-                                     else state_cell(name, a, idefn, instances[name].get("backing"))
+                            "args": [cleanup_arg(name, a, idefn,
+                                                 instances[name].get("backing"),
+                                                 scalars, buffers)
                                      for a in cargs]})
         return out
     n_resume = 0
@@ -5380,8 +5452,9 @@ def plan(definitions, slots, steps, overrides):
                 for cprim, cargs in idefn["cleanup"]:
                     releases.append(
                         {"pname": cprim,
-                         "args": [lit_c(a) if is_int(a) or is_str(a)
-                                  else state_cell(name, a, idefn, instances[name].get("backing"))
+                         "args": [cleanup_arg(name, a, idefn,
+                                              instances[name].get("backing"),
+                                              scalars, buffers)
                                   for a in cargs]})
             into.append({"scope_release": releases, "pname": None,
                          "exit_label": block_labels.pop()})
@@ -5847,8 +5920,9 @@ def plan(definitions, slots, steps, overrides):
 
     def floor_calls_for(name, defn, cleanup):
         return [{"pname": cprim,
-                 "args": [lit_c(a) if is_int(a) or is_str(a)
-                          else state_cell(name, a, defn, instances[name].get("backing"))
+                 "args": [cleanup_arg(name, a, defn,
+                                      instances[name].get("backing"),
+                                      scalars, buffers)
                           for a in cargs]}
                 for cprim, cargs in cleanup]
 
