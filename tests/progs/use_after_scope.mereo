@@ -3,16 +3,21 @@ include "../../linux.mereo"
 -- REJECTED on purpose: an instance named after the scope that acquired it.
 --
 -- A resource is released at the end of the scope that acquired it. Its NAME was
--- not bounded the same way, so this was accepted and compiled to a
--- use-after-close followed by a double close:
+-- not bounded the same way, so this was accepted and read a descriptor the
+-- kernel had already taken back:
 --
 --     _assembly_linux_close(source_descriptor);            -- the scope ended
 --     n = _assembly_linux_read(source_descriptor, 0, 0);   -- ...and then this
---     _assembly_linux_close(source_descriptor);            -- ...and this
 --
--- Nothing caught it. `mereoraii` did not: the second close fails with EBADF on
--- a descriptor it has already accounted for, so the audit still reported one
--- acquired and one closed.
+-- To be exact about what was and was not wrong: the RELEASE was right. It ran
+-- once, at the end of the scope that acquired it, and the tower still routed
+-- every fault to the floor matching what was held there -- a fault before the
+-- scope ends enters `release_source`, one after it goes straight to `exit`. The
+-- defect was that the NAME outlived the thing, so a program could read what had
+-- correctly been given back.
+--
+-- Nothing caught it: `read` on a closed descriptor returns EBADF, which is a
+-- plausible failure rather than an obviously impossible one.
 --
 -- The check needs no new bookkeeping. `live` is the set of resources still held
 -- at a given step -- the planner maintains it to derive the release tower -- so

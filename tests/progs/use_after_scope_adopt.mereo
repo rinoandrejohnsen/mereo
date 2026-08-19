@@ -12,8 +12,14 @@ include "../../linux.mereo"
 -- are two: they cover different spellings of the same mistake.
 --
 -- What it compiled to before: `source` is closed when `inner` ends, `copy` is
--- built over the descriptor the kernel has taken back, and the tower then
--- closes that same number a third time on the way out.
+-- built over the number the kernel has taken back, and `copy`'s own release
+-- closes that number a second time.
+--
+-- Worth being exact, because it is the one shape here that really does close
+-- twice: the tower did not derive anything wrong. Each INSTANCE is released
+-- exactly once -- `source` at its scope's end, `copy` at the program's. They
+-- collide because the program handed the second one a descriptor the first had
+-- already returned, which is what naming a released resource lets it do.
 --
 --   refused:  'source' was released when the scope that acquired it ended
 

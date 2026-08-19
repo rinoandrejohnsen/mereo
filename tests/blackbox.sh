@@ -389,10 +389,11 @@ rejects leave/alien-loop  loop_leave_alien  "neither itself nor one of its own"
 # only "not a scope this sits inside" and then explained ancestors at length.
 # `is` declares and `goes` runs, so an `is` has nothing to leave: say that.
 rejects leave/definition  leave_definition  "is a definition -- it declares"
-# an instance named after the scope that acquired it. The resource is released
-# there, so this compiled to a use-after-close and a double close -- and
-# mereoraii did not see it, the second close failing with EBADF on a descriptor
-# it had already accounted for. `live` already knows; it just was not asked.
+# an instance named after the scope that acquired it. The RELEASE was always
+# right -- once, at the scope's end, with every fault routed to the floor
+# matching what was held there. What was wrong is that the NAME outlived the
+# thing, so a program could read what had correctly been given back.
+# `live` already knows which resources are still held; it just was not asked.
 rejects scope/use-after   use_after_scope   "was released when the scope that acquired"
 # ...and the same mistake spelled as a VALUE rather than a receiver. Two checks,
 # two spellings: disabling either leaves the other program passing.
