@@ -1,0 +1,50 @@
+include "../../linux.mereo"
+
+-- REJECTED on purpose: an instance named after the scope that acquired it.
+--
+-- A resource is released at the end of the scope that acquired it. Its NAME was
+-- not bounded the same way, so this was accepted and compiled to a
+-- use-after-close followed by a double close:
+--
+--     _assembly_linux_close(source_descriptor);            -- the scope ended
+--     n = _assembly_linux_read(source_descriptor, 0, 0);   -- ...and then this
+--     _assembly_linux_close(source_descriptor);            -- ...and this
+--
+-- Nothing caught it. `mereoraii` did not: the second close fails with EBADF on
+-- a descriptor it has already accounted for, so the audit still reported one
+-- acquired and one closed.
+--
+-- The check needs no new bookkeeping. `live` is the set of resources still held
+-- at a given step -- the planner maintains it to derive the release tower -- so
+-- an owned instance that is NOT in it has already been given back. It is the
+-- mirror of the `used before its construction` check standing beside it.
+--
+-- A name can be mentioned three ways, and each needed its own reach:
+--
+--   source.read (...)                          a CALL, at the receiver
+--   n is source.descriptor                     a VALUE, scanned per step
+--   c is adopted file (descriptor is source.descriptor)
+--                                              an ADOPTION, whose bindings live
+--                                              on the slot rather than the step
+--
+-- The last is the one that reads worst: it builds a second resource over a
+-- descriptor the kernel has taken back, so the tower closes it a third time.
+-- This program uses the first; `tests/blackbox.sh` pins the message they share.
+--
+-- What is deliberately still accepted: a scalar, a buffer, or an `already`
+-- instance named after its block. None of those is released, so none goes
+-- stale, and mereo does not otherwise bound a declaration to its block.
+--
+--   refused:  'source' was released when the scope that acquired it ended
+
+program goes
+  n is 0
+
+  inner goes
+    source is linux.file (path is "/dev/null", flags is 0, mode is 0)
+    n is 1
+  end
+
+  source.read (buffer is 0, capacity is 0, count is n)
+
+end

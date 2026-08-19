@@ -219,6 +219,9 @@ The restrictions are the price of the guarantee, and they are real:
 - a resource is released at the end of the scope that acquired it, and that
   point is fixed when the program is compiled — so ownership cannot be
   transferred conditionally, which is what a drop flag would otherwise record;
+- its name ends with that scope too. Naming it afterwards is refused, whether
+  as a receiver, as a value, or as what a second resource is adopted from —
+  each of those would read a descriptor the kernel has taken back;
 - a resource cannot be stored in a data structure.
 
 A resource may be handed to a template, which reaches its methods and its state

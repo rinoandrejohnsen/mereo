@@ -16,8 +16,8 @@ was declared. A program that needs a variable-sized working set must size a
 buffer for the worst case or map pages itself.
 
 **No ownership transfer.** A resource cannot be transferred conditionally or
-stored in a data structure; it is released at the end of the scope that
-acquired it. This is the restriction that
+stored in a data structure. It is released at the end of the scope that acquired
+it, and its name ends there with it. This is the restriction that
 removes drop flags: what a scope holds is known where it is written, so the
 release point is a label rather than a runtime decision. It is why `linux`
 offers a stateless `channel` for pipes as well as a resource that owns one — two

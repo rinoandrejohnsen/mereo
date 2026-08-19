@@ -1,0 +1,32 @@
+include "../../linux.mereo"
+
+-- REJECTED on purpose: the second of the two reaches into a released resource,
+-- and the one that reads worst.
+--
+-- `tests/progs/use_after_scope` names a released instance as a RECEIVER, caught
+-- where the receiver is resolved. This names it as a VALUE, in the bindings of
+-- another resource's adoption -- and those live on the SLOT rather than on the
+-- step, so the step-level scan has to reach for them specifically.
+--
+-- Disabling either check leaves the other program passing, which is why there
+-- are two: they cover different spellings of the same mistake.
+--
+-- What it compiled to before: `source` is closed when `inner` ends, `copy` is
+-- built over the descriptor the kernel has taken back, and the tower then
+-- closes that same number a third time on the way out.
+--
+--   refused:  'source' was released when the scope that acquired it ended
+
+program goes
+  n is 0
+
+  inner goes
+    source is linux.file (path is "/dev/null", flags is 0, mode is 0)
+    n is 1
+  end
+
+  copy is adopted linux.file (descriptor is source.descriptor)
+
+  copy.read (buffer is 0, capacity is 0, count is n)
+
+end

@@ -288,45 +288,6 @@ if they bite again:
   refused; the shape is a guarded scope (`got == 1 goes`). Conditional STORES
   take `when`, calls do not.
 
-## An instance's name outlives its scope
-
-**Status:** open, and a correctness hole rather than a rough edge. Found while
-checking a claim in `docs/limitations.md`.
-
-A resource is released at the end of the scope that acquired it. Its NAME is not
-scoped the same way, so using it afterwards is accepted and compiles to a
-use-after-close followed by a double close:
-
-```
-program goes
-  n is 0
-  inner goes
-    source is linux.file (path is "/dev/null", flags is 0, mode is 0)
-    n is 1
-  end
-  source.read (buffer is 0, capacity is 0, count is n)
-end
-```
-
-```c
-    _assembly_linux_close(source_descriptor);      /* the scope ended */
-    n = _assembly_linux_read(source_descriptor, 0, 0);   /* ...and then this */
-    _assembly_linux_close(source_descriptor);      /* ...and this */
-```
-
-`mereoraii` does not catch it: the second close fails with EBADF on a descriptor
-it has already accounted for, so the audit still reports one acquired and one
-closed.
-
-**What it should be.** A scope is the language's one organising idea and it
-already governs when the release happens; the name should follow the same
-boundary. The check belongs where an instance is resolved -- a receiver, a
-construction argument, a template actual -- against the scope stack the planner
-already maintains for `leave` and `repeat`, which is the same information.
-
-Worth doing before anything else here: every other open item is a size or an
-ergonomics question, and this one is a program doing the wrong thing quietly.
-
 ## The language server is gone, and nothing replaced it
 
 **Status:** open, deliberately.

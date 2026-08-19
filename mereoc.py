@@ -587,6 +587,26 @@ def _uncomment(line):
     return line
 
 
+def _unquoted(text):
+    """`text` with the inside of every string literal blanked out."""
+    return re.sub(r'"(?:[^"\\]|\\.)*"', '""', text)
+
+
+def _step_text(st):
+    """Every source-level string a step carries: its wired actuals and any
+    expression or condition. Not the keys -- a PORT name is part of a method's
+    declaration, not a reference to anything here."""
+    out = []
+    for key in ("expr", "cond", "value", "lhs", "rhs"):
+        v = st.get(key)
+        if isinstance(v, str):
+            out.append(v)
+    for c in st.get("conns") or ():
+        if isinstance(c, (list, tuple)) and len(c) >= 2 and isinstance(c[1], str):
+            out.append(c[1])
+    return out
+
+
 def landmark(name):
     """The label a noreturn primitive leaves in the program -- `exit`.
 
@@ -5367,8 +5387,40 @@ def plan(definitions, slots, steps, overrides):
     # the point. A road is a mini-spine, so a store, an `ensure`, a
     # construction, an `or continue`, and a spliced template body all mean
     # there exactly what they mean here, because it is the same code.
+    def check_released(st):
+        """Refuse any mention of a resource whose scope has already ended.
+
+        The call path is checked where the receiver is resolved, but an instance
+        can be named without being called -- `src.descriptor` as a value, or as
+        the argument another resource is adopted from -- and each of those reads
+        state the release has already given back. So the test is on the STEP:
+        every `NAME.FIELD` in it, against the live set.
+
+        String literals are skipped: their contents are data, and a message that
+        happens to contain `src.` is not a reference."""
+        texts = _step_text(st)
+        if st.get("type") == "adopt":
+            # an adoption's bindings are on the SLOT, not the step -- the step
+            # carries only the name -- so `copy is adopted file (descriptor is
+            # src.descriptor)` would otherwise read a released `src` unseen.
+            _sl = instances.get(st.get("name"))
+            if _sl is not None:
+                for _d in (_sl.get("runinit"), _sl.get("constinit")):
+                    texts += [v for v in (_d or {}).values() if isinstance(v, str)]
+        for text in texts:
+            for head in re.findall(r"\b(\w+)\.\w+", _unquoted(text)):
+                inst = instances.get(head)
+                if (inst is not None and inst["mode"] == "owned"
+                        and head in constructed and head not in live):
+                    fail(f"line {st['line']}: '{head}.…' -- '{head}' was "
+                         "released when the scope that acquired it ended, so "
+                         "this reads something already given back. A resource "
+                         "lives exactly as long as that scope, and its name "
+                         "lives no longer.")
+
     def plan_one(st, into, cold=False):
         nonlocal n_resume, loop_id
+        check_released(st)
         if st["type"] == "assign":           # `X is EXPR` -- recompute a scalar
             if st["name"] not in scalars:
                 fail(f"line {st['line']}: '{st['name']}' is not a scalar slot "
@@ -6079,6 +6131,18 @@ def plan(definitions, slots, steps, overrides):
             if inst["mode"] == "owned" and inst["name"] not in constructed:
                 fail(f"line {st['line']}: '{st['method']} {st['inst']}' used "
                      "before its construction")
+            # ...and the mirror. A resource is released at the end of the scope
+            # that acquired it; its NAME has to end there too, or the release
+            # has already run and this reads a descriptor the kernel has taken
+            # back. `live` is exactly the set still held here -- the planner
+            # maintains it to derive the tower -- so the check is a membership
+            # test against information that already exists.
+            if inst["mode"] == "owned" and inst["name"] not in live:
+                fail(f"line {st['line']}: '{st['method']} {st['inst']}' -- "
+                     f"'{st['inst']}' was released when the scope that acquired "
+                     "it ended, so this reads something already given back. A "
+                     "resource lives exactly as long as that scope, and its "
+                     "name lives no longer.")
             for lname in sorted(inst["lenders"]):
                 lender = instances[lname]
                 if (lender["mode"] == "owned"
