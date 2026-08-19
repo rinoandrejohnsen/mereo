@@ -700,6 +700,44 @@ Two things to settle when it is done:
   the next question this design raises, and it should be answered on its own
   rather than smuggled in here.
 
+### What happens to `leave` and `repeat`
+
+Nothing, and the reason is structural rather than lucky: **they never consult
+the definition table.** Both resolve against `loop_stack`, the scopes actually
+open at that point in the planned steps, and exactly three things push onto it —
+a named scope or loop (`NAME goes`), a `likely` road, and a `when` road. A
+spliced template body joins them as a scope under a per-call-site name. A
+definition body never executes, so it can never be on that stack, so it can
+never be a target. That is as true after the merge as before it.
+
+Tested, today:
+
+| | |
+| --- | --- |
+| `leave linux` (a namespace) | refused — *not a scope this sits inside* |
+| `leave file` (a definition) | refused — the same |
+| `leave bump` (a free template, from inside it) | works |
+| `leave user` (a group method, from inside it) | works |
+| `linux goes ... leave linux ... end` | works — a runtime scope may share a namespace's name |
+| a scope named like a template, both used in one program | works |
+
+So the split is already exactly where the merge wants it, and it falls out of
+the SAME parens rule that decides method-from-definition:
+
+```
+NAME (ports) is      a template -- its body runs, so it is a scope you can leave
+NAME is              a definition -- it declares, so it is not
+```
+
+One rule deciding both is a point in the design's favour rather than a
+complication it has to survive.
+
+**Worth improving while we are here.** `leave linux` currently answers *'linux'
+is not a scope this sits inside (open here: none)*, which is true but says
+nothing about what `linux` actually is. When the name IS a known definition, say
+so: a definition declares and does not run, so there is nothing to leave. Cheap,
+and it matters more after the merge, when far more names are definitions.
+
 ### On merging into a scope
 
 Worth being exact, since that was the hope. After this merge the language has
