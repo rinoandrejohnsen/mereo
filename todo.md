@@ -574,6 +574,102 @@ means the line is a sentence rather than a projection. Seven rules, each with a
 planted violation checked to fire. The corpus is 102 for 102 byte-identical,
 comments being comments.
 
+## Merging `contains` into `is` — possible, and the rule already exists
+
+**Status:** open, designed, not implemented. Measured against the corpus.
+
+The question was whether the namespace and the stateless group can become one
+construct. They can, and the merge is cheaper than it looks, because the rule
+that decides the one ambiguity is **already the rule at the top level**.
+
+### The one blocker
+
+Inside a definition body, `X is` is ambiguous: a method with no parameters and a
+nested definition are spelled identically. That is exactly what let a nested
+definition be silently reinterpreted (the entry below), and it is why definitions
+cannot nest today.
+
+At the TOP LEVEL the language already decides this, and has all along:
+
+```
+tmpl (value) is        -- parens: a free-standing template
+defn is                -- bare:   a definition
+```
+
+Extending that rule inward is not a new idea, it is the same idea applied
+consistently: **parens mean a method, bare means a definition.**
+
+### What it costs, counted
+
+88 lines in the corpus write an indented `NAME is`. They split cleanly:
+
+| | count | what happens |
+| --- | ---: | --- |
+| `release` | 48 | a ROLE, already special-cased in the parser — stays bare |
+| `acquire` | 17 | the same |
+| definitions inside `linux contains` | 19 | become nested definitions — the point |
+| `run`, `boom`, `barrier` | 4 | ordinary zero-parameter methods — migrate |
+
+So four sites migrate, and the spelling they migrate to **already works**:
+`go () is` parses and runs today. `acquire`/`release` keep their bare form
+because they are roles with fixed meaning, not ordinary names — the parser
+already treats them that way (`role = mname if mname in ("acquire", "release")`).
+
+### What it buys
+
+- One keyword instead of two, and one fewer reserved word.
+- Definitions NEST, which neither construct allows today.
+- The `NAME is` ambiguity disappears at the source, so the class of bug below
+  cannot recur.
+- `is` already means "a definition, its shape decided by its contents" — view,
+  flag view, group, resource, and layout-with-templates are all `is` today. A
+  definition holding only definitions is simply the fifth shape, and needs no
+  keyword to announce itself.
+
+### How it would be built
+
+Nesting can FLATTEN, exactly as `_namespace_fold` flattens today: a definition
+nested in `outer` registers under its bare name with `OF_NAMESPACE[name] =
+outer`. Then `deref` is unchanged, and so are the ~43 `definitions[...]` lookups
+downstream — they keep seeing one flat table. `linux.clock.elapsed` resolves by
+the same path it does now, because the registration is identical.
+
+The work is therefore contained to the parser: a STACK of open sections rather
+than one `section`, opening a nested definition where it now makes a method.
+The block stack (`ends`) is already there and already indent-driven.
+
+Two things to decide when it is done:
+
+- `already linux` becomes syntactically legal (a definition with no state).
+  Refuse it: a definition holding only definitions is a namespace, and there is
+  nothing to borrow.
+- Flattening supports the depth the corpus uses (`linux.clock.elapsed` — two
+  definitions and a method) and no more. A third level of nesting wants
+  path-aware resolution; until then it should be refused with a message saying
+  so, rather than silently colliding. This is the same limit as today, not a new
+  one — and making resolution path-aware is also what fixes the bare-name
+  collision recorded further down.
+
+### On merging into a scope
+
+Worth being exact, since that was the hope. After this merge the language has
+two scope-openers rather than three:
+
+```
+NAME is    ... end      a scope of DECLARATIONS
+NAME goes  ... end      a scope of STATEMENTS
+```
+
+Collapsing those two as well does not work, and the reason is not stylistic: a
+`goes` body executes where it is written, and a definition body never executes.
+`linux goes` at the left margin would read as an instruction to run something.
+Making one word mean "declares" at the top level and "runs" inside a program is
+context-dependence, which is worse than two words.
+
+So the honest answer is that "everything is a scope" survives and gets cleaner
+— one concept, two openers, separated by what they contain rather than by three
+unrelated keywords — but `is` and `goes` should stay distinct.
+
 ## `contains` and `is`: what actually separates them — **one gap DONE**
 
 **Status:** the question was whether a namespace and a stateless group differ in
