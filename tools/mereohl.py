@@ -57,7 +57,7 @@ RESERVED, VIEW_WORDS, CLOBBERABLE = (_mereoc.RESERVED, _mereoc.VIEW_WORDS,
 # visible code bold, and 69% of that was `is` alone. So the two jobs are split:
 # what BOUNDS a block stays bold (that is what Ada's convention actually buys,
 # the shape of the program at a glance), and the glue recedes.
-STRUCTURE = {"goes", "end", "scope", "contains", "program", "failures",
+STRUCTURE = {"goes", "end", "scope", "program", "failures",
              "include", "extends", "likely"}
 # The Linux entry views are reserved, but they never act as keywords: in
 # `program (arguments) is` one is a PARAMETER, and in `arguments.count` it is a
@@ -116,7 +116,7 @@ def line_at(src, at):
 # A line that OPENS a block. Bold is spent on those, on the `end` that closes
 # one, and on the two jumps -- and on nothing else. A keyword standing inside a
 # block is italic instead: it is vocabulary, not structure.
-OPENS = re.compile(r"(?: is| goes| contains)$|^scope$"
+OPENS = re.compile(r"(?: is| goes)$|^scope$"
                    r'|^\w+ is (?:(?:pure|final) )?assembly "'
                    r"|^\w+ is helper \w+$")
 # `include` opens no block, so the positional rule would make it italic. It is
@@ -158,8 +158,6 @@ def classify(tok, kind, src, at):
         # Anywhere else it binds a name to a value, and recedes.
         return ("structure"
                 if _bold or not code[at - lo + len(tok):].strip() else "bind")
-    if re.fullmatch(rf"{re.escape(tok)} contains", code):
-        return "namespace_decl"    # bold, like the name in any block opener
     # A scope NAME keeps that formatting wherever it is named: after `leave` or
     # `repeat`, and on the road header that reopens a crossroad. A name should
     # not change appearance between where it is declared and where it is used.
@@ -187,7 +185,7 @@ def classify(tok, kind, src, at):
 
 
 def namespaces_of(src, base):
-    """Every `NAME contains` this file and its includes declare.
+    """Every namespace this file and its includes declare.
 
     Without this the head of a dotted name is guesswork: `linux.file` and
     `output.write` look identical to a scanner, and colouring an instance as a
@@ -199,8 +197,9 @@ def namespaces_of(src, base):
             continue
         seen.add(path)
         text = path.read_text()
-        found |= set(re.findall(r"^(\w+) contains$", text, re.M))
-        # ...and the top-level names an included file declares. Those are this
+        # A namespace has no keyword of its own any more -- it is a top-level
+        # `NAME is` whose children declare -- so the head of a dotted name is
+        # any top-level declaration. Those are this
         # language's built-ins, the `string`/`math` of it, and a call into one
         # is the only dotted call Lua draws as a single unit.
         found |= set(re.findall(r"^(\w+) is$", text, re.M))

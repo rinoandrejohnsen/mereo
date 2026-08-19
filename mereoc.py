@@ -92,7 +92,7 @@ import sys
 PRIMITIVES = {}
 HAS_PROGRAM = False   # a `program is` section was seen (an EMPTY one is legal)
 
-RESERVED = {"is", "already", "and", "in", "out", "end", "contains",
+RESERVED = {"is", "already", "and", "in", "out", "end", "contains",   # `contains` is retired but stays reserved: it must not become an ordinary name while the message above still points at it
             "include", "ensure", "fails", "bytes", "program", "failures",
             "acquire", "release", "exit", "or", "continue",
             "final", "adopted", "extends", "constant", "assembly", "helper",
@@ -541,7 +541,7 @@ def emit_asm_wrapper(name, prim):
     # the C function is prefixed so a syscall named like a libc/GCC builtin
     # (exit, read, write, open, close, ...) never collides with it
     lines = [f"static inline __attribute__((always_inline)){noret} "
-             f"{ret} _assembly_{name}({sig}) {{"]
+             f"{ret} _assembly_{csym(name)}({sig}) {{"]
     if prim["out"]:
         lines.append("    long _r;")
     lines.extend(pre)
@@ -562,7 +562,7 @@ def render_call(d):
     plain named-wrapper call; a syscall is syscallK(number, args...)."""
     prim = PRIMITIVES[d["pname"]]
     if prim.get("kind") == "asm":
-        return f"_assembly_{d['pname']}(" + ", ".join(d["args"]) + ")"
+        return f"_assembly_{csym(d['pname'])}(" + ", ".join(d["args"]) + ")"
     if prim.get("kind") == "helper":
         return f"{prim['cfunc']}(" + ", ".join(d["args"]) + ")"
     return (f"syscall{len(d['args'])}("
@@ -585,6 +585,27 @@ def _uncomment(line):
         elif c == "-" and line[i + 1:i + 2] == "-" and not inq:
             return line[:i].rstrip()
     return line
+
+
+def landmark(name):
+    """The label a noreturn primitive leaves in the program -- `exit`.
+
+    Unlike the `_assembly_` wrapper, this is not the primitive's symbol but the
+    PROGRAM'S END: the place every release floor falls through to, and the
+    landmark `mereocheck` measures hot/cold layout against. So it keeps the bare
+    name even though the primitive is now `linux.exit` -- the namespace says
+    where the syscall was declared, which is not what this label is about."""
+    return name.rpartition(".")[2]
+
+
+def csym(name):
+    """A canonical name -> a C identifier.
+
+    Primitives are the one declaration whose NAME reaches the output, as
+    `_assembly_open`. Now that a name carries its namespace the dot has to go,
+    and it goes here rather than at either call site, so the wrapper's
+    definition and its uses cannot disagree about the spelling."""
+    return name.replace(".", "_")
 
 
 def _indent(line):
@@ -677,6 +698,11 @@ def _namespace_fold(src):
         code = _uncomment(raw)
         s = code.strip()
         m = _NS_OPEN.fullmatch(s)
+        if m:
+            fail(f"line {len(out) + 1}: `{m.group(1)} contains` -- a namespace "
+                 f"is an `is` block whose children DECLARE, so write "
+                 f"`{m.group(1)} is`. One keyword asks one question of every "
+                 "block: does its body run? `is` declares, `goes` runs.")
         if (m is None and ns is None and _indent(code) == 0
                 and _DEF_OPEN.fullmatch(s) and "extends" not in s
                 and _declares_only(lines, i, 0)):
@@ -1243,6 +1269,22 @@ def in_namespace(name, ns):
     OF_NAMESPACE[name] = ns
 
 
+def qualified(name, ns):
+    """The CANONICAL NAME of a declaration: what the tables are keyed by.
+
+    A namespace used to be a mandatory prefix and nothing more -- `deref` mapped
+    `linux.file` back to bare `file`, so everything downstream saw one flat
+    table and two namespaces declaring the same name collided, as did a
+    namespace member with a top-level name. Both were reported as
+    `definition 'rec' redefined`, naming neither namespace.
+
+    Keying by the path fixes that by construction rather than by a check:
+    `alpha.rec` and `beta.rec` are two keys. It needs no tree and no change
+    downstream, because every lookup already goes through `deref`, which now
+    answers with the same path this builds."""
+    return f"{ns}.{name}" if ns else name
+
+
 def bare(ref, ns):
     """`deref` without the refusal: the bare name a reference denotes, or None
     when it denotes nothing here. For the places that ASK whether a name is a
@@ -1250,9 +1292,11 @@ def bare(ref, ns):
     if "." in ref:
         head, _, tail = ref.rpartition(".")
         if head in NAMESPACES:
-            return tail if tail in NAMESPACES[head] else None
+            return f"{head}.{tail}" if tail in NAMESPACES[head] else None
         return ref
-    return ref if OF_NAMESPACE.get(ref, ns) == ns else None
+    if OF_NAMESPACE.get(ref, ns) != ns:
+        return None
+    return qualified(ref, ns)
 
 
 def not_a_receiver(ref, ln, what="name"):
@@ -1264,13 +1308,28 @@ def not_a_receiver(ref, ln, what="name"):
              f"and it has no {what} by that name")
 
 
+def receiver(ref, slots, ns, ln):
+    """Resolve a call's RECEIVER, letting a declared instance win.
+
+    `file is linux.file (...)` then `file.read (...)`: the receiver names the
+    instance, not the namespace member it was built from. Innermost wins, as a
+    local does in C++. Only when nothing local answers is it a definition
+    reference, and then it is qualified like any other."""
+    if any(sl.get("name") == ref for sl in slots):
+        return ref
+    return deref(ref, ns, ln, "definition")
+
+
 def deref(ref, ns, ln, what="name"):
     """A source-level reference -> the bare name it denotes.
 
-    `linux.file` from anywhere, `file` from inside `namespace linux`. A bare
-    name that belongs to a namespace you are not inside is refused HERE, which
-    is the whole point of having them -- without that check a namespace would
-    be a prefix you may type, not a scope."""
+    `linux.file` from anywhere, `file` from inside namespace `linux`. Both
+    answer with the CANONICAL name -- `linux.file` -- which is what the tables
+    are keyed by, so two namespaces declaring the same name stay two things.
+
+    A bare name that belongs to a namespace you are not inside is refused HERE,
+    which is the whole point of having them: without that check a namespace
+    would be a prefix you may type, not a scope."""
     if "." in ref:
         head, _, tail = ref.rpartition(".")
         if head in NAMESPACES:
@@ -1278,13 +1337,13 @@ def deref(ref, ns, ln, what="name"):
                 near = ", ".join(sorted(NAMESPACES[head])[:6])
                 fail(f"line {ln}: namespace '{head}' has no {what} '{tail}' "
                      f"(it has: {near}{', ...' if len(NAMESPACES[head]) > 6 else ''})")
-            return tail
+            return f"{head}.{tail}"
         return ref                      # not a namespace -- an instance's member
     owner = OF_NAMESPACE.get(ref)
     if owner is not None and owner != ns:
         fail(f"line {ln}: '{ref}' is declared in namespace '{owner}' -- "
              f"write `{owner}.{ref}`")
-    return ref
+    return qualified(ref, owner)
 
 
 def free_templates(src):
@@ -1501,11 +1560,12 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                 if name in RESERVED and name != "exit":
                     fail(f"line {n}: '{name}' is a reserved word; pick "
                          "another assembly name")
-                if name in prims:
-                    fail(f"line {n}: primitive '{name}' redeclared")
+                _q = qualified(name, ns_of_line.get(n))
+                if _q in prims:
+                    fail(f"line {n}: primitive '{_q}' redeclared")
                 mod = (m.group(2) or "").strip()
                 in_namespace(name, ns_of_line.get(n))
-                section = prims[name] = {"kind": "asm", "template": m.group(3),
+                section = prims[_q] = {"kind": "asm", "template": m.group(3),
                                          "noreturn": mod == "final",
                                          "volatile": mod != "pure",
                                          "args": [], "out": None,
@@ -1525,11 +1585,21 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     fail(f"line {n}: unknown helper '{m.group(2)}' "
                          f"(available: {', '.join(sorted(HELPER_C))})")
                 in_namespace(name, ns_of_line.get(n))
-                section = prims[name] = {"kind": "helper", "cfunc": m.group(2),
+                section = prims[qualified(name, ns_of_line.get(n))] = {
+                                         "kind": "helper", "cfunc": m.group(2),
                                          "noreturn": False, "contract": None,
                                          "args": [], "out": None}
                 continue
-            m = re.match(r"^program(?: \((.*)\))? (?:is|goes)$", s)
+            m = re.match(r"^program(?: \((.*)\))? is$", s)
+            if m:
+                fail(f"line {n}: `program is` -- a program RUNS, so it opens "
+                     "with `goes`. Every block answers that one question in its "
+                     "keyword: `is` declares, `goes` runs.")
+            m = re.match(r"^(\w+) \((.*)\) is$", s)
+            if m:
+                fail(f"line {n}: `{m.group(1)} (...) is` -- a template runs, so "
+                     f"it opens with `goes`: `{m.group(1)} ({m.group(2)}) goes`")
+            m = re.match(r"^program(?: \((.*)\))? goes$", s)
             if m:
                 if flags.get("program"):
                     fail(f"line {n}: a program section already appeared "
@@ -1552,7 +1622,7 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
             if s == "failures is":
                 section = "failures"
                 continue
-            m = re.match(r"^(\w+) \((.*)\) (?:is|goes)$", s)
+            m = re.match(r"^(\w+) \((.*)\) goes$", s)
             if m:
                 # A TEMPLATE STANDING ALONE. It is the same line as `program with
                 # ... is` one rule above -- a name, the ports the work reaches the
@@ -1568,6 +1638,7 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                 # and the name is one namespace: `add with ... is` and `add is`
                 # are the same name declared twice.
                 name = name_ok(m.group(1), n, "template")
+                name = qualified(name, ns_of_line.get(n))
                 if name in definitions:
                     fail(f"line {n}: definition '{name}' redefined")
                 params = [p.strip() for p in m.group(2).split(",")]
@@ -1595,9 +1666,10 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
             m = re.match(r"^(\w+)(?: extends ([\w.]+(?: and [\w.]+)*))? is$", s)
             if m:
                 name = name_ok(m.group(1), n, "definition")
+                in_namespace(name, ns_of_line.get(n))
+                name = qualified(name, ns_of_line.get(n))
                 if name in definitions:
                     fail(f"line {n}: definition '{name}' redefined")
-                in_namespace(name, ns_of_line.get(n))
                 section = definitions[name] = {"name": name, "state": {},
                                            "parts": {}, "methods": {},
                                            "packed": [], "bitdecl": [],
@@ -1687,7 +1759,7 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
             defn = section
             if ind == 2:
                 method = inblock = curcall = None
-                m = re.match(r"^(\w+)(?: \((.*)\))? (?:is|goes)$", s)
+                m = re.match(r"^(\w+)(?: \((.*)\))? goes$", s)
                 if m:
                     mname, params = m.group(1), []
                     if m.group(2):
@@ -1771,6 +1843,17 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                                                 "borrowed" if m.group(2)
                                                 else "owned")
                     continue
+                m = re.match(r"^(\w+)(?: \((.*)\))? is$", s)
+                if m:
+                    if m.group(2) is not None:
+                        fail(f"line {n}: `{m.group(1)} (...) is` -- a method "
+                             f"runs, so it opens with `goes`")
+                    fail(f"line {n}: `{m.group(1)} is` inside '{defn['name']}' -- a "
+                         "method runs, so it opens with `goes`. If a DEFINITION "
+                         "was meant, a block holding definitions is a NAMESPACE "
+                         f"and holds nothing else, so either move `{m.group(1)} "
+                         f"is` out to the left margin, or drop the fields and "
+                         f"methods from '{defn['name']}'.")
                 fail(f"line {n}: unrecognized definition line: {s!r}")
             if ind == 4 and method is not None:
                 # a procedure method opens its body with slot decls / a loop --
@@ -1968,7 +2051,7 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                         m = re.match(r"^([\w.]+)\.(\w+)\s*(?:\((.*)\))?$", s)
                         if m:
                             step = {"type": "call", "method": m.group(2),
-                                    "inst": deref(m.group(1), ns_of_line.get(n), n, "definition"),
+                                    "inst": receiver(m.group(1), slots, ns_of_line.get(n), n),
                             "conns": [],
                                     "recover": None, "alts": [], "line": n}
                             for _a in _arguments(m.group(3) or "", n):
@@ -2106,7 +2189,7 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                         m = re.match(r"^([\w.]+)\.(\w+)\s*(?:\((.*)\))?$", s)
                         if m:
                             step = {"type": "call", "method": m.group(2),
-                                    "inst": deref(m.group(1), ns_of_line.get(n), n, "definition"),
+                                    "inst": receiver(m.group(1), slots, ns_of_line.get(n), n),
                             "conns": [],
                                     "recover": None, "alts": [], "line": n}
                             for _a in _arguments(m.group(3) or "", n):
@@ -2577,7 +2660,7 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                 if m:
                     not_a_receiver(m.group(1), n, f"member '{m.group(2)}'")
                     step = {"type": "call", "method": m.group(2),
-                            "inst": deref(m.group(1), ns_of_line.get(n), n, "definition"),
+                            "inst": receiver(m.group(1), slots, ns_of_line.get(n), n),
                             "conns": [], "recover": None,
                             "alts": [], "line": n}
                     steps.append(step)
@@ -3096,11 +3179,12 @@ def elaborate_classes(definitions):
                     fail(f"line {meth['line']}: '{meth['name']}' takes no "
                          "parameters and its body only declares names, so "
                          "nothing it does can be observed. Did you mean a "
-                         f"DEFINITION? One cannot be nested inside another -- "
-                         f"'{defn['name']}' holds methods and fields -- so move "
-                         f"`{meth['name']} is` out to the left margin (or into a "
-                         f"namespace) and reach it as '{meth['name']}' rather "
-                         f"than '{defn['name']}.{meth['name']}'")
+                         f"DEFINITION? '{defn['name']}' holds fields and `goes` "
+                         "methods, and a block that holds definitions is a "
+                         "NAMESPACE -- one or the other, not both. Either move "
+                         f"`{meth['name']} is` out to the left margin, or drop "
+                         f"the fields and methods from '{defn['name']}' so it "
+                         "becomes the namespace it is being written as.")
                 continue
             if meth["prim"] is None and meth["delegate"] is None:
                 fail(f"line {meth['line']}: method '{meth['name']}' has "
@@ -4789,7 +4873,7 @@ def inline_procedure(meth, st, cid, definitions, slots, prims):
     if idefn is not None:                 # the resource's own state is not local
         bound |= {p for p in idefn.get("flat", ()) if re.fullmatch(r"\w+", p)}
     bslots, bsteps = [], []
-    parse("program is\n" + "\n".join(meth["procedure"]), definitions, bslots,
+    parse("program goes\n" + "\n".join(meth["procedure"]), definitions, bslots,
           bsteps, [], prims, {}, bound=bound, procedure=True,
           namespace=meth.get("namespace"))
     # a TEMPLATE BODY is its own parse, so it needs its own check -- and it is
@@ -5382,7 +5466,7 @@ def plan(definitions, slots, steps, overrides):
                   "resume": None, "stage": len(fallible) + 1, "ref": ref,
                   "ident": (None, ref), "errsrc": errsrc_c, "strings": [],
                   "code": "1", "line": st["line"],
-                  "target": f"release_{live[-1]}" if live else final["op"]}
+                  "target": f"release_{live[-1]}" if live else landmark(final["op"])}
             fallible.append(ps)
             into.append(ps)
             return
@@ -5423,7 +5507,7 @@ def plan(definitions, slots, steps, overrides):
                                  "pname": None})
                     return
                 into.append({"loop_exit": (f"release_{live[-1]}" if live
-                                           else final["op"]),
+                                           else landmark(final["op"])),
                              "releases": [],        # the tower performs them
                              "cond_c": (render_cond(st["cond"], scalars,
                                                     buffers, st["line"])
@@ -5654,7 +5738,7 @@ def plan(definitions, slots, steps, overrides):
                 fail(f"line {ln}: '{st['op']}' has no port '{port}'")
             ps = {"pname": st["op"], "noreturn": prim["noreturn"],
                   "args": args, "out": out, "clauses": clauses,
-                  "label": st["op"] if prim["noreturn"] else None,
+                  "label": landmark(st["op"]) if prim["noreturn"] else None,
                   "recover": None, "gtarget": None, "resume": None}
             if clauses:
                 # A fallible primitive registers a stage like any other call, so
@@ -5668,7 +5752,7 @@ def plan(definitions, slots, steps, overrides):
                     "stage": len(fallible) + 1,
                     "ref": st.get("from_method") or st["op"],
                     "ident": (st["op"], st.get("from_method") or st["op"]),
-                    "target": f"release_{live[-1]}" if live else final["op"],
+                    "target": f"release_{live[-1]}" if live else landmark(final["op"]),
                     "errsrc": out,
                     "strings": [a for _, a, _ in st["conns"] if is_str(a)],
                     "code": "1",
@@ -5802,7 +5886,7 @@ def plan(definitions, slots, steps, overrides):
                 constructed.add(inst["name"])
                 record_live(inst["name"])
                 nm = inst["name"]
-                below = f"release_{live[-2]}" if len(live) >= 2 else final["op"]
+                below = f"release_{live[-2]}" if len(live) >= 2 else landmark(final["op"])
                 consumed = set()
                 for i, layer in enumerate(defn["layers"]):
                     init = layer["init"]
@@ -5950,7 +6034,7 @@ def plan(definitions, slots, steps, overrides):
                 "stage": len(fallible) + 1,
                 "ref": ref,
                 "ident": ident,
-                "target": f"release_{floor[-1]}" if floor else final["op"],
+                "target": f"release_{floor[-1]}" if floor else landmark(final["op"]),
                 "errsrc": out if out else valmap[meth["ensure"][0][0]],
                 "strings": ([a for _, a, _ in st["conns"] if is_str(a)]
                             + [s for a2 in alts for s in a2["strings"]]),

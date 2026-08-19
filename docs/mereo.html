@@ -148,7 +148,7 @@ release_server:
 <h3>A complete program</h3>
 <pre><code><span class="t-structure">include</span> <span class="t-string">"linux.mereo"</span>
 
-<span class="t-structure">program</span> <span class="t-structure">is</span>
+<span class="t-structure">program</span> <span class="t-structure">goes</span>
   <span class="t-plain">message</span> <span class="t-bind">is</span> <span class="t-string">"hello, world\n"</span>
 
   <span class="t-plain">terminal</span> <span class="t-bind">is</span> <span class="t-inside">already</span> <span class="t-namespace">linux</span><span class="t-operator">.</span><span class="t-call">file</span> <span class="t-operator">(</span><span class="t-label">descriptor</span> <span class="t-bind">is</span> <span class="t-number">1</span><span class="t-operator">)</span>
@@ -179,12 +179,12 @@ release_server:
 <pre><code>  <span class="t-inside">ensure</span> <span class="t-plain">argc</span> <span class="t-operator">&gt;=</span> <span class="t-number">2</span>
   <span class="t-structure">leave</span> <span class="t-decl">scan</span> <span class="t-inside">when</span> <span class="t-plain">c</span> <span class="t-operator">==</span> <span class="t-number">32</span></code></pre>
 <h3>Namespaces</h3>
-<p>A namespace is opened with <code>NAME contains</code> and closed with <code>end</code>, and a file may hold several. The system-call library places everything under <code>linux</code>; the computation library deliberately uses none, so its groups are reached bare:</p>
+<p>A namespace has no keyword of its own: it is an <code>is</code> block whose children <strong>declare</strong>, and nothing else distinguishes it. The system-call library places everything under <code>linux</code>; the computation library deliberately uses none, so its groups are reached bare:</p>
 <pre><code>  <span class="t-namespace">linux</span><span class="t-operator">.</span><span class="t-member">files</span><span class="t-operator">.</span><span class="t-call">remove</span> <span class="t-operator">(</span><span class="t-label">name</span> <span class="t-bind">is</span> <span class="t-string">"scratch"</span><span class="t-operator">,</span> <span class="t-label">flags</span> <span class="t-bind">is</span> <span class="t-number">0</span><span class="t-operator">)</span>
   <span class="t-namespace">text</span><span class="t-operator">.</span><span class="t-call">find</span> <span class="t-operator">(</span><span class="t-label">data</span> <span class="t-bind">is</span> <span class="t-plain">block</span><span class="t-operator">,</span> <span class="t-label">length</span> <span class="t-bind">is</span> <span class="t-plain">count</span><span class="t-operator">,</span> <span class="t-label">byte</span> <span class="t-bind">is</span> <span class="t-number">10</span><span class="t-operator">,</span> <span class="t-label">offset</span> <span class="t-bind">is</span> <span class="t-plain">at</span><span class="t-operator">)</span></code></pre>
-<p>A namespace is a resolution layer only. It renames nothing in the generated output.</p>
+<p>A name inside one is qualified from outside and bare from within, and the same name in two namespaces is <strong>two things</strong> — declarations are keyed by their full path, so <code>alpha.rec</code> and <code>beta.rec</code> never meet.</p>
 <h3>Reserved words</h3>
-<p>The 42 reserved words fall into a few groups: block openers and closers (<code>is</code>, <code>goes</code>, <code>contains</code>, <code>end</code>, <code>scope</code>, <code>program</code>), the two jumps (<code>leave</code>, <code>repeat</code>), declarations (<code>bytes</code>, <code>constant</code>, <code>already</code>, <code>adopted</code>, <code>extends</code>, <code>helper</code>, <code>assembly</code>, <code>pure</code>, <code>final</code>), checks and repair (<code>ensure</code>, <code>fails</code>, <code>failures</code>, <code>or</code>, <code>continue</code>, <code>when</code>, <code>likely</code>, <code>branchless</code>), and the words that describe memory and machine detail (<code>as</code>, <code>in</code>, <code>out</code>, <code>to</code>, <code>high</code>, <code>low</code>, <code>whole</code>, <code>atomic</code>, <code>volatile</code>, <code>fence</code>, <code>clobbers</code>, <code>register</code>).</p>
+<p>The reserved words fall into a few groups: block openers and closers (<code>is</code>, <code>goes</code>, <code>end</code>, <code>scope</code>, <code>program</code>), the two jumps (<code>leave</code>, <code>repeat</code>), declarations (<code>bytes</code>, <code>constant</code>, <code>already</code>, <code>adopted</code>, <code>extends</code>, <code>helper</code>, <code>assembly</code>, <code>pure</code>, <code>final</code>), checks and repair (<code>ensure</code>, <code>fails</code>, <code>failures</code>, <code>or</code>, <code>continue</code>, <code>when</code>, <code>likely</code>, <code>branchless</code>), and the words that describe memory and machine detail (<code>as</code>, <code>in</code>, <code>out</code>, <code>to</code>, <code>high</code>, <code>low</code>, <code>whole</code>, <code>atomic</code>, <code>volatile</code>, <code>fence</code>, <code>clobbers</code>, <code>register</code>).</p>
 </section>
 <section id="control-flow">
 <h2>Control flow</h2>
@@ -206,7 +206,7 @@ release_server:
 <p>Because both jumps name their target, a jump from an inner scope may address an outer one, and no flag is needed to carry the decision outwards:</p>
 <pre><code><span class="t-structure">include</span> <span class="t-string">"linux.mereo"</span>
 
-<span class="t-structure">program</span> <span class="t-structure">is</span>
+<span class="t-structure">program</span> <span class="t-structure">goes</span>
   <span class="t-plain">row</span> <span class="t-bind">is</span> <span class="t-number">0</span>
   <span class="t-plain">col</span> <span class="t-bind">is</span> <span class="t-number">0</span>
 
@@ -242,7 +242,7 @@ release_server:
 <p>There does not need to be one. An <code>else</code> is a scope the <code>if</code> <strong>leaves early</strong>:</p>
 <pre><code><span class="t-structure">include</span> <span class="t-string">"linux.mereo"</span>
 
-<span class="t-structure">program</span> <span class="t-operator">(</span><span class="t-plain">arguments</span><span class="t-operator">)</span> <span class="t-structure">is</span>
+<span class="t-structure">program</span> <span class="t-operator">(</span><span class="t-plain">arguments</span><span class="t-operator">)</span> <span class="t-structure">goes</span>
   <span class="t-plain">x</span> <span class="t-bind">is</span> <span class="t-plain">arguments</span><span class="t-operator">.</span><span class="t-member">count</span>
 
   <span class="t-plain">output</span> <span class="t-bind">is</span> <span class="t-inside">already</span> <span class="t-namespace">linux</span><span class="t-operator">.</span><span class="t-call">file</span> <span class="t-operator">(</span><span class="t-label">descriptor</span> <span class="t-bind">is</span> <span class="t-number">1</span><span class="t-operator">)</span>
@@ -358,13 +358,13 @@ release_server:
   <span class="t-plain">tag</span> <span class="t-bind">is</span> <span class="t-number">1</span> <span class="t-inside">bytes</span>
   <span class="t-plain">span</span> <span class="t-bind">is</span> <span class="t-number">2</span> <span class="t-inside">bytes</span> <span class="t-inside">as</span> <span class="t-inside">big</span>
 
-  <span class="t-decl">fill</span> <span class="t-operator">(</span><span class="t-plain">a</span><span class="t-operator">,</span> <span class="t-plain">b</span><span class="t-operator">)</span> <span class="t-structure">is</span>
+  <span class="t-call">fill</span> <span class="t-operator">(</span><span class="t-plain">a</span><span class="t-operator">,</span> <span class="t-plain">b</span><span class="t-operator">)</span> <span class="t-structure">goes</span>
     <span class="t-plain">tag</span> <span class="t-bind">is</span> <span class="t-plain">a</span>                   <span class="t-comment">-- its own fields, by bare name</span>
     <span class="t-plain">span</span> <span class="t-bind">is</span> <span class="t-plain">b</span>                  <span class="t-comment">-- ...and byte order still holds</span>
   <span class="t-structure">end</span>
 <span class="t-structure">end</span>
 
-<span class="t-structure">program</span> <span class="t-structure">is</span>
+<span class="t-structure">program</span> <span class="t-structure">goes</span>
   <span class="t-plain">buf</span> <span class="t-bind">is</span> <span class="t-number">8</span> <span class="t-inside">bytes</span>
 
   <span class="t-plain">h</span> <span class="t-bind">is</span> <span class="t-plain">buf</span> <span class="t-inside">as</span> <span class="t-plain">record</span>
@@ -410,7 +410,7 @@ release_server:
 <section id="templates">
 <h2>Templates</h2>
 <p>mereo has no functions. Reuse is by <strong>splicing</strong>: a template is copied into each place it is used, with its locals renamed. There is no call, no return, no stack frame and no calling convention.</p>
-<pre><code><span class="t-decl">shout</span> <span class="t-operator">(</span><span class="t-plain">area</span><span class="t-operator">,</span> <span class="t-plain">length</span><span class="t-operator">)</span> <span class="t-structure">is</span>
+<pre><code><span class="t-call">shout</span> <span class="t-operator">(</span><span class="t-plain">area</span><span class="t-operator">,</span> <span class="t-plain">length</span><span class="t-operator">)</span> <span class="t-structure">goes</span>
   <span class="t-plain">i</span> <span class="t-bind">is</span> <span class="t-number">0</span>
   <span class="t-decl">fix</span> <span class="t-structure">goes</span>
     <span class="t-plain">c</span> <span class="t-bind">is</span> <span class="t-operator">[</span><span class="t-plain">area</span> <span class="t-operator">+</span> <span class="t-plain">i</span> <span class="t-operator">:</span> <span class="t-number">1</span><span class="t-operator">]</span>
@@ -444,7 +444,7 @@ release_server:
 <p>A <strong>resource</strong> is a definition that owns something and releases it when its scope ends. This is the behaviour C++ gets from destructors, obtained without destructors, without an unwinder and without a runtime.</p>
 <pre><code><span class="t-structure">include</span> <span class="t-string">"linux.mereo"</span>
 
-<span class="t-structure">program</span> <span class="t-structure">is</span>
+<span class="t-structure">program</span> <span class="t-structure">goes</span>
   <span class="t-plain">buffer</span> <span class="t-bind">is</span> <span class="t-number">64</span> <span class="t-inside">bytes</span>
   <span class="t-plain">count</span> <span class="t-bind">is</span> <span class="t-number">0</span>
 
@@ -481,7 +481,7 @@ release_server:
   <span class="t-plain">descriptor</span> <span class="t-bind">is</span> <span class="t-number">4</span> <span class="t-inside">bytes</span> <span class="t-inside">as</span> <span class="t-inside">signed</span>
   <span class="t-plain">status</span> <span class="t-bind">is</span> <span class="t-number">8</span> <span class="t-inside">bytes</span> <span class="t-inside">as</span> <span class="t-inside">signed</span>
 
-  <span class="t-structure">acquire</span> <span class="t-operator">(</span><span class="t-plain">domain</span><span class="t-operator">,</span> <span class="t-plain">type</span><span class="t-operator">,</span> <span class="t-plain">protocol</span><span class="t-operator">,</span> <span class="t-plain">address</span><span class="t-operator">,</span> <span class="t-plain">length</span><span class="t-operator">)</span> <span class="t-structure">is</span>
+  <span class="t-structure">acquire</span> <span class="t-operator">(</span><span class="t-plain">domain</span><span class="t-operator">,</span> <span class="t-plain">type</span><span class="t-operator">,</span> <span class="t-plain">protocol</span><span class="t-operator">,</span> <span class="t-plain">address</span><span class="t-operator">,</span> <span class="t-plain">length</span><span class="t-operator">)</span> <span class="t-structure">goes</span>
     <span class="t-namespace">linux</span><span class="t-operator">.</span><span class="t-call">socket</span> <span class="t-operator">(</span><span class="t-label">domain</span> <span class="t-bind">is</span> <span class="t-plain">domain</span><span class="t-operator">,</span>
                   <span class="t-label">type</span> <span class="t-bind">is</span> <span class="t-plain">type</span><span class="t-operator">,</span>
                   <span class="t-label">protocol</span> <span class="t-bind">is</span> <span class="t-plain">protocol</span><span class="t-operator">,</span>
@@ -510,11 +510,11 @@ add `acquired` after that call</code></pre>
 <pre><code>  <span class="t-plain">tty</span> <span class="t-structure">extends</span> <span class="t-plain">file</span> <span class="t-structure">is</span>
     <span class="t-plain">backup</span> <span class="t-bind">is</span> <span class="t-number">36</span> <span class="t-inside">bytes</span>
 
-    <span class="t-structure">acquire</span> <span class="t-structure">is</span>
+    <span class="t-structure">acquire</span> <span class="t-structure">goes</span>
       <span class="t-call">ioctl</span> <span class="t-operator">(</span><span class="t-label">descriptor</span> <span class="t-bind">is</span> <span class="t-plain">descriptor</span><span class="t-operator">,</span> <span class="t-label">request</span> <span class="t-bind">is</span> <span class="t-number">21505</span><span class="t-operator">,</span> <span class="t-label">argument</span> <span class="t-bind">is</span> <span class="t-plain">backup</span><span class="t-operator">)</span>
     <span class="t-structure">end</span>
 
-    <span class="t-structure">release</span> <span class="t-structure">is</span>
+    <span class="t-structure">release</span> <span class="t-structure">goes</span>
       <span class="t-call">ioctl</span> <span class="t-operator">(</span><span class="t-label">descriptor</span> <span class="t-bind">is</span> <span class="t-plain">descriptor</span><span class="t-operator">,</span> <span class="t-label">request</span> <span class="t-bind">is</span> <span class="t-number">21506</span><span class="t-operator">,</span> <span class="t-label">argument</span> <span class="t-bind">is</span> <span class="t-plain">backup</span><span class="t-operator">)</span>
     <span class="t-structure">end</span>
   <span class="t-structure">end</span></code></pre>
@@ -527,7 +527,7 @@ exit:</code></pre>
 <p>Restore, then close, in reverse order of acquisition. A program says only:</p>
 <pre><code><span class="t-structure">include</span> <span class="t-string">"linux.mereo"</span>
 
-<span class="t-structure">program</span> <span class="t-structure">is</span>
+<span class="t-structure">program</span> <span class="t-structure">goes</span>
   <span class="t-plain">work</span> <span class="t-bind">is</span> <span class="t-namespace">linux</span><span class="t-operator">.</span><span class="t-member">terminal_settings</span>
 
   <span class="t-plain">console</span> <span class="t-bind">is</span> <span class="t-namespace">linux</span><span class="t-operator">.</span><span class="t-call">tty</span> <span class="t-operator">(</span><span class="t-label">path</span> <span class="t-bind">is</span> <span class="t-string">"/dev/tty"</span><span class="t-operator">,</span> <span class="t-label">flags</span> <span class="t-bind">is</span> <span class="t-number">2</span><span class="t-operator">,</span> <span class="t-label">mode</span> <span class="t-bind">is</span> <span class="t-number">0</span><span class="t-operator">)</span>
@@ -552,7 +552,7 @@ close(3)              = 0</code></pre>
 <h3><code>ensure</code></h3>
 <pre><code><span class="t-structure">include</span> <span class="t-string">"linux.mereo"</span>
 
-<span class="t-structure">program</span> <span class="t-operator">(</span><span class="t-plain">arguments</span><span class="t-operator">)</span> <span class="t-structure">is</span>
+<span class="t-structure">program</span> <span class="t-operator">(</span><span class="t-plain">arguments</span><span class="t-operator">)</span> <span class="t-structure">goes</span>
   <span class="t-plain">argc</span> <span class="t-bind">is</span> <span class="t-plain">arguments</span><span class="t-operator">.</span><span class="t-member">count</span>
   <span class="t-inside">ensure</span> <span class="t-plain">argc</span> <span class="t-operator">&gt;=</span> <span class="t-number">2</span>
 <span class="t-structure">end</span></code></pre>
@@ -716,7 +716,7 @@ $ echo $?
 <h3>Rust</h3>
 <p>Both derive cleanup from scope, and both refuse a garbage collector. Rust permits conditional moves and therefore needs drop flags — a hidden boolean recording whether a value still needs dropping — which mereo avoids by forbidding the move. Rust's borrow checker has no counterpart here; mereo's guarantee is narrower, resting on ownership never leaving the scope that made it. Rust's <code>Result</code> and <code>?</code> have no counterpart either: a mereo program cannot observe a failure without handling it, because a failed <code>ensure</code> has already begun the cleanup.</p>
 <h3>Lua and Ada</h3>
-<p>The influence is on surface rather than semantics. Comments are Lua's <code>--</code>. Blocks close with <code>end</code> in the manner of both. The reserved words are ordinary English chosen to be read aloud — <code>is</code>, <code>goes</code>, <code>contains</code>, <code>already</code>, <code>ensure</code> — which is closer to Ada's spirit than to C's.</p>
+<p>The influence is on surface rather than semantics. Comments are Lua's <code>--</code>. Blocks close with <code>end</code> in the manner of both. The reserved words are ordinary English chosen to be read aloud — <code>is</code>, <code>goes</code>, <code>already</code>, <code>ensure</code> — which is closer to Ada's spirit than to C's.</p>
 <p>The semantics are opposite to Lua's in nearly every respect: Lua is dynamically typed, garbage-collected and interpreted, with tables as its one data structure; mereo has no types on values, no allocator, no runtime and no data structures at all.</p>
 <h3>Where mereo does not compete</h3>
 <p>Anything wanting a heap, a thread pool, a package ecosystem, a second target platform, or a parser generator. None of those exist, and the design decisions that give the language its guarantees are the same ones that rule them out.</p>
@@ -727,7 +727,7 @@ $ echo $?
 <h3>Hello world</h3>
 <pre><code><span class="t-structure">include</span> <span class="t-string">"linux.mereo"</span>
 
-<span class="t-structure">program</span> <span class="t-structure">is</span>
+<span class="t-structure">program</span> <span class="t-structure">goes</span>
   <span class="t-plain">message</span> <span class="t-bind">is</span> <span class="t-string">"hello, world\n"</span>
 
   <span class="t-plain">terminal</span> <span class="t-bind">is</span> <span class="t-inside">already</span> <span class="t-namespace">linux</span><span class="t-operator">.</span><span class="t-call">file</span> <span class="t-operator">(</span><span class="t-label">descriptor</span> <span class="t-bind">is</span> <span class="t-number">1</span><span class="t-operator">)</span>
@@ -739,7 +739,7 @@ $ echo $?
 <p>The <code>close</code> is absent because it is derived; <code>source</code> belongs to the program's scope and is released when that scope ends, on any path out.</p>
 <pre><code><span class="t-structure">include</span> <span class="t-string">"linux.mereo"</span>
 
-<span class="t-structure">program</span> <span class="t-structure">is</span>
+<span class="t-structure">program</span> <span class="t-structure">goes</span>
   <span class="t-plain">buffer</span> <span class="t-bind">is</span> <span class="t-number">64</span> <span class="t-inside">bytes</span>
   <span class="t-plain">count</span> <span class="t-bind">is</span> <span class="t-number">0</span>
 
@@ -755,7 +755,7 @@ $ echo $?
 <h3>Requiring an argument</h3>
 <pre><code><span class="t-structure">include</span> <span class="t-string">"linux.mereo"</span>
 
-<span class="t-structure">program</span> <span class="t-operator">(</span><span class="t-plain">arguments</span><span class="t-operator">)</span> <span class="t-structure">is</span>
+<span class="t-structure">program</span> <span class="t-operator">(</span><span class="t-plain">arguments</span><span class="t-operator">)</span> <span class="t-structure">goes</span>
   <span class="t-plain">argc</span> <span class="t-bind">is</span> <span class="t-plain">arguments</span><span class="t-operator">.</span><span class="t-member">count</span>
   <span class="t-inside">ensure</span> <span class="t-plain">argc</span> <span class="t-operator">&gt;=</span> <span class="t-number">2</span>
 <span class="t-structure">end</span></code></pre>
@@ -765,7 +765,7 @@ $ echo $?
 <pre><code><span class="t-structure">include</span> <span class="t-string">"linux.mereo"</span>
 <span class="t-structure">include</span> <span class="t-string">"core.mereo"</span>
 
-<span class="t-structure">program</span> <span class="t-structure">is</span>
+<span class="t-structure">program</span> <span class="t-structure">goes</span>
   <span class="t-plain">capacity</span> <span class="t-bind">is</span> <span class="t-number">65536</span>
   <span class="t-plain">block</span> <span class="t-bind">is</span> <span class="t-plain">capacity</span> <span class="t-inside">bytes</span>
   <span class="t-plain">room</span> <span class="t-bind">is</span> <span class="t-plain">capacity</span> <span class="t-inside">bytes</span>
@@ -818,7 +818,7 @@ port -&gt; 8080</code></pre>
 <pre><code><span class="t-structure">include</span> <span class="t-string">"linux.mereo"</span>          <span class="t-comment">-- everything the kernel does, behind `linux.`</span>
 <span class="t-structure">include</span> <span class="t-string">"core.mereo"</span>           <span class="t-comment">-- ...and everything that needs none, unqualified</span>
 
-<span class="t-structure">program</span> <span class="t-structure">is</span>                     <span class="t-comment">-- ...or `program (arguments) is`</span>
+<span class="t-structure">program</span> <span class="t-structure">goes</span>                   <span class="t-comment">-- ...or `program (arguments) goes`</span>
   <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span><span class="t-member">steps</span><span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>
 <span class="t-structure">end</span>                            <span class="t-comment">-- reaching `end` ENDS the program, status 0</span>
 
@@ -826,7 +826,7 @@ port -&gt; 8080</code></pre>
                                <span class="t-comment">-- a non-zero one means something FAILED</span>
 <span class="t-namespace">linux</span><span class="t-operator">.</span><span class="t-call">exit</span> <span class="t-operator">(</span><span class="t-label">status</span> <span class="t-bind">is</span> <span class="t-plain">code</span><span class="t-operator">)</span>    <span class="t-comment">-- ...unless you tell the KERNEL a number</span>
                                <span class="t-comment">-- yourself, which is a last step like any other</span></code></pre>
-<p>Indentation is <strong>2 spaces per level</strong>, and every block ends with <code>end</code> under its opener. A call's arguments are not a block — they ride in its parentheses. See <a href="#syntax"><code>program is</code></a>.</p>
+<p>Indentation is <strong>2 spaces per level</strong>, and every block ends with <code>end</code> under its opener. A call's arguments are not a block — they ride in its parentheses. See <a href="#syntax"><code>program goes</code></a>.</p>
 <h3>Values and memory</h3>
 <pre><code><span class="t-plain">count</span> <span class="t-bind">is</span> <span class="t-number">0</span>                     <span class="t-comment">-- a scalar -- one machine word, signed</span>
 <span class="t-plain">buf</span> <span class="t-bind">is</span> <span class="t-number">4096</span> <span class="t-inside">bytes</span>              <span class="t-comment">-- a backing: its name is its ADDRESS</span>
@@ -845,7 +845,7 @@ port -&gt; 8080</code></pre>
 <span class="t-operator">[</span><span class="t-plain">buf</span> <span class="t-operator">+</span> <span class="t-plain">i</span> <span class="t-operator">:</span> <span class="t-number">1</span><span class="t-operator">]</span> <span class="t-bind">is</span> <span class="t-plain">c</span> <span class="t-inside">when</span> <span class="t-plain">ok</span>     <span class="t-comment">-- a conditional store -- may not write at all</span></code></pre>
 <p>See <a href="#memory">Views</a>.</p>
 <h3>Namespaces</h3>
-<pre><code><span class="t-namespace_decl">linux</span> <span class="t-structure">contains</span>                 <span class="t-comment">-- a file may declare several; what it declares</span>
+<pre><code><span class="t-decl">linux</span> <span class="t-structure">is</span>                       <span class="t-comment">-- a file may declare several; what it declares</span>
   <span class="t-decl">file</span> <span class="t-structure">is</span>                      <span class="t-comment">-- outside one is global</span>
     <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>
   <span class="t-structure">end</span>
@@ -886,12 +886,12 @@ port -&gt; 8080</code></pre>
 <span class="t-plain">n</span> <span class="t-bind">is</span> <span class="t-number">40</span> <span class="t-inside">when</span> <span class="t-plain">argc</span> <span class="t-operator">&gt;</span> <span class="t-number">2</span> <span class="t-inside">branchless</span>   <span class="t-comment">-- require a cmov, no branch</span></code></pre>
 <p>See <a href="#control-flow">Choosing a value</a>.</p>
 <h3>Templates</h3>
-<pre><code><span class="t-decl">shout</span> <span class="t-operator">(</span><span class="t-plain">area</span><span class="t-operator">,</span> <span class="t-plain">length</span><span class="t-operator">)</span> <span class="t-structure">is</span>        <span class="t-comment">-- free-standing: called by its own name</span>
+<pre><code><span class="t-call">shout</span> <span class="t-operator">(</span><span class="t-plain">area</span><span class="t-operator">,</span> <span class="t-plain">length</span><span class="t-operator">)</span> <span class="t-structure">goes</span>      <span class="t-comment">-- free-standing: called by its own name</span>
   <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>
 <span class="t-structure">end</span>
 
 <span class="t-decl">text</span> <span class="t-structure">is</span>                        <span class="t-comment">-- ...or gathered in a group</span>
-  <span class="t-decl">find</span> <span class="t-operator">(</span><span class="t-plain">data</span><span class="t-operator">,</span> <span class="t-plain">byte</span><span class="t-operator">,</span> <span class="t-plain">offset</span><span class="t-operator">)</span> <span class="t-structure">is</span>
+  <span class="t-call">find</span> <span class="t-operator">(</span><span class="t-plain">data</span><span class="t-operator">,</span> <span class="t-plain">byte</span><span class="t-operator">,</span> <span class="t-plain">offset</span><span class="t-operator">)</span> <span class="t-structure">goes</span>
     <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>
   <span class="t-structure">end</span>
 <span class="t-structure">end</span>
@@ -902,13 +902,13 @@ port -&gt; 8080</code></pre>
 <h3>Resources</h3>
 <pre><code><span class="t-decl">file</span> <span class="t-structure">is</span>                        <span class="t-comment">-- define one</span>
   <span class="t-plain">descriptor</span> <span class="t-bind">is</span> <span class="t-number">4</span> <span class="t-inside">bytes</span> <span class="t-inside">as</span> <span class="t-inside">signed</span>
-  <span class="t-structure">acquire</span> <span class="t-operator">(</span><span class="t-plain">path</span><span class="t-operator">)</span> <span class="t-structure">is</span>
+  <span class="t-structure">acquire</span> <span class="t-operator">(</span><span class="t-plain">path</span><span class="t-operator">)</span> <span class="t-structure">goes</span>
     <span class="t-plain">open</span> <span class="t-plain">system</span> <span class="t-plain">where</span> <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>
   <span class="t-structure">end</span>
-  <span class="t-structure">release</span> <span class="t-structure">is</span>
+  <span class="t-structure">release</span> <span class="t-structure">goes</span>
     <span class="t-plain">close</span> <span class="t-plain">system</span> <span class="t-plain">where</span> <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>
   <span class="t-structure">end</span>
-  <span class="t-decl">read</span> <span class="t-operator">(</span><span class="t-plain">buffer</span><span class="t-operator">,</span> <span class="t-plain">count</span><span class="t-operator">)</span> <span class="t-structure">is</span>
+  <span class="t-call">read</span> <span class="t-operator">(</span><span class="t-plain">buffer</span><span class="t-operator">,</span> <span class="t-plain">count</span><span class="t-operator">)</span> <span class="t-structure">goes</span>
     <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>
   <span class="t-structure">end</span>
 <span class="t-structure">end</span>

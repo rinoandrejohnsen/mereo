@@ -1,0 +1,60 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- Two namespaces declaring the SAME name, which used to be impossible.
+--
+-- A namespace was a mandatory prefix and nothing more: `NAMESPACES` recorded
+-- which bare names needed one, `deref` mapped `linux.file` back to bare `file`,
+-- and everything downstream saw one flat table. So two namespaces declaring
+-- `rec` collided, and so did a namespace member with a top-level name -- both
+-- reported as `definition 'rec' redefined`, naming neither namespace. It
+-- checked that you TYPED the prefix; it did not give the name a home.
+--
+-- The tables are keyed by the CANONICAL PATH now, so `alpha.rec` and `beta.rec`
+-- are simply two keys and separation holds by construction rather than by a
+-- check. No tree was needed: every lookup already went through `deref`, which
+-- answers with the same path the declaration registered.
+--
+-- The two `rec`s here are deliberately DIFFERENT shapes -- one byte host-order,
+-- two bytes network-order -- so a collision could not pass by accident. If they
+-- were one definition, the third number could not be 18.
+--
+--   prints:  7 4660 18
+
+alpha is
+  rec is
+    tag is 1 bytes
+  end
+end
+
+beta is
+  rec is
+    tag is 2 bytes as big
+  end
+end
+
+program goes
+  a is 8 bytes
+  b is 8 bytes
+  room is 64 bytes
+
+  page is already builder (data is room, count is 0, limit is 64)
+
+  ha is a as alpha.rec
+  hb is b as beta.rec
+
+  ha.tag is 7
+  hb.tag is 4660                       -- 0x1234, most-significant byte first
+
+  page.number (value is ha.tag)
+  page.byte (value is 32)
+  page.number (value is hb.tag)
+  page.byte (value is 32)
+  page.number (value is [b + 0 : 1])   -- 0x12 = 18, if beta.rec is really big
+  page.byte (value is 10)
+
+  terminal is already linux.file (descriptor is 1)
+
+  terminal.write (buffer is page.data, count is page.count)
+
+end

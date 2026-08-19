@@ -6,7 +6,7 @@ build, so none can drift from the language.
 ```ada
 include "linux.mereo"
 
-program is
+program goes
   message is "hello, world\n"
 
   terminal is already linux.file (descriptor is 1)
@@ -24,7 +24,7 @@ scope and is released when that scope ends, on any path out.
 ```ada
 include "linux.mereo"
 
-program is
+program goes
   buffer is 64 bytes
   count is 0
 
@@ -44,7 +44,7 @@ end
 ```ada
 include "linux.mereo"
 
-program (arguments) is
+program (arguments) goes
   argc is arguments.count
   ensure argc >= 2
 end
@@ -63,7 +63,7 @@ arithmetic appears at any call site.
 include "linux.mereo"
 include "core.mereo"
 
-program is
+program goes
   capacity is 65536
   block is capacity bytes
   room is capacity bytes

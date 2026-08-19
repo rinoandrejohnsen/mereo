@@ -114,13 +114,13 @@ record is
   tag is 1 bytes
   span is 2 bytes as big
 
-  fill (a, b) is
+  fill (a, b) goes
     tag is a                   -- its own fields, by bare name
     span is b                  -- ...and byte order still holds
   end
 end
 
-program is
+program goes
   buf is 8 bytes
 
   h is buf as record

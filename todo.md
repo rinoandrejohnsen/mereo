@@ -574,181 +574,76 @@ means the line is a sentence rather than a projection. Seven rules, each with a
 planted violation checked to fire. The corpus is 102 for 102 byte-identical,
 comments being comments.
 
-## Merging `contains` into `is`, and `is`/`goes` carrying declare-vs-run
+## `is` declares, `goes` runs — **DONE**
 
-**Status:** open, designed, not implemented. Measured against the corpus.
+**Status:** implemented. `contains` is retired, namespaces are `is` blocks, and
+two namespaces declaring the same name are two things.
 
-Two decisions, and the second came out of testing the first.
-
-### 1. `contains` becomes `is`
-
-A namespace and a stateless group differ (see the entry below), but they differ
-as two shapes of ONE thing. `is` already means "a definition, its shape decided
-by its contents" -- view, flag view, group, resource, and layout-with-templates
-are all `is` today. A definition holding only definitions is the fifth shape and
-needs no keyword of its own.
-
-### 2. The KEYWORD carries declare-vs-run, so `program goes`
-
-The first draft of this note said `is` introduces declarations and `goes`
-introduces statements, and separately that PARENS decide a method from a nested
-definition. Those two claims disagree: under the first, a template
-(`bump (value) is`) and the program (`program is`) both RUN, so both are
-misspelled. `leave program` works today, which settles it -- the program is a
-scope you can leave, so its body is statements.
-
-Letting the keyword carry the distinction resolves it and is better in its own
-right:
+Every block now answers one question in its keyword: **does its body run?**
 
 ```
-NAME is ... end                  a DEFINITION -- a scope of names
-NAME goes ... end                executable -- a scope of statements
-NAME (ports) goes ... end        the same, taking ports
-program goes ... end             the program
+NAME is ... end                 a definition -- namespaces, views, groups,
+                                resources, primitives
+NAME goes ... end               executable -- the program, templates, methods,
+NAME (ports) goes ... end       loops, roads, scopes
+program goes ... end
 ```
 
-What that buys:
+`attic/migrations/to_goes.py` did the rewrite: 410 lines across 165 files, plus
+the fenced snippets in `docs/`. One pass with an indent stack is enough because
+the answer depends only on a line's PARENT block.
 
-- **The parens rule becomes unnecessary.** The keyword tells a method from a
-  nested definition, so a zero-parameter method needs no empty parens:
-  `acquire goes`, `release goes`. The `() is` migration and the `acquire`/
-  `release` role exception both disappear.
-- **`leave`/`repeat` get a one-sentence rule**: you can leave a `goes`, you
-  cannot leave an `is`. That is already exactly what the implementation does --
-  `loop_stack` holds only scopes that exist at run time.
-- `goes` already takes a qualifier before it (`verdict likely goes`,
-  `verdict when run == 0 goes`), so `bump (value) goes` fits the shape rather
-  than inventing one.
+**A namespace has no keyword of its own.** It is an `is` block whose children
+DECLARE, which after the migration is a one-level question — a namespace holds
+definitions and primitives, a definition holds fields and `goes` methods. That
+is the old ambiguity going away rather than moving: `acquire is` and `file is`
+used to be the same line meaning different things depending on what enclosed
+them, which is exactly how a definition inside a definition came to be read as a
+method.
 
-Consistency holds across the rest of the language: `open is assembly "syscall"`
-is a primitive DECLARATION whose body declares operands, so it keeps `is`; a
-layout with templates is `record is` holding `fill (a, b) goes`; a resource is
-`file is` holding `acquire goes`, `read (...) goes`, `release goes`.
+**Separation, which was the point.** Declarations are keyed by their canonical
+path, so `alpha.rec` and `beta.rec` are two keys rather than one collision. No
+tree was needed: every lookup already went through `deref`, which now answers
+with the same path the declaration registered. `tests/progs/namespace_separate`
+is the test, with the two `rec`s deliberately different shapes so a collision
+could not pass unnoticed; the previous compiler refuses it with
+`definition 'rec' redefined`.
 
-**Cost, counted:** 426 lines change -- 156 `program is`, 256 methods, 14
-free-standing templates. 80 definitions keep `is`. Mechanical, and
-`attic/migrations/` has precedent for doing it as a script and verifying the
-corpus byte-identical afterwards.
+A receiver resolves to a declared INSTANCE first, as a local does in C++.
+Without that, `file is linux.file (...)` followed by `file.read (...)` is
+ambiguous — and two programs in the corpus were relying on the old flattening to
+resolve `linux.file.read (...)` to their instance, which separation exposed as
+the accident it was.
 
-### First: a mereo namespace is not yet a C++ namespace
+**What it cost the output.** 81 of 83 binaries are byte-identical to the
+pre-migration build. The two that differ do so for one stated reason: an error
+record now names the namespace (`inspect linux.files`, not `inspect files`),
+which is a longer string in `.rodata`. Primitives are the one declaration whose
+name reaches the C, as `_assembly_linux_close`; the `exit` LABEL keeps its bare
+name, because it marks the program's end rather than a syscall's symbol, and
+`mereocheck` measures hot/cold layout against it.
 
-Checked one by one against the compiler, because the merge should not inherit a
-half-namespace:
+**Two things deliberately not done**, per the decision: no `using`, and no
+aliases. Qualification stays mandatory.
 
-| C++ | mereo today |
-| --- | --- |
-| `ns::name` from outside | yes -- `linux.file` |
-| unqualified from inside | yes -- the library's methods call `open` bare |
-| reopened across declarations / files | yes |
-| **the same name in two namespaces is two things** | **NO -- `definition 'rec' redefined`** |
-| a namespace name may equal a top-level name | **NO -- same refusal** |
-| nesting, `a::b::c` | no -- refused explicitly |
-| `using`, `using ns::x`, aliases | no -- qualification is always mandatory |
-| anonymous namespace / internal linkage | not applicable -- one flat program |
-| argument-dependent lookup | not applicable -- no overloading |
+### Still open, found on the way
 
-The fourth and fifth rows are the same defect, and it is the important one: a
-namespace today **partitions nothing**. `NAMESPACES` records which bare names
-you must prefix, `deref` maps `linux.file` back to bare `file`, and everything
-downstream sees one flat table. It checks that you TYPED the prefix; it does not
-give the name a home. Two more gaps fell out of the same testing:
-
-- a free-standing template declared inside a namespace is unreachable
-  (`lib.bump (...)` -> *'lib' is a namespace, not an instance*). The library has
-  none, so nothing ever exercised it;
-- a group member cannot call a SIBLING member -- confirmed by scanning both
-  library files: not one method calls another of its own group. `text.measure`
-  looks like a counter-example but `scan` is a helper primitive, not a sibling.
-
-That last one stops being a curiosity after the merge, because a namespace then
-IS a definition and its members are exactly siblings.
-
-### How it would be built
-
-Separation rules out the cheap route. Flattening a nested definition under its
-bare name is what the namespace fold does now, and it is precisely what makes
-`alpha.rec` and `beta.rec` collide -- so the merge has to make names carry where
-they live.
-
-It does not need a tree. **Key the tables by the canonical path**: `deref`
-returns `"linux.file"` rather than `"file"`, and `definitions` / `PRIMITIVES`
-are keyed by that string. The ~43 `definitions[...]` lookups and 13 `PRIMITIVES`
-lookups keep their exact shape -- only the key gets longer -- and `alpha.rec`
-and `beta.rec` are simply two different keys. Separation then holds by
-construction rather than by a check.
-
-What that leaves:
-
-1. **Parser** -- a STACK of open sections rather than one `section`, opening a
-   nested definition where it now makes a method. The block stack (`ends`) is
-   already there and already indent-driven. With decision 2 the parser reads the
-   keyword rather than looking for parens.
-2. **Resolution** -- `deref` walks the scope chain outward (enclosing
-   definition, then the top level) instead of consulting a flat `OF_NAMESPACE`.
-   This is what C++ does, and it is what keeps `close` resolving from inside
-   `linux.file`'s method once `file` is a definition nested in `linux`. Around
-   36 sites touch `deref` / `bare` / `NAMESPACES` / `OF_NAMESPACE`.
-3. **"Redefined" becomes per-scope** rather than global -- which is the whole
-   point.
-4. **Emitter -- nothing.** Verified: no emitted C identifier derives from a
-   definition's name. Only INSTANCE names reach the output (`pipe_pair`,
-   `source_descriptor`), so a longer key costs the generated code nothing.
-
-Two things to settle when it is done:
-
-- `already linux` becomes syntactically legal (a definition with no state).
-  Refuse it: a definition holding only definitions is a namespace, and there is
-  nothing to borrow.
-- With real nesting the paths get long, and C++ has `using` and aliases for
-  exactly that reason. mereo has neither and requires qualification always. Not
-  a blocker -- `linux.clock.elapsed` is the deepest the corpus goes -- but it is
-  the next question this design raises, and it should be answered on its own
-  rather than smuggled in here.
-
-### What happens to `leave` and `repeat`
-
-Nothing, and the reason is structural rather than lucky: **they never consult
-the definition table.** Both resolve against `loop_stack`, the scopes actually
-open at that point in the planned steps, and exactly three things push onto it --
-a named scope or loop, a `likely` road, and a `when` road. A spliced template
-body joins them as a scope under a per-call-site name. A definition body never
-executes, so it can never be on that stack, so it can never be a target. That is
-as true after the merge as before it.
-
-Tested, today:
-
-| | |
-| --- | --- |
-| `leave linux` (a namespace) | refused -- *not a scope this sits inside* |
-| `leave file` (a definition) | refused -- the same |
-| `leave bump` (a free template, from inside it) | works |
-| `leave user` (a group method, from inside it) | works |
-| `leave program` | works -- the program is a leaveable scope |
-| `linux goes ... leave linux ... end` | works -- a runtime scope may share a namespace's name |
-| a scope named like a template, both used in one program | works |
-
-After decision 2 this stops being a fact to remember and becomes the reading of
-the keyword: a `goes` runs, so you can leave it; an `is` declares, so there is
-nothing to leave.
-
-**Worth improving while we are here.** `leave linux` currently answers *'linux'
-is not a scope this sits inside (open here: none)*, which is true but says
-nothing about what `linux` actually is. When the name IS a known definition, say
-so: a definition declares and does not run, so there is nothing to leave. Cheap,
-and it matters more after the merge, when far more names are definitions.
-
-### Where this leaves "everything is a scope"
-
-Stronger, not weaker. Three unrelated block words become two, split by a
-question with an answer you can check on any line: does this body RUN?
-
-```
-NAME is    ... end      declares -- namespaces, views, groups, resources, primitives
-NAME goes  ... end      runs     -- the program, templates, methods, loops, roads, scopes
-```
-
-Collapsing those two as well does not work, and the reason is not stylistic: the
-whole point of the split is that one of them executes and the other does not.
+- A **group member cannot call a sibling** — confirmed by scanning both library
+  files: not one method calls another of its own group. `text.measure` looks
+  like a counter-example but `scan` is a helper primitive. This matters more now
+  that a namespace is a definition and its members are siblings.
+- A **free-standing template inside a namespace is unreachable**
+  (`lib.bump (...)` → *not an instance*). The library has none, so nothing ever
+  exercised it.
+- A **procedure body cannot open with a call**, which is the same family as the
+  body-detector gaps closed earlier: the detector knows stores, assignments,
+  loops and blocks, but not a call. It surfaces as ``ensure` before the method's
+  body`, naming the wrong thing.
+- **Nesting is one level deep.** A namespace inside a namespace is still
+  refused. The canonical-path keying would support it; the fold that recognises
+  a namespace does not recurse.
+- `leave NAME` where NAME is a known definition still answers *not a scope this
+  sits inside*, which is true but says nothing about what NAME is.
 
 ## `contains` and `is`: what actually separates them — **one gap DONE**
 

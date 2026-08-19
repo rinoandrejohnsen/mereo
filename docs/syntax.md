@@ -10,7 +10,7 @@ against that indentation rather than replacing it.
 ```
 include "linux.mereo"
 
-program is
+program goes
   message is "hello, world\n"
 
   terminal is already linux.file (descriptor is 1)
@@ -82,22 +82,24 @@ Conditions are written in operators, never in words — `==`, `!=`, `<`, `>=`,
 
 ## Namespaces
 
-A namespace is opened with `NAME contains` and closed with `end`, and a file may
-hold several. The system-call library places everything under `linux`; the
-computation library deliberately uses none, so its groups are reached bare:
+A namespace has no keyword of its own: it is an `is` block whose children
+**declare**, and nothing else distinguishes it. The system-call library places
+everything under `linux`; the computation library deliberately uses none, so its
+groups are reached bare:
 
 ```
   linux.files.remove (name is "scratch", flags is 0)
   text.find (data is block, length is count, byte is 10, offset is at)
 ```
 
-A namespace is a resolution layer only. It renames nothing in the generated
-output.
+A name inside one is qualified from outside and bare from within, and the same
+name in two namespaces is **two things** — declarations are keyed by their full
+path, so `alpha.rec` and `beta.rec` never meet.
 
 ## Reserved words
 
-The 42 reserved words fall into a few groups: block openers and closers (`is`,
-`goes`, `contains`, `end`, `scope`, `program`), the two jumps (`leave`,
+The reserved words fall into a few groups: block openers and closers (`is`,
+`goes`, `end`, `scope`, `program`), the two jumps (`leave`,
 `repeat`), declarations (`bytes`, `constant`, `already`, `adopted`, `extends`,
 `helper`, `assembly`, `pure`, `final`), checks and repair (`ensure`, `fails`,
 `failures`, `or`, `continue`, `when`, `likely`, `branchless`), and the words

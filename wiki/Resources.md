@@ -5,7 +5,7 @@ destructors, without an unwinder and without a runtime.
 ```ada
 include "linux.mereo"
 
-program is
+program goes
   buffer is 64 bytes
   count is 0
 
@@ -77,7 +77,7 @@ transform is
   descriptor is 4 bytes as signed
   status is 8 bytes as signed
 
-  acquire (domain, type, protocol, address, length) is
+  acquire (domain, type, protocol, address, length) goes
     linux.socket (domain is domain,
                   type is type,
                   protocol is protocol,
@@ -156,11 +156,11 @@ descriptor, and the settings that were in force before the program touched them.
   tty extends file is
     backup is 36 bytes
 
-    acquire is
+    acquire goes
       ioctl (descriptor is descriptor, request is 21505, argument is backup)
     end
 
-    release is
+    release goes
       ioctl (descriptor is descriptor, request is 21506, argument is backup)
     end
   end
@@ -182,7 +182,7 @@ Restore, then close, in reverse order of acquisition. A program says only:
 ```ada
 include "linux.mereo"
 
-program is
+program goes
   work is linux.terminal_settings
 
   console is linux.tty (path is "/dev/tty", flags is 2, mode is 0)

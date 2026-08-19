@@ -247,6 +247,14 @@ RETIRED = [
      "a comment starts with `--`, as Lua's does", None),
     (r"`\w+ system\b[^`\n]*`",
      "a syscall is `linux.NAME (...)`", None),
+    # ---- `is` declares, `goes` runs. The block words that named something
+    # which RUNS all moved, and `contains` went away entirely.
+    (r"`\w+ contains\b[^`\n]*`",
+     "a namespace is an `is` block whose children declare", None),
+    (r"`program(?: \([^)]*\))? is`",
+     "a program runs, so it opens with `goes`", None),
+    (r"`\w+ \([^)\n]*\) is`",
+     "a template or method runs, so it opens with `goes`", None),
     (r"`[^`\n]*\blinux:[^`\n]*`",
      "a namespace is reached with a dot -- `linux.write`, not `linux:write`", None),
     (r"`(?:exit|read|write|open|close|statx|getdents64|socket|ioctl|mmap) \(",

@@ -69,7 +69,7 @@ begun the cleanup.
 
 The influence is on surface rather than semantics. Comments are Lua's `--`.
 Blocks close with `end` in the manner of both. The reserved words are ordinary
-English chosen to be read aloud — `is`, `goes`, `contains`, `already`, `ensure`
+English chosen to be read aloud — `is`, `goes`, `already`, `ensure`
 — which is closer to Ada's spirit than to C's.
 
 The semantics are opposite to Lua's in nearly every respect: Lua is dynamically

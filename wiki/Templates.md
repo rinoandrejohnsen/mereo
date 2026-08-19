@@ -3,7 +3,7 @@ place it is used, with its locals renamed. There is no call, no return, no stack
 frame and no calling convention.
 
 ```ada
-shout (area, length) is
+shout (area, length) goes
   i is 0
   fix goes
     c is [area + i : 1]

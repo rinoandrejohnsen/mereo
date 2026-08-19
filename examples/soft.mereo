@@ -15,7 +15,7 @@ program goes
 
   file is linux.file (path is ".", flags is 0, mode is 0)
 
-  linux.file.read (buffer is buffer, capacity is capacity, count is count)
+  file.read (buffer is buffer, capacity is capacity, count is count)
   or continue (count is 0)
 
   terminal.write (buffer is buffer, count is count, written is written)

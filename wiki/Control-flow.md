@@ -39,7 +39,7 @@ outer one, and no flag is needed to carry the decision outwards:
 ```ada
 include "linux.mereo"
 
-program is
+program goes
   row is 0
   col is 0
 
@@ -100,7 +100,7 @@ There does not need to be one. An `else` is a scope the `if` **leaves early**:
 ```ada
 include "linux.mereo"
 
-program (arguments) is
+program (arguments) goes
   x is arguments.count
 
   output is already linux.file (descriptor is 1)

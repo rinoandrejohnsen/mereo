@@ -121,6 +121,11 @@ bb view/unsigned-contract unsigned_contract "" 1 ""
 # primitive arrived bare and was refused as "must live in a resource" when it
 # already did. `watcher` fills its own poll entry and then polls it.
 bb view/method-syscall method_syscall "" 0 "1 1"
+# two namespaces declaring the same name. A namespace used to be a mandatory
+# prefix and nothing more -- one flat table underneath -- so this collided with
+# `definition 'rec' redefined`. The tables are keyed by the canonical path now.
+# The two `rec`s are different shapes, so a collision could not pass unnoticed.
+bb view/namespace-separate namespace_separate "" 0 "7 4660 18"
 # a SINGLE-CALL method reading its own state bytes. `acquire`/`release` resolve
 # arguments by name, so a resource could hand out a descriptor it held in its
 # own buffer but not close it -- which is why `duct`, a resource owning a whole
@@ -384,11 +389,12 @@ rejects acquired/no-call    acquired_no_call    "must follow the call"
 # A NAME BECOMES A C IDENTIFIER as written, and a scope name becomes a C LABEL.
 # All three of these used to pass mereo and fail in GCC, with a message about
 # generated code the author never saw.
-# A definition inside a definition reads exactly like a no-parameter method, so
-# it was taken as one -- and a procedure method is only checked when it is
-# INLINED, so one nothing calls was never checked at all. The complaint used to
-# arrive at the USE, naming neither the nesting nor the group.
-rejects nested/definition nested_definition "its body only declares names"
+# A definition inside a definition used to read exactly like a no-parameter
+# method, so it was taken as one -- and a procedure method is only checked when
+# it is INLINED, so one nothing calls was never checked at all. The complaint
+# arrived at the USE, naming neither the nesting nor the group. The keyword
+# decides now, and the refusal lands on the declaration.
+rejects nested/definition nested_definition "a method runs, so it opens with"
 
 rejects name/c-keyword  name_ckeyword   "is a C keyword"
 rejects name/label      name_label      "collides with a label the emitter makes"

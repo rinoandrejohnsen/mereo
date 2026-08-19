@@ -34,7 +34,7 @@
   The previous definition keyed every rule on `where` and on exact 2/4/6-space
   indentation, so those two rendered nothing alike.
 -->
-<language name="Mereo" section="Sources" version="54" kateversion="5.62"
+<language name="Mereo" section="Sources" version="55" kateversion="5.62"
           extensions="*.mereo" mimetype="text/x-mereo"
           author="rino" license="MIT" casesensitive="1">
   <highlighting>
@@ -43,7 +43,6 @@
       <item>goes</item>
       <item>end</item>
       <item>scope</item>
-      <item>contains</item>
       <item>program</item>
       <item>failures</item>
       <item>include</item>
@@ -61,6 +60,7 @@
       <item>when</item>
       <item>ensure</item>
       <item>or</item>
+      <item>contains</item>
       <item>continue</item>
       <item>acquire</item>
       <item>release</item>
@@ -152,9 +152,6 @@
              the line and Kate cannot, so `scan goes  # ...` lost its label. -->
         <RegExpr String="^\s*(?!(?:program|namespace|failures|acquire|release|scope|end)\b)\w+(?=(?: \([^)]*\))? is\s*(?:--.*)?$)" attribute="Declaration" context="#stay"/>
         <RegExpr String="^\s*(?!(?:scope|end)\b)\w+(?= (?:likely )?goes\s*(?:--.*)?$)" attribute="Declaration" context="#stay"/>
-        <!-- `linux contains` names a namespace, and the name is coloured the
-             same here as at every use of it -->
-        <RegExpr String="^\w+(?= contains\s*(?:--.*)?$)" attribute="NamespaceDecl" context="#stay"/>
         <!-- ...and a scope NAME keeps that formatting wherever it is named:
              after `leave` or `repeat`, and on the road header that reopens a
              crossroad. Placed after the word lists, so `leave program` leaves
@@ -198,10 +195,10 @@
              declaration headers (`X is assembly "..."`, `X is helper y`) put
              their marker BEHIND the word instead, and a lookahead cannot see
              backwards, so those take a fixed-width lookbehind of their own. -->
-        <RegExpr String="\b(?:end|leave|repeat|goes|contains|scope|likely|include)\b" attribute="Structure" context="#stay"/>
+        <RegExpr String="\b(?:end|leave|repeat|goes|scope|likely|include)\b" attribute="Structure" context="#stay"/>
         <RegExpr String="(?&lt;= is )(?:pure |final )?(?:assembly|helper)\b" attribute="Structure" context="#stay"/>
         <RegExpr String="\bis(?= (?:(?:pure|final) )?(?:assembly|helper)\b)" attribute="Opener" context="#stay"/>
-        <RegExpr String="\b(?:branchless|container|assembly|clobbers|constant|contains|continue|failures|noinline|register|unsigned|volatile|acquire|adopted|aligned|already|extends|include|program|release|atomic|ensure|helper|likely|little|repeat|signed|static|bytes|fails|fence|final|float|leave|scope|stack|whole|bits|cold|goes|high|pure|when|and|big|bit|end|low|out|as|in|or|to)\b(?=(?:(?!--)[^&quot;])*(?: is| goes| contains)\s*(?:--.*)?$)" attribute="Structure" context="#stay"/>
+        <RegExpr String="\b(?:branchless|container|assembly|clobbers|constant|continue|failures|noinline|register|unsigned|volatile|acquire|adopted|aligned|already|extends|include|program|release|atomic|ensure|helper|likely|little|repeat|signed|static|bytes|fails|fence|final|float|leave|scope|stack|whole|bits|cold|goes|high|pure|when|and|big|bit|end|low|out|as|in|or|to)\b(?=(?:(?!--)[^&quot;])*(?: is| goes)\s*(?:--.*)?$)" attribute="Structure" context="#stay"/>
         <keyword String="structure" attribute="Inside" context="#stay"/>
         <!-- `is` does two jobs and the position says which. At the END of a
              line it opens a body, exactly as `goes` does, and carries the same

@@ -1,33 +1,30 @@
 include "../../linux.mereo"
 
--- A DEFINITION written inside another definition. Refused here, at the
--- declaration, rather than silently becoming something else.
+-- A DEFINITION written inside a definition that holds fields and methods.
 --
--- Definitions do not nest: a namespace (`NAME contains`) is what holds them, and
--- a definition holds methods and fields. But `rec is` reads exactly like a
--- method with no parameters, so the parser took it as one -- `grp.rec` became a
--- callable method whose body declared a local, nothing called it, and a
--- procedure method is otherwise only checked when it is INLINED. So nothing ever
--- looked at it again. The mistake surfaced at the USE:
+-- This used to be read as something else entirely. `rec is` and `acquire is`
+-- were the same line, and which one you got depended on what enclosed it, so
+-- the parser took `rec` for a no-parameter method whose body declared a local.
+-- Nothing called it, and a procedure method was otherwise checked only when it
+-- was INLINED -- so nothing ever looked at it again, and the complaint arrived
+-- at the USE:
 --
 --   h is buf as grp.rec
 --   ^  mereoc: error: `as` needs a view (signed/unsigned/big/little/...)
 --
--- which names neither the nesting nor the group.
+-- naming neither the nesting nor the group.
 --
--- What makes it checkable: a method taking no parameters reaches the world in
--- exactly two ways -- it calls something, or it writes its resource's state. A
--- body of nothing but declarations of its own locals does neither, so it cannot
--- have an effect however it was meant. Declaring an INSTANCE is not inert
--- (`tests/scopes/04_method_local` acquires one in a method precisely for the
--- release), which is why that case is excluded.
+-- The keyword decides now. A method RUNS, so it opens with `goes`; `rec is` is
+-- therefore not a method, and the refusal lands on the declaration. A block
+-- that holds definitions is a NAMESPACE and holds nothing else, which is the
+-- other half of the message: `grp` has a field and a method, so it is not one.
 --
---   refused:  'rec' takes no parameters and its body only declares names
+--   refused:  `rec is` inside 'grp' -- a method runs, so it opens with `goes`
 
 grp is
-  rec is                             -- meant as a view; parsed as a method
-    tag is 1 bytes
-  end
+  rec is                             -- meant as a view; not a method, and not
+    tag is 1 bytes                   -- a nested definition either, because
+  end                                -- `grp` is not a namespace
 
   go (value) goes
     value is 7

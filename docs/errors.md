@@ -9,7 +9,7 @@ standard error — is derived from the failure and from the scope it happened in
 ```
 include "linux.mereo"
 
-program (arguments) is
+program (arguments) goes
   argc is arguments.count
   ensure argc >= 2
 end

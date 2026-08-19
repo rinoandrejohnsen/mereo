@@ -8,7 +8,7 @@ Every form in the language on one page. Each links to the section that explains 
 include "linux.mereo"          -- everything the kernel does, behind `linux.`
 include "core.mereo"           -- ...and everything that needs none, unqualified
 
-program is                     -- ...or `program (arguments) is`
+program goes                   -- ...or `program (arguments) goes`
   ...steps...
 end                            -- reaching `end` ENDS the program, status 0
 
@@ -20,7 +20,7 @@ linux.exit (status is code)    -- ...unless you tell the KERNEL a number
 
 Indentation is **2 spaces per level**, and every block ends with `end` under
 its opener. A call's arguments are not a block — they ride in its parentheses.
-See [`program is`](syntax.md).
+See [`program goes`](syntax.md).
 
 ## Values and memory
 
@@ -55,7 +55,7 @@ See [Views](memory.md).
 ## Namespaces
 
 ```
-linux contains                 -- a file may declare several; what it declares
+linux is                       -- a file may declare several; what it declares
   file is                      -- outside one is global
     ...
   end
@@ -129,12 +129,12 @@ See [Choosing a value](control-flow.md).
 ## Templates
 
 ```
-shout (area, length) is        -- free-standing: called by its own name
+shout (area, length) goes      -- free-standing: called by its own name
   ...
 end
 
 text is                        -- ...or gathered in a group
-  find (data, byte, offset) is
+  find (data, byte, offset) goes
     ...
   end
 end
@@ -152,13 +152,13 @@ derived (read it → input, assign it → output). See
 ```
 file is                        -- define one
   descriptor is 4 bytes as signed
-  acquire (path) is
+  acquire (path) goes
     open system where ...
   end
-  release is
+  release goes
     close system where ...
   end
-  read (buffer, count) is
+  read (buffer, count) goes
     ...
   end
 end

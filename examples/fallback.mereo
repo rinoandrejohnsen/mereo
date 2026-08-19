@@ -16,7 +16,7 @@ program goes
   file is linux.file (path is "missing.txt", flags is 0, mode is 0)
   or (path is "lorem_ipsum.txt", flags is 0, mode is 0)
 
-  linux.file.read (buffer is buffer, capacity is capacity, count is count)
+  file.read (buffer is buffer, capacity is capacity, count is count)
 
   terminal.write (buffer is buffer, count is count, written is written)
 
