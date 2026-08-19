@@ -626,29 +626,79 @@ already treats them that way (`role = mname if mname in ("acquire", "release")`)
   definition holding only definitions is simply the fifth shape, and needs no
   keyword to announce itself.
 
+### First: a mereo namespace is not yet a C++ namespace
+
+Checked one by one against the compiler, because the merge should not inherit a
+half-namespace:
+
+| C++ | mereo today |
+| --- | --- |
+| `ns::name` from outside | yes — `linux.file` |
+| unqualified from inside | yes — the library's methods call `open` bare |
+| reopened across declarations / files | yes |
+| **the same name in two namespaces is two things** | **NO — `definition 'rec' redefined`** |
+| a namespace name may equal a top-level name | **NO — same refusal** |
+| nesting, `a::b::c` | no — refused explicitly |
+| `using`, `using ns::x`, aliases | no — qualification is always mandatory |
+| anonymous namespace / internal linkage | not applicable — one flat program |
+| argument-dependent lookup | not applicable — no overloading |
+
+The fourth and fifth rows are the same defect, and it is the important one: a
+namespace today **partitions nothing**. `NAMESPACES` records which bare names
+you must prefix, `deref` maps `linux.file` back to bare `file`, and everything
+downstream sees one flat table. It checks that you TYPED the prefix; it does not
+give the name a home. Two more gaps fell out of the same testing:
+
+- a free-standing template declared inside a namespace is unreachable
+  (`lib.bump (...)` → *'lib' is a namespace, not an instance*). The library has
+  none, so nothing ever exercised it;
+- a group member cannot call a SIBLING member — confirmed by scanning both
+  library files: not one method calls another of its own group. `text.measure`
+  looks like a counter-example but `scan` is a helper primitive, not a sibling.
+
+That last one stops being a curiosity after the merge, because a namespace then
+IS a definition and its members are exactly siblings.
+
 ### How it would be built
 
-Nesting can FLATTEN, exactly as `_namespace_fold` flattens today: a definition
-nested in `outer` registers under its bare name with `OF_NAMESPACE[name] =
-outer`. Then `deref` is unchanged, and so are the ~43 `definitions[...]` lookups
-downstream — they keep seeing one flat table. `linux.clock.elapsed` resolves by
-the same path it does now, because the registration is identical.
+Separation rules out the cheap route. Flattening a nested definition under its
+bare name is what the namespace fold does now, and it is precisely what makes
+`alpha.rec` and `beta.rec` collide — so the merge has to make names carry where
+they live.
 
-The work is therefore contained to the parser: a STACK of open sections rather
-than one `section`, opening a nested definition where it now makes a method.
-The block stack (`ends`) is already there and already indent-driven.
+It does not need a tree. **Key the tables by the canonical path**: `deref`
+returns `"linux.file"` rather than `"file"`, and `definitions` / `PRIMITIVES`
+are keyed by that string. The ~43 `definitions[...]` lookups and 13 `PRIMITIVES`
+lookups keep their exact shape — only the key gets longer — and `alpha.rec` and
+`beta.rec` are simply two different keys. Separation then holds by construction
+rather than by a check.
 
-Two things to decide when it is done:
+What that leaves:
+
+1. **Parser** — a STACK of open sections rather than one `section`, opening a
+   nested definition where it now makes a method. The block stack (`ends`) is
+   already there and already indent-driven.
+2. **Resolution** — `deref` walks the scope chain outward (enclosing definition,
+   then the top level) instead of consulting a flat `OF_NAMESPACE`. This is what
+   C++ does, and it is what keeps `close` resolving from inside `linux.file`'s
+   method once `file` is a definition nested in `linux`. Around 36 sites touch
+   `deref` / `bare` / `NAMESPACES` / `OF_NAMESPACE`.
+3. **"Redefined" becomes per-scope** rather than global — which is the whole
+   point.
+4. **Emitter — nothing.** Verified: no emitted C identifier derives from a
+   definition's name. Only INSTANCE names reach the output (`pipe_pair`,
+   `source_descriptor`), so a longer key costs the generated code nothing.
+
+Two things to settle when it is done:
 
 - `already linux` becomes syntactically legal (a definition with no state).
   Refuse it: a definition holding only definitions is a namespace, and there is
   nothing to borrow.
-- Flattening supports the depth the corpus uses (`linux.clock.elapsed` — two
-  definitions and a method) and no more. A third level of nesting wants
-  path-aware resolution; until then it should be refused with a message saying
-  so, rather than silently colliding. This is the same limit as today, not a new
-  one — and making resolution path-aware is also what fixes the bare-name
-  collision recorded further down.
+- With real nesting the paths get long, and C++ has `using` and aliases for
+  exactly that reason. mereo has neither and requires qualification always. Not
+  a blocker — `linux.clock.elapsed` is the deepest the corpus goes — but it is
+  the next question this design raises, and it should be answered on its own
+  rather than smuggled in here.
 
 ### On merging into a scope
 
@@ -756,11 +806,12 @@ folded out of the line stream before anything looks at indentation, and a thing
 keeps the single bare name it was declared with. That is what lets the whole
 change be verified: all 117 generated `.c` files are byte-identical.
 
-The consequence is that two namespaces exporting the SAME bare name would
-collide internally. Today `linux` is the only one, so it cannot happen; the
-ordinary "redeclared" check would catch it, but the message would talk about a
-redeclaration rather than about namespaces. Worth a better message before a
-second namespace exists.
+The consequence is that two namespaces exporting the SAME bare name collide,
+and so does a namespace member with a top-level name — `definition 'rec'
+redefined`, naming neither namespace. Today `linux` is the only one, so it
+cannot happen in practice. This is not a message problem: a namespace that
+partitions nothing is not yet a namespace, and the fix is the canonical-path
+keying designed under "Merging `contains` into `is`" above.
 
 `core.mereo` declares no namespace, on purpose: its byte layer is reached
 constantly and `core.text.find (...)` earns nothing over `text.find (...)`.
