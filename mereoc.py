@@ -5589,6 +5589,30 @@ def plan(definitions, slots, steps, overrides):
             _open = [i for i, (_e, nm, _t) in enumerate(loop_stack)
                      if nm == st["name"]]
             if not _open:
+                # Before the general message: the name may denote something
+                # real that simply is not a scope. `is` declares and `goes`
+                # runs, so a definition has no body to be inside -- saying that
+                # is more use than listing what happens to be open.
+                _nm = st["name"]
+                # a bare name may belong to a namespace, so ask there too
+                _q = qualified(_nm, OF_NAMESPACE.get(_nm))
+                _what = None
+                if _nm in NAMESPACES:
+                    _what = ("a namespace -- it holds names and has no body at "
+                             "all, so there is nothing to leave")
+                elif _nm in definitions or _q in definitions:
+                    _what = ("a definition -- it declares, and only a `goes` "
+                             "body runs, so there is nothing to leave")
+                elif _nm in instances:
+                    _what = ("an instance -- a resource, not a scope. Its "
+                             "lifetime ends with the scope AROUND it, which is "
+                             "what you would name here")
+                elif _nm in PRIMITIVES or _q in PRIMITIVES:
+                    _what = "a primitive -- a call, not a scope"
+                if _what:
+                    fail(f"line {st['line']}: `{_word} {_nm}` -- '{_nm}' is "
+                         f"{_what}. `{_word}` names a scope: a `NAME goes` "
+                         "block, a loop, a road, or a template body.")
                 _have = ", ".join(nm for _e, nm, _t in loop_stack) or "none"
                 fail(f"line {st['line']}: `{_word} {st['name']}` -- "
                      f"'{st['name']}' is not a scope this sits inside (open "

@@ -377,6 +377,11 @@ bb   loop/nested-owns loop_nest_res ""   0  "LLLL"
 bb   branch/road-cold branch_res ""   0  "L"
 bb   branch/road-hot  branch_res ""   0  "-"   -- x
 rejects leave/alien-loop  loop_leave_alien  "neither itself nor one of its own"
+# ...and a target that is not a scope AT ALL. `leave` resolves against the scopes
+# open at that point, so a definition can never be one -- but the message said
+# only "not a scope this sits inside" and then explained ancestors at length.
+# `is` declares and `goes` runs, so an `is` has nothing to leave: say that.
+rejects leave/definition  leave_definition  "is a definition -- it declares"
 # a ROAD is a scope too, so `leave LABEL` is its own break: release what the
 # road took and rejoin the merge without running the rest of the arm. The step
 # after each leave would clear the count, so the printed byte is the proof.

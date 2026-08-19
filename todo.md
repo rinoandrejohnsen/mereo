@@ -664,8 +664,15 @@ aliases. Qualification stays mandatory.
 - **Nesting is one level deep.** A namespace inside a namespace is still
   refused. The canonical-path keying would support it; the fold that recognises
   a namespace does not recurse.
-- `leave NAME` where NAME is a known definition still answers *not a scope this
-  sits inside*, which is true but says nothing about what NAME is.
+- `leave NAME` where NAME denotes something real — **DONE**. It answered *not a
+  scope this sits inside* and then explained ancestors at length: all true, and
+  none of it about the mistake. Four kinds of name get their own sentence now —
+  a namespace has no body at all, a definition declares, an instance is a
+  resource whose lifetime ends with the scope around it, a primitive is a call —
+  and the reading is the one the language settled on: `is` declares, `goes`
+  runs, so an `is` has nothing to leave. A name denoting nothing, and a real
+  scope that is merely closed, still get the general message, which is the right
+  one when there is no better answer. `tests/progs/leave_definition` covers it.
 
 ## `contains` and `is`: what actually separates them — **one gap DONE**
 

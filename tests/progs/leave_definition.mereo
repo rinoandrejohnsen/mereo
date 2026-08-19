@@ -1,0 +1,29 @@
+include "../../linux.mereo"
+
+-- REJECTED on purpose, and the point is WHICH refusal.
+--
+-- `leave` and `repeat` never consult the definition table: they resolve against
+-- the scopes actually open at that point, and exactly three things get onto
+-- that list -- a named scope or loop, a `likely` road, a `when` road -- plus a
+-- spliced template body. A definition never runs, so it can never be on it.
+--
+-- That was already true, but the message said only *'linux.file' is not a scope
+-- this sits inside (open here: none)*, and then explained at length why a jump
+-- must target an ancestor. All true, and none of it about the actual mistake,
+-- which is that the name denotes a thing with no body at all.
+--
+-- The reading the language settled on is the one to hand back: `is` declares and
+-- `goes` runs, so an `is` has nothing to leave. Four kinds of name get their own
+-- sentence -- a namespace, a definition, an instance, a primitive -- and a name
+-- that denotes nothing still falls through to the general message, which is the
+-- right one when there is no better answer.
+--
+--   refused:  'file' is a definition -- it declares, and only a `goes` body runs
+
+program goes
+  n is 0
+
+  leave file
+
+  ensure n == 0
+end
