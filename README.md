@@ -7,7 +7,7 @@ runtime, and no allocator — raw system calls and nothing else.
 ```
 include "linux.mereo"
 
-program is
+program goes
   message is "hello, world\n"
 
   terminal is already linux.file (descriptor is 1)
@@ -66,12 +66,14 @@ That builds to a 784-byte executable.
 ./test.sh                          # everything: parity, black box, build gate
 ```
 
-`./test.sh` is the gate that matters. It runs three suites:
+`./test.sh` is the gate that matters. It runs four suites and a build gate:
 
 | suite | what it proves |
 | --- | --- |
 | `tests/scopes/run.sh` | release order matches a C++ twin, scenario by scenario |
 | `tests/blackbox.sh` | stdin/args → stdout/exit on the shipped binaries, plus fault injection |
+| `tests/versus/run.sh` | what an abstraction costs, against hand-written C doing the same job |
+| `tests/namespaces/run.sh` | that a namespace means what C++ means by one, on nine questions |
 | `./build.sh` | every program compiles, and every crossroad's layout holds on the assembly |
 
 ## The guide
