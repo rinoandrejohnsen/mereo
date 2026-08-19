@@ -5,8 +5,10 @@
 # reason this script exists: nothing in `./test.sh` or `docs/build.py` can see
 # it, so it goes stale silently. It has three times already -- once behind by a
 # rebuild nobody published, twice diverged because a page had been edited in
-# GitHub's web editor. Both failure modes are handled here rather than left to
-# be noticed.
+# GitHub's web editor. A third way was found later: a page the build STOPS
+# generating stayed on the wiki, rendering and answering searches with nothing
+# behind it, because copying pages in never removes one. All three are handled
+# here rather than left to be noticed.
 #
 #   ./tools/publish_wiki.sh              rebuild, sync, push
 #   ./tools/publish_wiki.sh --dry-run    ...everything but the push
@@ -40,9 +42,21 @@ if ! git clone -q --depth 1 "$WIKI" "$WORK/w" 2>/dev/null; then
     exit 1
 fi
 
-# 3. the generated pages replace whatever is there, including hand edits
-cp "$DIR"/wiki/*.md "$WORK/w/"
+# 3. the generated pages replace whatever is there, including hand edits -- and a
+#    page the build NO LONGER produces is deleted rather than left behind. An
+#    orphan still renders, still answers a search and still turns up in the
+#    sidebar's neighbours, with nothing generating it and no gate reading it,
+#    which is the same silent staleness this script exists to prevent. Only
+#    `.md` is managed: an image uploaded through the web editor is not ours.
+PAGES=$(ls "$DIR"/wiki/*.md 2>/dev/null | wc -l)
+[ "$PAGES" -ge 5 ] || {
+    echo "  refusing to publish $PAGES page(s) -- the build looks broken"; exit 1; }
 cd "$WORK/w"
+for p in *.md; do
+    [ -e "$p" ] || continue                  # an empty wiki: nothing to orphan
+    [ -e "$DIR/wiki/$p" ] || { echo "  removing orphan: $p"; git rm -q "$p"; }
+done
+cp "$DIR"/wiki/*.md "$WORK/w/"
 git add -A
 if git diff --cached --quiet; then
     echo "  already up to date"
@@ -63,5 +77,12 @@ bad=0
 for f in "$DIR"/wiki/*.md; do
     cmp -s "$f" "check/$(basename "$f")" || { echo "  DIFFERS after push: $(basename "$f")"; bad=1; }
 done
-[ "$bad" = 0 ] && echo "  published: $(ls "$DIR"/wiki/*.md | wc -l) pages, verified against the remote"
+# ...and nothing the build does not generate survived the push, which is the
+# half a per-page comparison cannot see.
+for f in "$WORK"/check/*.md; do
+    [ -e "$f" ] || continue
+    [ -e "$DIR/wiki/$(basename "$f")" ] || {
+        echo "  ORPHAN after push: $(basename "$f")"; bad=1; }
+done
+[ "$bad" = 0 ] && echo "  published: $PAGES pages, verified against the remote"
 exit "$bad"
