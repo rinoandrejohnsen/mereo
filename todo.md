@@ -178,8 +178,8 @@ meanwhile is the same for both: put it in a template and splice it.
 
 ## What the linux.mereo half hit: seven places the language stopped short
 
-**Status:** 1, 2, 3 and 4 are DONE, 7 is done for procedure methods; 5 and 6
-remain. All were found by writing
+**Status:** 1, 2, 3, 4, 5 and 6 are DONE; 7 is done for procedure methods and
+still open for single-call ones. All were found by writing
 real code against the new library rather than by reading the compiler, and each
 is stated with the program that wanted it.
 
@@ -288,7 +288,7 @@ view's fields are 1/2/4/8 bytes because they name a *number* at an offset, so
 the six offsets are written in a comment instead. Same family as 1 and 2: the
 field would have to be an address rather than a value.
 
-### 5. A procedure method's body cannot open with a memory store
+### 5. A procedure method's body cannot open with a memory store — **DONE**
 
 The procedure-body detector (`mereoc.py`, `^\w+ is .+$|^\w+ goes$|^scope$`)
 recognises an assignment, a loop or a block — not a store:
@@ -303,7 +303,11 @@ The error names something the line has nothing to do with, which is the part
 worth fixing even if the rule stays. A leading scalar (`watching is descriptor`)
 is enough to get in.
 
-### 6. A procedure method cannot call a primitive
+**Closed.** The detector recognises a store (`[...] is ...`) and a field write
+(`inst.field is ...`) as body statements. The misleading message is gone with
+the rule that produced it.
+
+### 6. A procedure method cannot call a primitive — **DONE**
 
 A procedure body is spliced into the caller, so a primitive in it arrives in the
 program body bare, and the bare-primitive rule refuses it:
@@ -317,6 +321,20 @@ program body bare, and the bare-primitive rule refuses it:
 It IS in a resource, which is why the message misleads. The consequence is that
 a method may either do several steps OR make one syscall, never both — so
 `watch` cannot fill the `poll_entry` it then polls, and the caller fills it.
+
+**Closed.** A spliced step is marked as coming from a method, and the bare rule
+skips a marked one. The emitter then had to do what the ordinary call path does
+and did not: skip constant arguments (it broke on `number is 271 in rax`; `exit`
+only worked because its constant is declared last), bind the out-port, build the
+guard from the primitive's own contract — and register a **stage**, so the guard
+has an error label to jump to and the failure routes into the release tower.
+
+`tests/progs/method_syscall.mereo` is a `watcher` that fills its own poll entry
+and then polls it, covering 5 and 6 together. Both fixes are load-bearing on it:
+the pre-fix compiler stops at 5, and with 5 alone backported it stops at 6.
+`ppoll` was not in mereoraii's injectable list, so the new failure path had no
+standing audit; it is now, and faulting it closes the descriptor. The corpus is
+88 for 88 byte-identical.
 
 ### 7. A resource method cannot read its own state bytes — **DONE (procedures)**
 
@@ -360,6 +378,41 @@ ships instead is `channel`, a stateless namespace whose one method makes the
 pair, with each end adopted as an ordinary `file` — two owners, which is what
 two descriptors are. That is arguably the better design, but it was chosen
 because the first one would not compile.
+
+## `N bytes` means two different things, silently
+
+**Status:** open, found while writing the test for 5 and 6. A real miscompile,
+worked around in the test by picking a wider field.
+
+In a program body, `slot is 8 bytes` is storage — `char slot[8]`. As a resource
+STATE field, the same eight words are a register word, because a state field is
+a run of bytes only when it is wider than a register:
+
+```
+watcher is
+  slot is 8 bytes            -- a register word, holding 0
+  arm is
+    [slot + 0 : 4] is 1      -- ...so this stores through a null pointer
+  end
+end
+```
+
+That is not a wrong rule — `descriptor is 4 bytes as signed` is the library's
+idiom everywhere, and a register field must be a register. The problem is that
+the two meanings share a spelling, and the collision is silent: it compiles, and
+it segfaults. `tests/progs/method_syscall.mereo` sidesteps it with `16 bytes`
+and says why in a comment, which is a workaround and not a fix.
+
+**The obvious shape of a fix is syntax that already exists.** `in register` and
+`in stack` are how a program body already says which side of this line it wants;
+letting a state field take the same words would make the intent explicit where
+it is currently inferred from a width. `slot is 8 bytes in stack` is storage,
+`slot is 8 bytes in register` is a word, and a bare `N bytes` keeps today's
+meaning so nothing in the corpus moves. Worth deciding before it bites someone.
+
+The cheap half, if the design half waits: refuse `[FIELD + ...]` when FIELD is a
+register-width state field, naming the width rule. That turns a segfault into a
+message without settling the surface question.
 
 ## The stage marker costs a tail merge
 
@@ -473,6 +526,34 @@ if they bite again:
 - A method call cannot carry `when`. `page.number (value is i) when got == 1` is
   refused; the shape is a guarded scope (`got == 1 goes`). Conditional STORES
   take `when`, calls do not.
+
+## The library's comments were never checked — **DONE**
+
+**Closed**, and listed because the hole was open for months and nothing noticed.
+
+`docs/build.py` refuses to ship a retired spelling in the documentation. The
+library's comments are documentation too — `linux.mereo` carries a worked
+example above nearly every resource, and those are what a reader copies — but no
+gate read them, so the syntax change left them written in a surface that no
+longer parses. Following the `ppoll` comment gave you `descriptor of watched is
+here`; following `channel`'s gave you `make channel where`; `argcat`'s said
+`program with arguments is`. Run the gate against the commit before this one and
+it reports **42 lines across seven files**, 29 of them in `linux.mereo` — with
+the library itself as the source of the mistake.
+
+Two were worse than stale syntax — they stated a limitation that had since been
+lifted. `examples/stat.mereo` said the argument vector "cannot be walked with a
+counter yet", which gap 3 above closed; `linux.mereo` documented `size of X`,
+which is now `X.size`.
+
+`tools/check_comments.py` is the gate, run by `./test.sh`. The difficulty is
+that `of`, `from`, `where`, `use` and `system` are all ordinary English and
+these files are mostly prose, so it only examines what is code-shaped — an
+indented snippet (`--` then three or more spaces, the convention every worked
+example already follows) or anything in backticks — and a determiner after `of`
+means the line is a sentence rather than a projection. Seven rules, each with a
+planted violation checked to fire. The corpus is 102 for 102 byte-identical,
+comments being comments.
 
 ## The language server is gone, and nothing replaced it
 

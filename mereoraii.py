@@ -31,7 +31,7 @@ FD_ACQUIRE = ("openat", "open", "socket", "accept4", "accept", "dup3", "dup2",
 # fallible operations worth injecting a fault into (not close/exit/rt_sig*)
 INJECTABLE = ("openat", "open", "read", "write", "socket", "connect", "bind",
               "listen", "accept4", "accept", "sendmsg", "recvmsg", "sendto",
-              "recvfrom", "setsockopt", "lseek", "getrandom")
+              "recvfrom", "setsockopt", "lseek", "getrandom", "ppoll")
 
 LINE = re.compile(r"^(\w+)\((.*)\)\s*=\s*(-?\d+|0x[0-9a-f]+)(?:\s+(\w+))?")
 

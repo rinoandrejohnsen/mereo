@@ -1,0 +1,89 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- A resource method that does SEVERAL steps and then makes a SYSCALL.
+--
+-- Two rules used to stand in the way, and both named the wrong thing:
+--
+--   arm    -- a procedure body could not OPEN with a store. The body detector
+--            recognised an assignment, a loop or a block, so `[slot + 0 : 4] is
+--            descriptor` fell through to "`ensure` before the method's body".
+--
+--   await  -- a procedure body is spliced into the caller, so a primitive in it
+--            arrives in the program body bare, and the bare-primitive rule
+--            refused it: "fallible primitives must live in a resource so they
+--            carry an `ensure`". It WAS in a resource. The consequence was that
+--            a method could do several steps OR make one syscall, never both.
+--
+-- `watcher` fills the poll entry from its OWN descriptor and its OWN buffer,
+-- then polls it -- which is the whole point of the record being the resource's
+-- rather than the caller's. The spliced `ppoll` still carries its `ensure`, and
+-- its failure still routes into the tower: `tests/raii.sh` checks that the
+-- descriptor is closed when the poll is faulted.
+--
+-- A regular file is always ready, so POLLIN comes straight back.
+--
+--   prints:  1 1
+
+watcher is
+  descriptor is 4 bytes as signed
+  slot is 16 bytes                     -- its own poll entry, not the caller's.
+                                       -- 16 and not 8 because a resource field
+                                       -- of register width IS a register word;
+                                       -- only a wider one is a run of bytes.
+
+  acquire (path) is
+    linux.open (path is path, flags is 0, mode is 0, descriptor is descriptor)
+  end
+
+  arm (events) is                      -- opens with a STORE, and does no call
+    [slot + 0 : 4] is descriptor
+    [slot + 4 : 2] is events
+    [slot + 6 : 2] is 0
+  end
+
+  await (ready) is                     -- stores AND a syscall, in one method
+    [slot + 0 : 4] is descriptor
+    [slot + 4 : 2] is 1                -- POLLIN
+    [slot + 6 : 2] is 0
+    linux.ppoll (entries is slot,
+                 count is 1,
+                 timeout is 0,
+                 mask is 0,
+                 mask_size is 8,
+                 ready is ready)
+  end
+
+  ready (value) is                     -- what the kernel wrote back
+    v is [slot + 6 : 2]
+    value is v
+  end
+
+  release is
+    linux.close (descriptor is descriptor)
+  end
+end
+
+program is
+  room is 64 bytes
+  n is 0
+  got is 0
+
+  page is already builder (data is room, count is 0, limit is 64)
+
+  source is watcher (path is "lorem_ipsum.txt")
+
+  source.arm (events is 1)             -- the store-only method
+  source.await (ready is n)            -- ...and the one that also polls
+  source.ready (value is got)
+
+  page.number (value is n)             -- 1 descriptor ready
+  page.byte (value is 32)
+  page.number (value is got)           -- POLLIN
+  page.byte (value is 10)
+
+  terminal is already linux.file (descriptor is 1)
+
+  terminal.write (buffer is page.data, count is page.count)
+
+end

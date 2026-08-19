@@ -36,20 +36,27 @@ memory fence primitive.
 networking beyond raw sockets, no date handling, no formatted output beyond
 decimal and hexadecimal, no sorting and no data structures.
 
-**Language gaps found by writing real programs.** Five remain open, all of the
-same shape — a view is a lens over a named backing, and several things want to
-be a view but cannot be:
+**Language gaps found by writing real programs.** A run of seven, all of the
+same shape — a view is a lens over a named backing, and several things wanted to
+be a view but could not be. Six are closed: a view may now sit at an address
+computed while running or over another view's field; a layout field may be a run
+of text; the argument and environment vectors may be indexed by a value rather
+than a literal; and a procedure body may both open with a memory store and call
+a primitive, so one method can fill a record and then make the syscall that
+takes it.
 
-- a view over another view's field, so an offset must be written twice;
-- a layout field that is a run of text rather than a number, which is why
-  `uname`'s six strings are reached by hand;
-- a procedure body may not open with a memory store;
-- a procedure method may not call a primitive directly;
-- a resource method may not read its own state as bytes.
+What remains of that run is the last one, and only half of it. A **procedure**
+method may read its own state as bytes; a **single-call** method — an `acquire`
+or a `release`, which resolve their arguments by name — may not. So
+`linux.close (descriptor is [pair + 0 : 4])` is still refused, which is why
+there is no `pipe` resource owning both ends: it can hand each one out but
+cannot close them.
 
-Two further gaps of that family were closed recently: a view may now sit at an
-address computed while running, and the argument and environment vectors may now
-be indexed by a value rather than a literal.
+**One spelling, two meanings.** `slot is 8 bytes` is storage in a program body
+and a register word as a resource's state field, because a state field is a run
+of bytes only when it is wider than a register. Both rules are right on their
+own; sharing a spelling is not, and the collision compiles rather than
+complaining.
 
 **A known code-size excess.** The stage markers that make the layout claim
 checkable prevent the compiler merging otherwise identical error blocks. See

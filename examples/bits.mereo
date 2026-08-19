@@ -19,7 +19,7 @@ program is
   bits is 0
 
   -- `math` holds nothing, so it needs no instance -- a stateless group is
-  -- called by its own name, the way `find text where` is.
+  -- called by its own name, the way `text.find (...)` is.
   math.count (source is 255, result is bits)
 
   math.barrier

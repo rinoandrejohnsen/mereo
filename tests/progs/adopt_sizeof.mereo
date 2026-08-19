@@ -1,6 +1,6 @@
 include "../../linux.mereo"
 
--- `size of X` in an ADOPTION binding -- the one place a compile-time size was
+-- `X.size` in an ADOPTION binding -- the one place a compile-time size was
 -- refused, so a program had to count the bytes of its own literal by hand and
 -- write the number next to it.
 --

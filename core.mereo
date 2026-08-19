@@ -50,7 +50,7 @@ end
 -- gathered on a stateless `text` namespace. No syscalls and no state.
 --
 --   find     offset of the first BYTE in DATA[0..LENGTH), or LENGTH if absent
---   search   offset of NEEDLE[0..NEEDLE_LENGTH) in DATA[0..LENGTH), or LENGTH
+--   search   where NEEDLE[0..NEEDLE_LENGTH) starts in DATA[0..LENGTH), or LENGTH
 --   compare  1 if DATA[0..LENGTH) equals OTHER[0..OTHER_LENGTH), else 0
 --   number   read DATA[0..LENGTH) as a signed decimal integer (leading spaces ok)
 --   format   write VALUE as decimal digits into BUFFER, yielding its LENGTH
@@ -609,9 +609,8 @@ end
 -- bytes once (their address and length) and its templates scan them, so a
 -- program reads fields off the document instead of re-stating where it is:
 --
---   body is already json where
---     content is page          -- WHERE the bytes are (a pointer)
---     length is got            -- how many there are
+--   body is already json (content is page,   -- WHERE the bytes are (a pointer)
+--                         length is got)     -- how many there are
 --   text body where key is ... start is ... vlen is ...    -- a STRING field
 --   number body where key is ... value is ...              -- a NUMBER field
 --

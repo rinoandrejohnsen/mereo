@@ -48,6 +48,10 @@ python3 "$DIR/tools/check_syscalls.py" "$DIR/linux.mereo" || rc=1
 # A highlighter fails QUIETLY -- an unknown construct is still printed, just
 # unstyled. This is the mechanical version of noticing.
 python3 "$DIR/tools/check_highlight.py" "$DIR" || rc=1
+# The library's worked examples live in COMMENTS, so no compiler reads them. The
+# syntax change left twenty-odd of them spelled in a surface that no longer
+# parses -- and they are exactly what a reader copies.
+python3 "$DIR/tools/check_comments.py" "$DIR" || rc=1
 
 echo
 [ $rc = 0 ] && echo "ALL GREEN" || echo "FAILURES"

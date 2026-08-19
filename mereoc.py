@@ -1748,8 +1748,14 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                 # where`, neither of which contains ` is `, and `ensure`/
                 # `acquired when` have their own shapes -- so this cannot
                 # swallow one of those.
+                # ...a STORE opens one too (`[entry + 0 : 4] is descriptor`,
+                # `h.tag is 5`). The detector listed assignments, loops and
+                # blocks only, so a body that began by writing memory fell
+                # through to the `ensure` check and was told about `ensure` --
+                # a message with nothing to do with the line.
                 if (method["prim"] is None and not method["delegate"]
-                        and re.match(r"^\w+ is .+$|^\w+ goes$|^scope$", s)):
+                        and re.match(r"^\w+ is .+$|^\w+ goes$|^scope$"
+                                     r"|^\[.+\] is .+$|^\w+\.\w+ is .+$", s)):
                     if method["role"] != "op":
                         _role = ("acquires" if method["role"] == "acquire"
                                  else "releases")
@@ -4483,8 +4489,12 @@ STEP_SCHEMA = {
     # -- calls -------------------------------------------------------------
     "call":        {"inst": "rename", "method": "carry", "conns": "expr",
                     "alts": "carry", "recover": "carry", "line": "carry"},
+    # `from_method` marks a primitive that was written INSIDE a resource method
+    # and arrived here by splicing -- it is not bare in the sense the rule below
+    # refuses, and it inherits the primitive's contract like any other call.
     "bare":        {"op": "carry", "conns": "expr", "alts": "carry",
-                    "recover": "carry", "line": "carry"},
+                    "recover": "carry", "line": "carry",
+                    "from_method": "carry", "implicit": "carry"},
     # -- checks ------------------------------------------------------------
     "guard":       {"cond": "cond", "ref": "carry", "line": "carry"},
     # -- scopes and jumps --------------------------------------------------
@@ -4625,6 +4635,11 @@ def inline_procedure(meth, st, cid, definitions, slots, prims):
     # a TEMPLATE BODY is its own parse, so it needs its own check -- and it is
     # the half that matters, because a splice is where a mis-declared field
     # turns into the caller's names being read by the callee
+    for _bs in bsteps:
+        if _bs.get("type") == "bare":
+            # written inside a resource method, so it HAS a tower to fail into;
+            # after splicing nothing else could tell it from a program-level one.
+            _bs["from_method"] = meth["name"]
     check_steps(bsteps, f"in template '{meth['name']}': ")
     # A template's locals are PRIVATE to the splice -- they are renamed per call
     # site, so nothing outside can read one. That makes a local nobody reads as
@@ -4910,9 +4925,11 @@ def plan(definitions, slots, steps, overrides):
                      f"where` (has: {', '.join(_d['methods'])}). Only a template "
                      "written on its own is called by its own name.")
             fail(f"line {st['line']}: unknown primitive '{st['op']}'")
-        if not prim["noreturn"]:
+        if not prim["noreturn"] and not st.get("from_method"):
             fail(f"line {st['line']}: bare '{st['op']}' -- fallible primitives "
                  "must live in a resource so they carry an `ensure`")
+        if not prim["noreturn"]:
+            continue                     # spliced from a method: planned below
         if st is not final:
             fail(f"line {st['line']}: noreturn step '{st['op']}' must be the "
                  "final step")
@@ -5453,16 +5470,51 @@ def plan(definitions, slots, steps, overrides):
             conns = {p: (a, ln) for p, a, ln in st["conns"]}
             args = []
             for kind, port in prim["args"]:
-                if port not in conns:
-                    break
-                actual, ln = conns.pop(port)
+                if kind == "const":          # baked into the asm, not an argument
+                    continue                 # -- skipping it was the call path's
+                if port not in conns:        # job and not this one's, so a
+                    break                    # primitive declaring its constant
+                actual, ln = conns.pop(port) # BEFORE its arguments broke the loop
                 args.append(resolve_value(actual, scalars, buffers, ln))
+            # A primitive spliced out of a resource method returns a value and
+            # carries the contract, exactly as the same call would through the
+            # method path; only `exit` and its kind are noreturn.
+            out, clauses = None, []
+            if prim["out"] and prim["out"] in conns:
+                actual, ln = conns.pop(prim["out"])
+                out = resolve_value(actual, scalars, buffers, ln)
+                if prim.get("contract") and prim["contract"][0] == prim["out"]:
+                    _p, _cmp, _val, _ln, _read = prim["contract"]
+                    lhs = (f"({'long' if _read == 'signed' else 'unsigned long'})"
+                           f"({out})") if _read else out
+                    clauses = [f"{lhs} {_cmp} {_val}"]
             for port, (_, ln) in conns.items():
                 fail(f"line {ln}: '{st['op']}' has no port '{port}'")
-            into.append({"pname": st["op"], "noreturn": True,
-                               "args": args, "out": None, "clauses": [],
-                               "label": st["op"], "recover": None,
-                               "gtarget": None, "resume": None})
+            ps = {"pname": st["op"], "noreturn": prim["noreturn"],
+                  "args": args, "out": out, "clauses": clauses,
+                  "label": st["op"] if prim["noreturn"] else None,
+                  "recover": None, "gtarget": None, "resume": None}
+            if clauses:
+                # A fallible primitive registers a stage like any other call, so
+                # its failure gets an error block, a record naming the method it
+                # was written in, and a route into the tower at the current live
+                # set. Without this the guard was emitted with nowhere to jump.
+                if stage_slot is None:
+                    fail(f"line {st['line']}: cannot derive the status slot -- "
+                         "wire a scalar into the final noreturn step")
+                ps.update({
+                    "stage": len(fallible) + 1,
+                    "ref": st.get("from_method") or st["op"],
+                    "ident": (st["op"], st.get("from_method") or st["op"]),
+                    "target": f"release_{live[-1]}" if live else final["op"],
+                    "errsrc": out,
+                    "strings": [a for _, a, _ in st["conns"] if is_str(a)],
+                    "code": "1",
+                    "line": st["line"],
+                })
+                ps["gtarget"] = error_label(ps["stage"], ps["ref"])
+                fallible.append(ps)
+            into.append(ps)
             return
 
         if st["type"] == "adopt":

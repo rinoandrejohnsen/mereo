@@ -11,7 +11,7 @@ include "../../linux.mereo"
 -- true at runtime and not foldable, so both paths stay live code.
 --
 -- Each road opens a real descriptor (through `peek`, since a road body accepts
--- `NAME is adopted CLASS where` but not a direct construction), which gives
+-- `NAME is adopted CLASS (...)` but not a direct construction), which gives
 -- mereoraii a fault to inject on either arm.
 --
 --   ./branch_leave      ->  L    (argc 1, the cold road)

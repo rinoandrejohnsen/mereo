@@ -2,7 +2,7 @@
 --
 -- The other half of the pair; see core.mereo for the half that does not. This
 -- file is self-contained: the raw syscall declarations come first, then the
--- resources built on them, so a program needs only `use "linux.mereo"`.
+-- resources built on them, so a program needs only `include "linux.mereo"`.
 --
 --   the syscall ABI    each one a raw `assembly "syscall"`, no injected wrapper
 --   file               THE acquired resource: a descriptor, closed by its scope
@@ -529,13 +529,11 @@ linux contains
   -- end at offset 0, the WRITE end at offset 4, both 4 bytes.
   --
   --   pair is 8 bytes
-  --   pipe2 system where
-  --       pair is pair
-  --       flags is 0
-  --   reader is adopted file where
-  --       descriptor is [pair + 0 : 4] as signed
-  --   writer is adopted file where
-  --       descriptor is [pair + 4 : 4] as signed
+  --   linux.pipe2 (pair is pair, flags is 0)
+  --   head is [pair + 0 : 4] as signed
+  --   tail is [pair + 4 : 4] as signed
+  --   reader is adopted linux.file (descriptor is head)
+  --   writer is adopted linux.file (descriptor is tail)
   pipe2 is assembly "syscall"
     result out rax
     number is 293 in rax
@@ -559,7 +557,7 @@ linux contains
 
   -- linux.mereo -- conceptual equivalents of linux.h++, in mereo.
   -- Imports its own primitive declarations; programs need only
-  -- `use "linux.mereo"`.
+  -- `include "linux.mereo"`.
   --
   -- What ports directly (linux.h++ -> here):
   --   file                    ->  file     THE ACQUIRED RESOURCE: a `descriptor`
@@ -567,9 +565,9 @@ linux contains
   --                                        by release, with the I/O methods
   --                                        (read, write, seek, sync) reaching the
   --                                        fd directly. Construct one to open
-  --                                        (`f is file where path ...`) or adopt a
-  --                                        raw descriptor (`f is already file where
-  --                                        descriptor is 1`).
+  --                                        (`f is linux.file (path is ...)`) or adopt
+  --                                        a raw descriptor
+  --                                        (`f is already linux.file (descriptor is 1)`).
   --   mapping                 ->  mapping  with a fixed length: a
   --                                        mereo constructor cannot yet
   --                                        persist a parameter into state,
@@ -674,15 +672,14 @@ linux contains
     -- is for:
     --
     --   slot is 8 bytes
-    --   watched is slot as poll_entry
-    --   descriptor of watched is here          -- `descriptor of source` reads it
-    --   events of watched is 1                 -- POLLIN
-    --   watch source where
-    --       entries is slot
-    --       count is 1
-    --       timeout is 0                       -- ...forever; or a `timespec`
-    --       ready is ready
-    --   got is revents of watched
+    --   watched is slot as linux.poll_entry
+    --   watched.descriptor is here
+    --   watched.events is 1                    -- POLLIN
+    --   source.watch (entries is slot,
+    --                 count is 1,
+    --                 timeout is 0,            -- ...forever; or a `timespec`
+    --                 ready is ready)
+    --   got is watched.revents
     --
     -- `ready` is 0 when the timeout ran out, which is not a failure. The array may
     -- name any descriptors at all -- this is a method on `file` because a fallible
@@ -762,15 +759,11 @@ linux contains
   -- closes both, in reverse order, on every path out.
   --
   --   pair is 8 bytes
-  --   make channel where
-  --       pair is pair
-  --       flags is 0
+  --   linux.channel.make (pair is pair, flags is 0)
   --   head is [pair + 0 : 4] as signed      -- the read end, at offset 0
   --   tail is [pair + 4 : 4] as signed      -- ...and the write end, at 4
-  --   source is adopted file where
-  --       descriptor is head
-  --   sink is adopted file where
-  --       descriptor is tail
+  --   source is adopted linux.file (descriptor is head)
+  --   sink is adopted linux.file (descriptor is tail)
   --
   -- A `pipe` resource owning both was the first shape tried and is the wrong one:
   -- it would have to hand its descriptors out, and a method cannot read its own
@@ -787,12 +780,10 @@ linux contains
   -- acquires with O_DIRECTORY, so opening a plain file fails HERE rather than at
   -- the first read, and its `read` is getdents64 rather than read.
   --
-  --   folder is directory where
-  --       path is "/etc"
-  --   read folder where
-  --       buffer is block
-  --       capacity is size of block
-  --       count is count
+  --   folder is linux.directory (path is "/etc")
+  --   folder.read (buffer is block,
+  --                capacity is block.size,
+  --                count is count)
   --
   -- `count` is bytes, not entries, and **zero means the end of the directory**,
   -- not a failure. One call rarely returns everything: loop until it answers 0.
@@ -835,11 +826,8 @@ linux contains
   -- binding it is what lets `or continue` repair a failure, which is how you say
   -- "remove it if it is there":
   --
-  --   remove files where
-  --       name is "scratch"
-  --       flags is 0
-  --   or continue where
-  --       result is 0
+  --   linux.files.remove (name is "scratch", flags is 0)
+  --   or continue (result is 0)
   --
   -- Every one resolves `name` relative to the current directory (base is -100).
   -- To work relative to a `directory` you hold, reach for the primitive itself
@@ -937,13 +925,12 @@ linux contains
   -- holds nothing, so adopt one (`already clock`) and ask. Every method fills a
   -- 16-byte `timespec`.
   --
-  --   watch is already clock
-  --   elapsed watch where
-  --       buffer is started
+  --   linux.clock.elapsed (buffer is started)
   --   ...
-  --   elapsed watch where
-  --       buffer is ended
-  --   spent is seconds of (ended as timespec) - seconds of (started as timespec)
+  --   linux.clock.elapsed (buffer is ended)
+  --   before is started as linux.timespec
+  --   after is ended as linux.timespec
+  --   spent is after.seconds - before.seconds
   clock is
     -- wall-clock time, seconds since 1970. Jumps when the system clock is set, so
     -- it answers "what time is it" and must not be used to measure a duration.
@@ -989,10 +976,10 @@ linux contains
   -- a function you call here, it is `2 bytes as big`.
   --
   --   host is 16 bytes
-  --   peer is host as sockaddr_in
-  --   family of peer is 2            -- AF_INET
-  --   port of peer is 12345
-  --   address of peer is 2130706433  -- 127.0.0.1
+  --   peer is host as linux.sockaddr_in
+  --   peer.family is 2               -- AF_INET
+  --   peer.port is 12345
+  --   peer.address is 2130706433     -- 127.0.0.1
   sockaddr_in is
     family is 2 bytes
     port is 2 bytes as big
@@ -1010,18 +997,17 @@ linux contains
   -- that is what the kernel writes.
   --
   --   meta is 256 bytes
-  --   inspect where
-  --       path is "/etc/passwd"
-  --       buffer is meta
-  --       mask is 2047                -- STATX_BASIC_STATS
-  --       flags is 0
-  --   info is meta as file_status
-  --   n is length of info
+  --   linux.files.inspect (name is "/etc/passwd",
+  --                        buffer is meta,
+  --                        mask is 2047,       -- STATX_BASIC_STATS
+  --                        flags is 0)
+  --   info is meta as linux.file_status
+  --   n is info.length
   --
-  -- `mask of info` says what the kernel actually filled -- it may answer with
+  -- `info.mask` says what the kernel actually filled -- it may answer with
   -- more than was asked for, and on an unusual filesystem with less.
   --
-  -- The `size` field is called `length` here: `size of X` is mereo's compile-time
+  -- The `size` field is called `length` here: `X.size` is mereo's compile-time
   -- size operator, so a field of that name could not be read.
   file_status is
     mask is 4 bytes
@@ -1054,8 +1040,8 @@ linux contains
   -- (S_IFDIR is 0040000, S_ISUID is 0004000); they are a bit layout, and a flag
   -- view is what mereo has for a bit layout.
   --
-  --   perm is mode of info as file_mode
-  --   kind of perm == 4 goes ...      -- a directory
+  --   perm is info.mode as linux.file_mode
+  --   perm.kind == 4 goes ...         -- a directory
   --
   -- `kind` is the top four bits, and its values are the SAME NUMBERS as a
   -- directory entry's `kind` (below) -- d_type is literally the mode shifted down

@@ -6,10 +6,10 @@
 -- The point of the program is the two views over statx's answer, which between
 -- them mean no offset and no octal constant appears anywhere below.
 --
---   file_status  a LAYOUT view -- `length of info`, `links of info`, the byte
+--   file_status  a LAYOUT view -- `info.length`, `info.links`, the byte
 --                fields of the 256-byte block the kernel filled
 --   file_mode    a FLAG view over the two bytes of that block's `mode` field --
---                `kind of bits` is the top four bits, which everyone else
+--                `bits.kind` is the top four bits, which everyone else
 --                writes as a comparison against 0040000 and friends
 --
 -- The nine permission characters are a LOOP over the low bits rather than nine
@@ -20,8 +20,9 @@
 -- `flags is 256` is AT_SYMLINK_NOFOLLOW, so a symlink reports on itself, which
 -- is what `ls -l` shows.
 --
--- One path, not several: `pointer of arguments + N` takes a literal N, so the
--- argument vector cannot be walked with a counter yet.
+-- One path, not several -- the example is about the two views, not about
+-- argument handling. The index in `arguments.pointer + N` may be a run-time
+-- value, so walking the vector with a counter is a loop away.
 
 include "../linux.mereo"
 include "../core.mereo"

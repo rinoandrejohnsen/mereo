@@ -116,6 +116,11 @@ bb view/own-state     own_state_bytes "" 0 "76 111 114"
 # unsigned field cannot turn `>= 0` into an always-true comparison. The field
 # here is unsigned on purpose and the read fails with EISDIR.
 bb view/unsigned-contract unsigned_contract "" 1 ""
+# a resource method may do SEVERAL steps and then make a SYSCALL. Two rules used
+# to stand in the way: a body could not open with a store, and a spliced
+# primitive arrived bare and was refused as "must live in a resource" when it
+# already did. `watcher` fills its own poll entry and then polls it.
+bb view/method-syscall method_syscall "" 0 "1 1"
 # a layout field that is a RUN of text answers with its address, so uname's six
 # strings have names instead of six offsets in a comment. Against the system's.
 bb view/uname         uname "" 0 "$(uname -s) $(uname -m)"
@@ -484,6 +489,10 @@ raii branch/leave-cold-raii branch_leave
 raii branch/leave-hot-raii  branch_leave -- x
 raii argcat/raii     argcat -- "$B/doc"
 RIN="hi" raii abc/raii  abc
+# a syscall SPLICED into a resource method, after several stores. It carries its
+# own `ensure` and has to route into the tower like any other call -- faulting
+# the ppoll must still close the descriptor.
+raii view/method-syscall-raii method_syscall
 rm -f "$DIR/copy_out.txt"
 
 echo "---"
