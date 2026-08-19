@@ -1,0 +1,37 @@
+include "../../linux.mereo"
+
+-- Two namespaces each declaring a resource of the SAME NAME, both live at once.
+--
+-- Declarations are keyed by their canonical path, so `alpha.handle` and
+-- `beta.handle` are two definitions. The tower looks a resource's cleanup up by
+-- that key, so if the keying were wrong here it would release one instance
+-- using the other's `release` -- silently, since both are well-formed.
+--
+-- The two are given DIFFERENT cleanup on purpose: `alpha.handle` closes the
+-- descriptor it was adopted with, `beta.handle` closes the literal 109. A mix-up
+-- shows as close(102) where close(109) belongs, rather than as nothing at all.
+--
+-- Expect close(109) close(101): reverse acquisition order, each with its own.
+
+alpha is
+  handle is
+    descriptor is 0
+    release goes
+      linux.close (descriptor is descriptor)
+    end
+  end
+end
+
+beta is
+  handle is
+    descriptor is 0
+    release goes
+      linux.close (descriptor is 109)
+    end
+  end
+end
+
+program goes
+  a is adopted alpha.handle (descriptor is 101)
+  b is adopted beta.handle (descriptor is 102)
+end

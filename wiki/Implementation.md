@@ -42,9 +42,9 @@ gates run on every test pass:
 | Claim | Checked against |
 | --- | --- |
 | system call numbers | the kernel's `<asm/unistd_64.h>` — 41 of them |
-| resource release order | equivalent C++ binaries under `strace` — 48 scenarios |
+| resource release order | equivalent C++ binaries under `strace` — 53 scenarios |
 | hot/cold layout | the disassembly of the shipped binary |
-| program behaviour | 122 black-box cases on the built binaries |
+| program behaviour | 147 black-box cases on the built binaries |
 | generated machine code | hand-written freestanding C — 9 paired cases |
 | syntax highlighting | the editor's own highlighting library |
 

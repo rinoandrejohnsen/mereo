@@ -1,0 +1,32 @@
+include "../../linux.mereo"
+
+-- A LAYERED resource inside a namespace: `deep extends base`, both declared in
+-- the same namespace, so the base is named by a bare name that resolves within
+-- it. Each layer owns one thing, and the tower gets two floors.
+--
+-- The base name is deref'd to a canonical path when the definition is read, and
+-- the cleanup chain is built from the base's own. A namespace that failed to
+-- resolve the base would either refuse the program or -- worse -- build a chain
+-- with one floor and release only the top layer.
+--
+-- Expect close(107) close(101): the added layer first, then the base's, which
+-- is C++ destroying the derived part before the base subobject.
+
+lib is
+  base is
+    descriptor is 0
+    release goes
+      linux.close (descriptor is descriptor)
+    end
+  end
+
+  deep extends base is
+    release goes
+      linux.close (descriptor is 107)
+    end
+  end
+end
+
+program goes
+  d is adopted lib.deep (descriptor is 101)
+end

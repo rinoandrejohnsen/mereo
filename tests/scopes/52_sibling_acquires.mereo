@@ -1,0 +1,27 @@
+include "markers.mereo"
+
+-- A method calling a SIBLING that acquires. The sibling is spliced as its own
+-- named scope, so what it takes is released at the end of the splice -- before
+-- the caller goes on to acquire anything else. That is C++ function-body
+-- semantics, which is what the twin expresses.
+--
+-- The order is the whole claim: if the splice did not open a scope of its own,
+-- `tmp` would join the caller's live set and outlive `held`, giving
+-- close(102) close(101) instead.
+--
+-- Expect close(101) close(102).
+
+lib is
+  reach goes
+    tmp is adopted mark_a (descriptor is 101)
+  end
+
+  work goes
+    reach
+    held is adopted mark_b (descriptor is 102)
+  end
+end
+
+program goes
+  lib.work
+end

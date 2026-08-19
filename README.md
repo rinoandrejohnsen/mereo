@@ -24,7 +24,7 @@ That builds to a 784-byte executable.
 - **Lifetimes are derived, never registered.** A resource is released when its
   scope ends, in reverse order, on every path out — including a failed check and
   a Ctrl-C. There are no drop flags anywhere, and the release order is checked
-  against real C++ binaries with real destructors (48 paired scenarios).
+  against real C++ binaries with real destructors (53 paired scenarios).
 - **One jump, three words.** `repeat NAME` goes to a scope's top, `leave NAME`
   past its bottom, and both release exactly what that scope holds. A loop is a
   scope whose body ends by repeating; an `if` is `GUARD goes`, a scope with an

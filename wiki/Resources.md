@@ -119,7 +119,7 @@ anything.
 > **label** each failure jumps to: a fault before the marker goes to a release
 > point that skips this resource, one after it goes to a release point that
 > includes it. The answer ends up in the program counter rather than in a bit.
-> Across all 79 programs in this repository there is not one boolean
+> Across all 112 programs in this repository there is not one boolean
 > declaration, and no cleanup is gated on stored ownership state.
 >
 > It is manual, which a drop flag is not — the compiler cannot tell which of

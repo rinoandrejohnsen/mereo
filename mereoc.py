@@ -1968,7 +1968,15 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                 # method or a template makes it a procedure. Without this a
                 # method whose body began by calling its neighbour was read as a
                 # simple method and refused with `unknown primitive 'bump'`.
-                _c = re.match(r"^([\w.]+)\s*\(", s)
+                # ...with or without an argument list: a call to something
+                # that takes no ports is a bare word (`reach`), and a noreturn
+                # primitive is written the same way (`linux.exit`), so again it
+                # is WHAT is named that separates them.
+                _c = re.match(r"^([\w.]+)\s*(?:\(|$)", s)
+                # `acquired` is a MARKER in an acquire body, not a call, and a
+                # bare word is how it is written. Any reserved word likewise.
+                if _c and (_c.group(1) == "acquired" or _c.group(1) in RESERVED):
+                    _c = None
                 _cp = bare(_c.group(1), ns_of_line.get(n)) if _c else None
                 if (method["prim"] is None and not method["delegate"]
                         and (re.match(r"^\w+ is .+$|^\w+ goes$|^scope$"

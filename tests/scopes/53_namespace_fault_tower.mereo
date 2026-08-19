@@ -1,0 +1,48 @@
+include "../../linux.mereo"
+
+-- A failing `ensure` unwinding resources that come from THREE different
+-- namespaces, one of them nested, one of them layered.
+--
+-- The happy-path scenarios beside this one check that each definition's own
+-- cleanup is found. This checks the same thing on the path that matters more:
+-- the tower, entered by a fault, releasing every live resource in reverse. A
+-- floor built from the wrong definition's cleanup would show as a close of the
+-- wrong number here, in the wrong place.
+--
+-- `one.handle` closes what it was adopted with; `two.handle` closes 108;
+-- `one.deep` adds a layer that closes 107 before its base's.
+--
+-- Expect close(107) close(103) close(108) close(101).
+
+one is
+  handle is
+    descriptor is 0
+    release goes
+      linux.close (descriptor is descriptor)
+    end
+  end
+
+  deep extends handle is
+    release goes
+      linux.close (descriptor is 107)
+    end
+  end
+end
+
+two is
+  handle is
+    descriptor is 0
+    release goes
+      linux.close (descriptor is 108)
+    end
+  end
+end
+
+program goes
+  a is adopted one.handle (descriptor is 101)
+  b is adopted two.handle (descriptor is 102)
+  c is adopted one.deep (descriptor is 103)
+
+  guard is 0
+  ensure guard >= 1
+end

@@ -1,0 +1,37 @@
+include "../../linux.mereo"
+
+-- A resource declared in a NESTED namespace, released beside one from the
+-- namespace enclosing it.
+--
+-- Nesting is folded away a level at a time, each pass composing one more
+-- segment of the path, so `outer.inner.handle` is keyed by the whole path. The
+-- tower reads cleanup by that key: if a pass lost a segment, the two `handle`s
+-- here would collapse into one definition and one of them would release wrongly.
+--
+-- Again given different cleanup so a collapse shows: the outer one closes what
+-- it was adopted with, the inner one closes the literal 108.
+--
+-- Expect close(108) close(101): reverse acquisition order.
+
+outer is
+  handle is
+    descriptor is 0
+    release goes
+      linux.close (descriptor is descriptor)
+    end
+  end
+
+  inner is
+    handle is
+      descriptor is 0
+      release goes
+        linux.close (descriptor is 108)
+      end
+    end
+  end
+end
+
+program goes
+  a is adopted outer.handle (descriptor is 101)
+  b is adopted outer.inner.handle (descriptor is 102)
+end
