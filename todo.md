@@ -574,6 +574,61 @@ means the line is a sentence rather than a projection. Seven rules, each with a
 planted violation checked to fire. The corpus is 102 for 102 byte-identical,
 comments being comments.
 
+## `contains` and `is`: what actually separates them — **one gap DONE**
+
+**Status:** the question was whether a namespace and a stateless group differ in
+the end. They do, and the difference is not cosmetic; one hole found while
+checking is closed.
+
+Established against the compiler rather than by reading it:
+
+| | `NAME contains` | `NAME is` (stateless group) |
+| --- | --- | --- |
+| what it is | a scope over NAMES, folded out of the line stream before parsing; emits nothing | a definition — a resource with the state left out |
+| holds | resources, views, other groups, raw `assembly` primitives | methods and fields |
+| a method directly in it | refused: *'lib' is a namespace, not an instance* | that is all it holds |
+| a raw primitive in it | yes — all 41 syscalls live in `linux contains` | refused: *unrecognized definition line* |
+| instantiable | no — `already linux` is *unknown definition 'linux'* | yes — `already linux.clock` compiles |
+| nests in itself | refused explicitly | no |
+
+So they are **complementary, not redundant**: neither can do the other's job.
+`linux.channel.make (...)` needs both — `linux` to scope the name, `channel` to
+be something a method can hang on. And a group is one field away from being a
+resource, which a namespace can never become.
+
+Where they really are indistinguishable is the CALL SITE: `linux.ppoll (...)` is
+namespace→primitive and `linux.clock.elapsed (...)` is namespace→group→method,
+and nothing in the syntax says which. Both cap at `A.b.c`. That is a fair
+criticism of the surface, and it is a different question from whether the two
+constructs do the same thing.
+
+**The hole, now closed.** A definition written inside a definition reads exactly
+like a no-parameter method, so the parser took it as one:
+
+```
+grp is
+  rec is                    -- meant as a view
+    tag is 1 bytes
+  end
+end
+```
+
+`grp.rec` became a callable method whose body declared a local. Nothing called
+it, and a procedure method is otherwise checked only when it is INLINED — so
+nothing ever looked at it again, and the complaint arrived at the use
+(`` `as` needs a view ``), naming neither the nesting nor the group.
+
+What makes it checkable without guessing: a method taking no parameters reaches
+the world in exactly two ways — it calls something, or it writes its resource's
+state. A body of nothing but declarations of its own locals does neither, so it
+cannot have an effect however it was meant. Refused at the declaration now, with
+a message that names the rule and where the definition belongs.
+
+The corpus found the one case that reads like a declaration but is not:
+`tests/scopes/04_method_local` writes `tmp is adopted mark_a (...)` in a method
+precisely so the release runs when the method returns. An instance is an effect,
+so instances are excluded. 162 files byte-identical after that.
+
 ## The language server is gone, and nothing replaced it
 
 **Status:** open, deliberately.

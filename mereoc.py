@@ -2704,6 +2704,43 @@ def own_state_access(actual, defn, meth, ln):
     return True
 
 
+_DECL_ONLY = re.compile(r"^(\w+) is .+$")
+
+
+def inert_body(meth, defn, definitions):
+    """Does this method's body do nothing but DECLARE its own locals?
+
+    A method taking no parameters reaches the world in exactly two ways: it
+    calls something, or it writes its resource's state. A body that is only
+    `NAME is ...` lines naming neither a state field nor a parameter does
+    neither, so it cannot have an effect whatever it was meant to be.
+
+    A line indented DEEPER than the body's own base opens a nested block (a
+    scope, a loop, a guarded road), which is a statement rather than a
+    declaration -- so the body is not inert and this says nothing about it.
+
+    Nor is declaring an INSTANCE inert, though it reads like a declaration: a
+    resource acquired in a method is released when the method returns, and that
+    release is the whole point of writing it there."""
+    state = set(defn.get("flat") or ()) | set(defn.get("state") or ())
+    state |= {f[0] for f in (defn.get("packed") or ())}
+    body = [ln for ln in meth["procedure"] if ln.strip()]
+    if not body:
+        return False
+    base = min(len(ln) - len(ln.lstrip()) for ln in body)
+    for line in body:
+        if len(line) - len(line.lstrip()) > base:
+            return False
+        m = _DECL_ONLY.match(line.strip())
+        if not m or m.group(1) in state:
+            return False
+        rhs = line.strip()[len(m.group(1)) + 4:].strip()
+        head = (rhs.split("(")[0].strip().split() or [""])[0]
+        if head in ("adopted", "already") or head.split(".")[-1] in definitions:
+            return False
+    return True
+
+
 def cleanup_arg(inst_name, a, defn, backing, scalars, buffers):
     """One argument of a release call, as a C expression.
 
@@ -3012,7 +3049,25 @@ def elaborate_classes(definitions):
                 fail(f"line {meth['line']}: template '{meth['name']}' has no "
                      "body (expected its steps indented under it)")
             if meth["procedure"] is not None:
-                continue             # a procedure method is checked when inlined
+                # A procedure method is checked when it is INLINED, so one that
+                # nothing calls is never checked at all -- and that is how a
+                # definition written INSIDE a definition survives. `rec is / tag
+                # is 1 bytes / end` parses as a method named `rec` whose body
+                # declares a local, nothing calls it, and nothing looks again.
+                # `grp.rec` is then not a view, and the complaint arrives at the
+                # USE ("`as` needs a view") naming neither the nesting nor the
+                # group. Definitions do not nest -- a namespace is what holds
+                # them -- so say that here, where the mistake is.
+                if not meth["params"] and inert_body(meth, defn, definitions):
+                    fail(f"line {meth['line']}: '{meth['name']}' takes no "
+                         "parameters and its body only declares names, so "
+                         "nothing it does can be observed. Did you mean a "
+                         f"DEFINITION? One cannot be nested inside another -- "
+                         f"'{defn['name']}' holds methods and fields -- so move "
+                         f"`{meth['name']} is` out to the left margin (or into a "
+                         f"namespace) and reach it as '{meth['name']}' rather "
+                         f"than '{defn['name']}.{meth['name']}'")
+                continue
             if meth["prim"] is None and meth["delegate"] is None:
                 fail(f"line {meth['line']}: method '{meth['name']}' has "
                      "no body (expected an indented `PRIM where` or "

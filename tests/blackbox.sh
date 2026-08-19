@@ -384,6 +384,12 @@ rejects acquired/no-call    acquired_no_call    "must follow the call"
 # A NAME BECOMES A C IDENTIFIER as written, and a scope name becomes a C LABEL.
 # All three of these used to pass mereo and fail in GCC, with a message about
 # generated code the author never saw.
+# A definition inside a definition reads exactly like a no-parameter method, so
+# it was taken as one -- and a procedure method is only checked when it is
+# INLINED, so one nothing calls was never checked at all. The complaint used to
+# arrive at the USE, naming neither the nesting nor the group.
+rejects nested/definition nested_definition "its body only declares names"
+
 rejects name/c-keyword  name_ckeyword   "is a C keyword"
 rejects name/label      name_label      "collides with a label the emitter makes"
 rejects name/underscore name_underscore "may not start with an underscore"
