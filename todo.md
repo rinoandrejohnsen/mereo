@@ -317,83 +317,81 @@ The answer there is already in [Performance](docs/performance.md): bound the
 loop by the same length the check tests and the compiler proves the check
 redundant, so the safety costs nothing.
 
-## Constraints on ports: what C++ `concept` would and would not buy
+## Derived port constraints
 
-**Status:** open, a design question. Everything below is checked against the
+**Status:** open, designed, decided. Everything below is checked against the
 compiler.
 
-### mereo already has the capability; it lacks the check
+**Decision: derive the requirement, do not declare it.** A C++ `concept` has to
+be written down because a template body is type-generic and the compiler cannot
+summarise what it needs of `T`. A mereo body is not generic that way — it says
+exactly what it does with each port. So the requirement is already present, and
+writing it a second time would be a second place to keep in step, which is the
+failure mode the tower and the error record were both built to avoid.
 
-A port is connected by name, and what the body does with it is the only
-requirement there is. That makes ports **structurally typed already** — the same
-thing a C++ `concept` gets you over a base class, and closer to that than to an
-Ada generic constraint, which is declared rather than inferred. Verified: one
-template over two definitions with no shared base, each carrying a `spill`
-method, splices and runs against both.
+### What is derivable, and from what
 
-So the question is not whether mereo can express the constraint. It is whether
-the compiler says anything useful when a connection does not meet it.
+| the body writes | the port requires |
+| --- | --- |
+| `thing.read (...)` | a receiver carrying a `read` whose ports match |
+| `[area + k : w]` | an address — a buffer, or a scalar holding one |
+| `n + 1`, `n > 0` | a value |
+| `value is ...` | a scalar slot to land in |
 
-### Sometimes it says exactly the right thing
+For a SINGLE-CALL method this is already computed: `validate_method` reads the
+primitive's port kinds and fills `dirs` with value/return. For a PROCEDURE
+method nothing is computed until the splice — `dirs` is empty at declaration and
+the body is still raw lines.
 
-```
-  peek (area is n, value is n)
-  ^  line 8: 'peek' assigns 'value' and also uses 'area', but both are bound to
-     'n' -- a template is spliced in place, so the write happens before the read
-     and the read would see the new value. Bind them to different slots.
-```
+### Why it is worth doing, beyond tidiness
 
-The call site, both ports, the reason, and the fix.
+Ports are structurally typed already, which is the capability a `concept` buys
+over a base class. Verified: one template splices over two definitions with no
+shared base, each carrying the method it calls, and runs against both. What is
+missing is only the check and the message.
 
-### And sometimes it is the pre-concepts C++ experience
-
-Two splices deep, connecting a scalar to a port the innermost body uses as a
-receiver:
+**The message is the point.** Sometimes it is exactly right — binding one slot
+to both a read port and a write port of the same template names the call site,
+both ports, the splice semantics that make it wrong, and the fix. But two
+splices deep, connecting a scalar to a port an inner body uses as a receiver:
 
 ```
   outer (thing is n, n is n)          -- the call, on line 10
   ^  line 2: unknown instance or definition 'n'
 ```
 
-Line 2 is the INNERMOST template's header, two levels from the mistake. It names
-`n`, which is a perfectly good scalar — its being unusable as an instance is the
-point, and the message does not say so. This is the error blooming inside
-instantiation, which is what concepts were introduced to stop.
+Line 2 is the innermost template's header, two levels from the mistake, naming a
+perfectly good scalar without saying that being unusable as an instance is the
+point. That is the error blooming inside instantiation.
 
-### The mereo-shaped answer is to derive, not to declare
+### It closes a second hole on the way
 
-C++ needs the constraint written down because a template body is type-generic:
-the compiler cannot summarise what a body requires of `T` without being told.
-A mereo body is not generic in that way — it says exactly what it does with each
-port:
+Deriving requirements means parsing each procedure body ONCE at its declaration
+rather than only at each splice — and that is exactly what is missing today:
 
-| the body writes | the port requires |
-| --- | --- |
-| `thing.read (...)` | a receiver with a `read` whose ports match |
-| `[area + k : w]` | an address: a buffer, or a scalar holding one |
-| `n + 1`, `n > 0` | a value |
-| `value is ...` | a scalar slot to land in |
+```
+grp is
+  never (a, b) goes
+    a is nonsense_name + b        -- an undefined name
+    b is [a + 0 : 3]              -- and a width that is not 1, 2, 4 or 8
+  end
+end
+```
 
-All four are already known — they are what the splice does. So the requirement
-can be **derived per port** and checked where the connection is made, giving the
-diagnostic half of concepts with no new syntax. Requirements compose through a
-template that only passes a port on; the call graph is finite because recursion
-is refused.
+Accepted, as long as nothing calls `never`. A method nobody calls is never
+checked at all, which is also how a definition written inside a definition
+survived long enough to be read as a method.
 
-This suits the language: the release tower is derived, the error record is
-derived, the exit status is derived. A port's requirement is the same kind of
-thing.
+### Scale
 
-### What would still be a choice
+178 ports across the two library files, over 34 procedure methods and 42
+single-call ones. Requirements compose through a template that only passes a
+port on, and the call graph is finite because recursion is refused.
 
-An explicit spelling (`area needs bytes`, or Ada's shape) buys two things
-derivation does not: a requirement stated where a reader looks for it, and a
-requirement a body does not yet exercise. Against that, it is a second place to
-keep in step with the body — the failure mode every other derived thing here was
-built to avoid.
+### What is deliberately not being built
 
 The overload half of `concept` has nothing to attach to: mereo has no
-overloading, so there is no set to select from.
+overloading, so there is no candidate set to select from.
 
 ## The language server is gone, and nothing replaced it
 
