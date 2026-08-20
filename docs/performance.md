@@ -79,6 +79,14 @@ Stating the invariant once recovers the vectorisation and keeps the check. This
 is why mereo offers no way to disable a check: the cheaper option is to say what
 is known, not to stop looking.
 
+Read the last two rows together, though, because they settle a design question.
+33 ms against 30 ms is a **10% residual**, and hand-written C would not carry
+that check at all. The project's bar is parity with that C, so a checked access
+can never be the DEFAULT form — `[buffer + i]` stays unchecked and matches the
+30 ms, and `.at` is opt-in and costs the 10% for whoever wants it. The only way
+to make the default form safer without spending that 10% is to decide it at
+compile time, which is what [Safety](safety.md) measures.
+
 ## Binary size
 
 Hello world links to **784 bytes**, static, with no dynamic loader. A linker

@@ -414,6 +414,37 @@ checks" but:
 Which makes the unchecked form unnecessary rather than merely discouraged, and
 that is the prize worth aiming at.
 
+### The rule that decides what belongs here
+
+Stated 2026-08-20, and it triages every item below. Competing on safety was
+never a design goal. The bar is **parity with hand-written, optimised,
+Linux-correct C**, and nothing is accepted that costs more. Safety is therefore
+whatever free compile-time analysis yields, and a gap is not automatically work.
+
+| | where it is paid | verdict |
+| --- | --- | --- |
+| refuse what is proven wrong | compile time | **take it** — 0 programs break |
+| `ensure capacity <= buffer.size` | compile time | **take it** — 0 corpus sites |
+| a literal-zero divisor | compile time | **take it** — decidable, unbuilt |
+| read-before-write of a raw buffer | compile time | **take it** — flow analysis, unbuilt |
+| `-fwrapv` | nothing, measured | **take it** — see below |
+| a run-time guard on an unbounded index | every iteration | only where the binary is measured unchanged |
+| zeroing raw buffers | a store per buffer | no |
+| a run-time divisor guard | every division | no |
+
+`-fwrapv` was expected to cost, since assuming an induction variable cannot wrap
+is exactly what a loop optimiser wants. Measured: **377248 bytes against 379168
+across 89 binaries, 75.4 ms against 77.4 ms on 800M byte-loads, and 42 vector
+instructions either way.** Smaller, no slower, identically vectorised. It does
+not detect an overflow, but it removes the undefined behaviour for free, and
+free is the whole test.
+
+The tension worth keeping in view is in `docs/performance.md`: a checked access
+with the invariant stated is 33 ms against 30 ms unchecked. That 10% is why a
+check can never be the DEFAULT form. `[buffer + i]` stays unchecked and matches
+the C; `.at` is opt-in. Compile-time analysis is the only route to a safer
+default, which is what the rest of this entry is about.
+
 ### Order of work
 
 **Done:** the bound hoist (`hoist_guard_bounds`), which makes a checked access

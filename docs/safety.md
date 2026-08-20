@@ -1,5 +1,28 @@
 # Safety, and what it costs
 
+## Safety was never the goal
+
+This page compares mereo's safety with other languages, so it should say at the
+top what the project is actually trying to do — because it is not this.
+
+Competing on safety was never a design goal. The single bar is **performance
+parity with a hand-written, optimised, Linux-correct C program**, and no safety
+feature is accepted that costs more than that. What follows from that rule is
+not less safety but a redirection of it: compile-time work is free at run time,
+so everything that can be settled before the program runs is worth taking, and
+everything that has to be paid for while it runs is not.
+
+That is why the page reads the way it does. The long list of faults mereo cannot
+have is a by-product of constraints adopted for other reasons; the checks it
+performs are the ones that cost nothing; and the gaps left open — overflow,
+uninitialised reads, division by zero — are open because the run-time fix for
+each would spend exactly what the constraints bought. Their COMPILE-TIME halves
+are a different matter, and are unbuilt rather than declined.
+
+The comparisons below are therefore a measurement, not a claim to be winning.
+
+## Four ways to be safe
+
 There are four ways a language can stop a program from corrupting memory, and
 they are usually discussed as if they were competing answers to one question.
 They are not. They are answers to different questions, bought at very different
@@ -84,9 +107,18 @@ emits `char data[8] = {0};` — but a raw buffer is not: `raw is 8 bytes` emits
 
 **Signed overflow is undefined.** A scalar is a C `long`, the build does not
 pass `-fwrapv`, and so `n is n + 1` at `LONG_MAX` is undefined behaviour that
-the optimiser is entitled to assume cannot happen. This is the cheapest of the
-three to improve — `-fwrapv` makes it defined wrapping — but defined wrapping is
-still not a *check*.
+the optimiser is entitled to assume cannot happen. Defined wrapping is not a
+*check* — but it is free, which by the rule above is the only question that
+decides whether it is admissible. Measured across the corpus and on a hot loop:
+
+| | 89 binaries | 800M byte-loads | vector instructions |
+| --- | ---: | ---: | ---: |
+| baseline | 379168 bytes | 77.4 ms | 42 |
+| `-fwrapv` | 377248 bytes | 75.4 ms | 42 |
+
+Smaller, no slower, identically vectorised. The expectation was that it would
+cost — `-fno-wrapv` is what lets an optimiser assume an induction variable never
+wraps — and it does not.
 
 Rust checks all three: bounds at run time, initialisation in the type system,
 overflow with a panic in debug and defined wrapping in release. SPARK proves all
