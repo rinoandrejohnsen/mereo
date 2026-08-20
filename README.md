@@ -66,7 +66,7 @@ That builds to a 784-byte executable.
 ./test.sh                          # everything: parity, black box, build gate
 ```
 
-`./test.sh` is the gate that matters. It runs four suites and a build gate:
+`./test.sh` is the gate that matters. It runs five suites and a build gate:
 
 | suite | what it proves |
 | --- | --- |
@@ -74,6 +74,7 @@ That builds to a 784-byte executable.
 | `tests/blackbox.sh` | stdin/args → stdout/exit on the shipped binaries, plus fault injection |
 | `tests/versus/run.sh` | what an abstraction costs, against hand-written C doing the same job |
 | `tests/namespaces/run.sh` | that a namespace means what C++ means by one, on nine questions |
+| `tests/checking/run.sh` | what the compiler catches, against C++ with concepts and Zig |
 | `./build.sh` | every program compiles, and every crossroad's layout holds on the assembly |
 
 ## The guide

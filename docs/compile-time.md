@@ -148,6 +148,35 @@ without the declaration, and gives up what a declaration is good at — a reader
 seeing the requirement without reading the body, and a requirement the body does
 not happen to exercise yet.
 
+## The comparison is a suite, not a claim
+
+`tests/checking` writes one mistake three times — once in mereo, once in C++
+with the requirement written as a `concept`, once in Zig — and compiles each.
+Two things are recorded, because *refused* alone is not the interesting half:
+
+| case | mereo | C++ (concepts) | Zig |
+| --- | --- | --- | --- |
+| a constant index past a known array | refused, at the mistake | accepted | refused, at the mistake |
+| a port used as a receiver, given a number | refused, at the mistake | refused, at the mistake | refused, **inside the template** |
+| an out-port given a literal | refused, at the mistake | refused, at the mistake | refused, at the mistake |
+| a resource named after its scope | refused, at the mistake | refused, at the mistake | refused, at the mistake |
+
+Read it for where each language is *not* alone. C++ and mereo agree on three of
+four, and the row C++ loses is the one where an unchecked subscript is the
+documented behaviour. Zig decides the constant index and mereo does too. The
+row that separates them is the second, and only in *where* the error lands:
+`anytype` is unconstrained, so the mistake surfaces inside the instantiation
+with a reference trace back to the call — which is what C++ did before concepts,
+and what mereo did before a port's requirement was derived.
+
+The last row is the one where mereo is doing real work for a reason the others
+do not have: C++ and Zig scope a name to its block, so the mistake is a name
+error. mereo does not — a scalar or a buffer outlives its block — so it is
+caught by liveness instead, from the set of resources still held.
+
+Disabling any of the three checks moves mereo's column, which is how the suite
+is kept honest.
+
 ## What none of this is
 
 It is not a proof of memory safety. A run-time index is unchecked unless the

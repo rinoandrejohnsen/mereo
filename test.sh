@@ -22,6 +22,11 @@
 #      programs that must print the same nine numbers. Suite 3 asks what an
 #      abstraction costs; this asks whether one MEANS what its name claims.
 #
+#   5. CHECKING versus C++ and Zig           (tests/checking/run.sh)
+#      One mistake written three times and compiled by each: is it refused, and
+#      does the error point at the line it is on? The second half is the whole
+#      argument about `concept` and about deriving a port's requirement.
+#
 # Also runs build.sh (mereocheck hot/cold layout gate) and checks every declared
 # syscall number against <asm/unistd_64.h>.
 set -u
@@ -43,6 +48,12 @@ echo
 # what it prints.
 echo "### Suite 4 -- mereo namespaces versus C++ namespaces"
 "$DIR/tests/namespaces/run.sh" || rc=1
+
+echo
+# What the compiler CATCHES, against two languages that answer the same question
+# differently. Zig is optional -- its column is skipped when it is not installed.
+echo "### Suite 5 -- compile-time checking versus C++ and Zig"
+"$DIR/tests/checking/run.sh" || rc=1
 echo
 echo "### Build + layout gate"
 "$DIR/build.sh" >/dev/null 2>&1 && echo "  build + mereocheck: ok" \

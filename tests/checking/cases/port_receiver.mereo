@@ -1,0 +1,18 @@
+include "../../../linux.mereo"
+
+-- A port used as a RECEIVER, given something that is not one, two templates
+-- deep. The requirement is derived from the body: `inner` calls a method on
+-- `thing`, and `outer` only passes its own `thing` along, so it inherits it.
+
+inner (thing, n) goes
+  thing.read (buffer is 0, capacity is 0, count is n)
+end
+
+outer (thing, n) goes
+  inner (thing is thing, n is n)
+end
+
+program goes
+  n is 0
+  outer (thing is n, n is n)                    -- MISTAKE
+end

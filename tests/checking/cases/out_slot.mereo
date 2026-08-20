@@ -1,0 +1,14 @@
+include "../../../linux.mereo"
+
+-- A port the body ASSIGNS, given a literal. The requirement is derived: `give`
+-- writes `value`, so `value` needs somewhere to land.
+
+give (value) goes
+  value is 7
+end
+
+program goes
+  n is 0
+  give (value is 5)                             -- MISTAKE
+  ensure n == 0
+end

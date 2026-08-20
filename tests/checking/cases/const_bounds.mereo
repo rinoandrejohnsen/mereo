@@ -1,0 +1,10 @@
+include "../../../linux.mereo"
+
+-- A constant index past a known backing. Every term is a literal: the width by
+-- rule, the offset as written, and the backing's size as declared.
+
+program goes
+  block is 8 bytes
+  n is [block + 100 : 1]                        -- MISTAKE
+  ensure n >= 0
+end

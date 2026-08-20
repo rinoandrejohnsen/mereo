@@ -1,0 +1,14 @@
+include "../../../linux.mereo"
+
+-- A resource named after the scope that released it. mereo does NOT scope a
+-- declaration to its block -- a scalar or a buffer outlives one -- so this is
+-- caught by liveness: `source` is not in the set still held here.
+
+program goes
+  n is 0
+  inner goes
+    source is linux.file (path is "/dev/null", flags is 0, mode is 0)
+    n is 1
+  end
+  source.read (buffer is 0, capacity is 0, count is n)   -- MISTAKE
+end
