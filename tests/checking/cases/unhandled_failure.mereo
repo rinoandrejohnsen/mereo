@@ -1,0 +1,24 @@
+include "../../../linux.mereo"
+
+-- A fallible system call with nowhere for its failure to go.
+--
+-- Every syscall that can fail declares its own contract -- `read` says
+-- `ensure count as signed >= 0`, and the reading is part of the declaration, so
+-- binding the result to an unsigned field cannot turn the test into one that is
+-- always true. But a contract needs somewhere to fail TO: the release tower is
+-- built from the resources a scope holds, and a call written bare at program
+-- level has no floor beneath it.
+--
+-- So the call must live in a resource, which is where its `ensure` and its
+-- cleanup both come from. That is the compile-time half of "a failure cannot be
+-- ignored"; the run-time half is `tests/progs/unsigned_contract`, which reads a
+-- directory and exits 1 because the contract held.
+
+program goes
+  block is 8 bytes
+  n is 0
+
+  linux.read (descriptor is 0, buffer is block, capacity is 8, count is n)   -- MISTAKE
+
+  ensure n >= 0
+end

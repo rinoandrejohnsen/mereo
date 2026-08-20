@@ -158,6 +158,7 @@ Two things are recorded, because *refused* alone is not the interesting half:
 | --- | --- | --- | --- |
 | a constant index past a known array | refused | **accepted** | refused |
 | a write to a read-only buffer | refused | refused | refused |
+| a fallible call whose failure is ignored | refused | **warned** | refused |
 | an out-port given a literal | refused | refused | refused |
 | a port used as a receiver, given a number | refused | refused | refused, **inside the template** |
 | a template that reaches itself | **refused** | accepted | accepted |
@@ -170,9 +171,10 @@ line the mistake is on — except where the table says otherwise. A warning is
 recorded separately from a refusal, because it still compiles, and counting one
 as the other would flatter every language that only warns.
 
-Read it for where mereo is *not* alone. C++ agrees on five of eight, and two of
-the three it loses are places where reinterpretation is the documented
-behaviour. Four rows are worth stopping on:
+Read it for where mereo is *not* alone. C++ agrees outright on four of nine.
+Two of the rows it loses are places where reinterpretation is the documented
+behaviour, and two it answers with a warning rather than a refusal. Five rows
+are worth stopping on:
 
 - **the port row** separates the three only in *where* the error lands. Zig's
   `anytype` is unconstrained, so the mistake surfaces inside the instantiation
@@ -188,6 +190,12 @@ behaviour. Four rows are worth stopping on:
   Zig's `@ptrCast`. Zig's *value* cast does: `@bitCast` on the same pair reports
   a size mismatch, so the gap is specific to the pointer form, which is the one
   that corresponds to `as`.
+- **the failure row** is Zig's, and it wins outright. A failure is an error
+  union in the type, and discarding one is an error. C++ at its strongest here
+  is `[[nodiscard]]`, which warns; the program still compiles. mereo refuses
+  because a contract needs somewhere to fail TO — the tower is built from what
+  a scope holds, and a call written bare at program level has no floor beneath
+  it.
 - **the scope row** is where mereo does real work the others do not have to.
   C++ and Zig scope a name to its block, so the mistake is a name error. mereo
   does not — a scalar or a buffer outlives its block — so it is caught from the
