@@ -1,0 +1,36 @@
+include "../../../linux.mereo"
+
+-- A two-step acquisition that never says where ownership begins.
+--
+-- `open` takes the descriptor; `lseek` configures it. If the second fails, the
+-- first must be undone -- and if the FIRST fails there is nothing to undo. The
+-- tower is a ladder of labels rather than a runtime flag, so it has to know
+-- which call is the boundary, and it will not guess: `acquired` after the call
+-- that takes the thing is what says so.
+--
+-- The other two languages accept the same shape, and the failure is a leak
+-- nothing reports. That is the trade this suite exists to show: mereo refuses a
+-- program whose ownership boundary is ambiguous, where C++ and Zig compile one
+-- that loses a descriptor on a path the author did not think about.
+
+holder is
+  descriptor is 4 bytes as signed
+  status is 8 bytes as signed
+
+  acquire (path) goes                           -- MISTAKE
+    linux.open (path is path, flags is 0, mode is 0, descriptor is descriptor)
+    linux.lseek (descriptor is descriptor,
+                 offset is 0,
+                 whence is 0,
+                 position is status)
+  end
+
+  release goes
+    linux.close (descriptor is descriptor)
+  end
+end
+
+program goes
+  h is holder (path is "/dev/null")
+  ensure h.descriptor >= 0
+end

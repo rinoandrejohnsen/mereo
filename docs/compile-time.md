@@ -161,6 +161,7 @@ Two things are recorded, because *refused* alone is not the interesting half:
 | a fallible call whose failure is ignored | refused | **warned** | refused |
 | an out-port given a literal | refused | refused | refused |
 | a port used as a receiver, given a number | refused | refused | refused, **inside the template** |
+| a two-step acquisition with no stated ownership boundary | **refused** | accepted | accepted |
 | a template that reaches itself | **refused** | accepted | accepted |
 | a resource named after its scope | refused | refused | refused |
 | a view laid over a backing too small for it | **refused** | accepted | accepted |
@@ -171,7 +172,7 @@ line the mistake is on — except where the table says otherwise. A warning is
 recorded separately from a refusal, because it still compiles, and counting one
 as the other would flatter every language that only warns.
 
-Read it for where mereo is *not* alone. C++ agrees outright on four of nine.
+Read it for where mereo is *not* alone. C++ agrees outright on four of ten.
 Two of the rows it loses are places where reinterpretation is the documented
 behaviour, and two it answers with a warning rather than a refusal. Five rows
 are worth stopping on:
@@ -190,6 +191,14 @@ are worth stopping on:
   Zig's `@ptrCast`. Zig's *value* cast does: `@bitCast` on the same pair reports
   a size mismatch, so the gap is specific to the pointer form, which is the one
   that corresponds to `as`.
+- **the ownership row** is the central claim, and the one where accepting the
+  program is the worse answer. Two steps acquire a descriptor and configure
+  it; if the second fails, the first must be undone. C++ compiles it and
+  leaks — a constructor that throws leaves the destructor unrun — and Zig
+  compiles it and leaks, `errdefer` being a line you remember to write.
+  mereo refuses because the tower is a ladder of labels rather than a
+  runtime flag, so it has to know which call is the boundary and will not
+  guess.
 - **the failure row** is Zig's, and it wins outright. A failure is an error
   union in the type, and discarding one is an error. C++ at its strongest here
   is `[[nodiscard]]`, which warns; the program still compiles. mereo refuses
