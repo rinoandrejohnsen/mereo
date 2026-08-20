@@ -376,6 +376,44 @@ With it, `examples/wcl` closes completely, and every link is already present:
 4. `i is 0` -> and on the first
 5. therefore `i + 1 <= 4096`, so `[buffer + i : 1]` is in range
 
+### Could EVERY access be decided, including the unchecked form?
+
+Not every one -- that cannot be a theorem for any language that reads input,
+since proving arbitrary accesses safe reduces to halting. But the corpus splits
+far more sharply than that suggests:
+
+| | | |
+| --- | ---: | --- |
+| induction variables | 2604 | **98%** -- built from constants and loop steps |
+| data-dependent | 38 | 2% -- an offset advanced by a length read out of the input |
+
+(Measured by tracing each index back through the assignments that define it and
+asking whether the chain reaches a memory load. Only 5 indices in the whole
+corpus are ever wired to a call, so the scan's blind spot -- it follows `assign`
+steps, not out-ports -- changes nothing.)
+
+The 98% is a DECIDABLE CLASS, not a currently-provable set: deciding them still
+needs the three things above, in that order.
+
+The 38 are all in the TLS protocol parser -- `[shmsg + server_hello_c]`,
+`[tr + foff]` -- offsets advanced by lengths read from the packet. A sound proof
+needs "the parser validated this length against the buffer first", which is a
+fact about the program's logic rather than its shape. The language cannot infer
+it. The programmer can state it, with `ensure`, and then it is provable again.
+
+**And the residue does not need to be proved, because the check is free.** The
+hoist measurement below is what makes that true: where a check survives,
+hoisting its bound recovers the full vectorisation. So the end state is not "no
+checks" but:
+
+- every access CHECKED by default, `.at` rather than `[v.data + i]`;
+- 98% of those checks proven away when the program is read;
+- the rest carrying a check that costs nothing, sitting exactly where a check
+  earns its place -- an index whose value arrived from outside.
+
+Which makes the unchecked form unnecessary rather than merely discouraged, and
+that is the prize worth aiming at.
+
 ### Order of work
 
 1. **Add the upper bound to the 35 contracts.** Small, declarative, and the
