@@ -393,6 +393,37 @@ port on, and the call graph is finite because recursion is refused.
 The overload half of `concept` has nothing to attach to: mereo has no
 overloading, so there is no candidate set to select from.
 
+## `X.size` refuses a size the compiler just used
+
+**Status:** open, small, and the message is wrong rather than merely unhelpful.
+
+A buffer may be sized by a scalar, and the compiler substitutes that scalar's
+declared value for the array dimension:
+
+```
+  capacity is 4096
+  room is capacity bytes        -- emits `char room[4096];`
+```
+
+Asking for the size back is refused:
+
+```
+  n is room.size
+  ^  `room.size` -- 'room' is sized by a scalar, so its size is not known at
+     compile time; use that scalar directly
+```
+
+It is known: 4096 is what was emitted one line earlier. The dimension is fixed
+at the declaration and does not follow the scalar — reassigning `capacity` to 8
+afterwards leaves `char room[4096]` — so `room.size` can answer 4096 and be
+right about it.
+
+Worth fixing for its own sake, and worth noting for what it says about where
+mereo's compile-time boundary sits: the compiler computes SHAPE (sizes, offsets,
+widths, lifetimes) and hands arithmetic to GCC — `n is 2 + 3 * 4` is emitted as
+`(2 + (3 * 4))`, unfolded. This is the one place it has a shape fact and declines
+to give it back.
+
 ## The language server is gone, and nothing replaced it
 
 **Status:** open, deliberately.
