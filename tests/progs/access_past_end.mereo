@@ -1,0 +1,30 @@
+include "../../linux.mereo"
+
+-- REJECTED on purpose: a constant access that runs past a known backing.
+--
+-- Everything needed is present when the program is read. The width must be a
+-- literal 1, 2, 4 or 8 by rule -- a run-time width would be a run-time load
+-- size, which the machine does not have -- and a backing's size is the number
+-- the emitter puts in the array's brackets. So `[block + 100 : 1]` against
+-- `block is 8 bytes` is decidable, and was accepted: GCC does not warn at the
+-- shipped flags either, so it reached the binary and read past the frame.
+--
+-- A view laid over a backing has always been fit-checked this way (`backing
+-- 'block' is 4 bytes, too small to view 16`). Raw accesses simply never went
+-- through it.
+--
+-- What is NOT checked, and cannot be: an index computed at run time. The value
+-- comes from outside the program, so no amount of whole-program analysis
+-- reaches it -- the answer there is a bound the compiler can prove, which is
+-- what the loop idiom in docs/performance.md is about. This check only claims
+-- the decidable half.
+--
+--   refused:  reads 101 bytes into 'block', which is 8 bytes
+
+program goes
+  block is 8 bytes
+
+  n is [block + 100 : 1]
+
+  ensure n >= 0
+end

@@ -2998,6 +2998,64 @@ def cleanup_arg(inst_name, a, defn, backing, scalars, buffers):
     return state_cell(inst_name, a, defn, backing)
 
 
+def derive_port_needs(definitions):
+    """For every method, which of its ports the body uses as a RECEIVER.
+
+    A body says what it needs of each port; nothing has to be declared. Two
+    shapes matter here:
+
+        thing.read (...)          `thing` must be an instance
+        inner (thing is thing)    ...and so must whatever `inner` needs
+
+    The second is why this runs to a fixpoint: a template that only passes a
+    port on inherits the requirement of the one it passes it to. That
+    terminates because recursion is refused, so the call graph is finite.
+
+    Scanned from the body's TEXT rather than from a parse of it. The shapes are
+    unambiguous, and a parse at this point would have to bind the resource's
+    state and the caller's actuals, which is what the splice exists to do."""
+    direct, passes = {}, {}
+    for dname, defn in definitions.items():
+        for mname, meth in (defn.get("methods") or {}).items():
+            body = meth.get("procedure")
+            if not body:
+                continue
+            key = (dname, mname)
+            need, sends = set(), []
+            for raw in body:
+                line = _unquoted(raw).strip()
+                for port in meth["params"]:
+                    if re.search(rf"\b{re.escape(port)}\.\w+\s*\(", line):
+                        need.add(port)
+                # `NAME (p is actual, ...)` -- a call that forwards a port
+                call = re.match(r"^([\w.]+)\s*\((.*)\)$", line)
+                if call:
+                    for p, a in re.findall(r"(\w+)\s+is\s+([\w.]+)", call.group(2)):
+                        if a in meth["params"]:
+                            sends.append((call.group(1), p, a))
+            direct[key] = need
+            passes[key] = sends
+
+    def find(target, port):
+        """Which methods named `target` require `port` as a receiver."""
+        for (dn, mn), need in direct.items():
+            if mn == target or target.endswith("." + mn) or target == dn:
+                if port in need:
+                    return True
+        return False
+
+    changed = True
+    while changed:                       # the fixpoint: requirements propagate
+        changed = False
+        for key, sends in passes.items():
+            for target, p, mine in sends:
+                if mine not in direct[key] and find(target, p):
+                    direct[key].add(mine)
+                    changed = True
+    for (dname, mname), need in direct.items():
+        definitions[dname]["methods"][mname]["needs_instance"] = need
+
+
 def validate_method(defn, meth, check_params=True):
     """Validate one primitive-bodied method against its resource's flat state."""
     if meth["prim"] not in PRIMITIVES:
@@ -4318,14 +4376,57 @@ def size_of_c(actual, scalars, buffers, ln):
     if is_str(target):
         return str(len(parse_bytes_literal(target, ln)))
     if re.fullmatch(r"\w+", target) and target in buffers:
-        sz = buffers[target].get("size")
-        if sz is not None and str(sz).isdigit():
-            return str(sz)
+        # Whatever `buffer_size` puts in the array's brackets IS the size, and
+        # it answers for a scalar-sized buffer too: the dimension is fixed at the
+        # declaration from that scalar's DECLARED value and does not follow it
+        # afterwards -- reassigning the scalar later leaves the array as emitted.
+        # Asking the same function keeps `X.size` and `char X[...]` from ever
+        # disagreeing, which is the only way this can be wrong.
+        try:
+            return str(buffer_size(buffers[target].get("size"), scalars))
+        except (KeyError, TypeError):
+            return None
     return None
+
+
+_CONST_ACCESS = re.compile(
+    r"\[\s*(\w+)\s*(?:\+\s*(\d+)\s*)?:\s*(\d+)\s*\]")
+
+
+def check_constant_access(text, scalars, buffers, ln, verb="reads"):
+    """Refuse `[BUF + K : W]` that runs past BUF, when all three are known.
+
+    Everything needed is already here: the width must be a literal by rule, and
+    a backing's size is what `buffer_size` puts in the array's brackets. A view
+    laid over a backing has always been fit-checked this way -- raw accesses
+    simply never went through it.
+
+    Only the decidable case is examined. A run-time index (`[b + i : 1]`) is not
+    checked here and cannot be: the value comes from outside the program. The
+    answer for those is a bound the compiler can prove, which is what the loop
+    idiom in docs/performance.md is about.
+
+    A name that is not a BUFFER is skipped -- `[at : 19]` where `at` is a scalar
+    holding an address is a run-time address, not an overrun."""
+    for name, off, width in _CONST_ACCESS.findall(_unquoted(text)):
+        if name not in buffers:
+            continue
+        try:
+            size = int(buffer_size(buffers[name].get("size"), scalars))
+        except (KeyError, TypeError, ValueError):
+            continue                     # no size the compiler can state
+        end = int(off or 0) + int(width)
+        if end > size:
+            fail(f"line {ln}: `[{name}{' + ' + off if off else ''} : {width}]` "
+                 f"{verb} {end} bytes into '{name}', which is {size} bytes. "
+                 "Every part of this is known here -- the offset and the width "
+                 "are literals, and the backing's size is the one the array is "
+                 "declared with.")
 
 
 def resolve_value(actual, scalars, buffers, ln, cond=False):
     actual = actual.strip()
+    check_constant_access(actual, scalars, buffers, ln)
     if is_str(actual):                   # a whole string literal
         return lit_c(actual)
     so = size_of_c(actual, scalars, buffers, ln)   # `X.size` -> const bytes
@@ -4516,10 +4617,14 @@ def parse_expr(actual, scalars, buffers, ln, cond=False):
                 if target in scalars:
                     fail(f"line {ln}: `{t}` -- a scalar is a "
                          "register value with no byte size")
-                if target in buffers:        # a buffer, but sized at RUNTIME
-                    fail(f"line {ln}: `{t}` -- '{target}' is sized "
-                         f"by a scalar, so its size is not known at compile "
-                         f"time; use that scalar directly")
+                if target in buffers:
+                    # `size_of_c` answers for every buffer now, including one
+                    # sized by a scalar, so reaching here means the size was
+                    # neither a literal nor a declared scalar -- nothing the
+                    # emitter could have put in the brackets either.
+                    fail(f"line {ln}: `{t}` -- '{target}' has no size the "
+                         "compiler can state: it is sized by something that is "
+                         "neither a literal nor a scalar with a declared value")
                 fail(f"line {ln}: `{t}` -- '{target}' is not a "
                      "buffer, view, or literal")
             inst = target                    # a layout or flag field, usable
@@ -5268,9 +5373,54 @@ def resolve_lenses(definitions, slots):
 
 
 
+def check_port_needs(definitions, slots, steps):
+    """Check every connection against what the body needs of that port.
+
+    The message is the whole point. Without this, connecting a scalar to a port
+    an inner body uses as a receiver is reported from inside the splice --
+    `line 2: unknown instance or definition 'n'`, naming the innermost
+    template's header and a scalar that is perfectly good, just not an
+    instance."""
+    names = {sl["name"] for sl in slots if sl.get("kind") == "instance"}
+
+    def walk(sts):
+        for st in sts:
+            if st.get("type") == "branch":
+                walk(st.get("default_body") or [])
+                for road in st.get("roads") or ():
+                    walk(road.get("body") or [])
+                continue
+            if st.get("type") != "call":
+                continue
+            defn = definitions.get(st.get("inst"))
+            if defn is None:
+                for sl in slots:
+                    if sl.get("kind") == "instance" and sl.get("name") == st["inst"]:
+                        defn = definitions.get(sl["definition"])
+                        break
+            meth = (defn or {}).get("methods", {}).get(st.get("method"))
+            if meth is None:
+                continue
+            for port, actual, ln in st.get("conns") or ():
+                if port not in (meth.get("needs_instance") or ()):
+                    continue
+                if actual in names:
+                    continue
+                fail(f"line {ln}: `{port} is {actual}` -- '{meth['name']}' "
+                     f"calls a method on '{port}', so it needs an INSTANCE, "
+                     f"and '{actual}' is not one. Connect a resource, a view, "
+                     "or something else declared with a definition.")
+    walk(steps)
+
+
 def plan(definitions, slots, steps, overrides):
     elaborate_classes(definitions)
     resolve_lenses(definitions, slots)
+    # what each port needs, read off the bodies BEFORE anything is spliced --
+    # so a wrong connection is refused where it is written rather than inside
+    # an instantiation two levels down
+    derive_port_needs(definitions)
+    check_port_needs(definitions, slots, steps)
     steps = expand_procedures(definitions, slots, steps, PRIMITIVES)
     scalars, buffers, instances = check_slots(definitions, slots)
 
@@ -5519,6 +5669,11 @@ def plan(definitions, slots, steps, overrides):
                 if buffers.get(tok, {}).get("const"):
                     fail(f"line {st['line']}: cannot write to constant buffer "
                          f"'{tok}' (it lives in read-only .rodata)")
+            # the write side of the same decidable check the read side gets in
+            # `resolve_value` -- a store past a known backing is worse, since it
+            # corrupts whatever the frame put next to it
+            check_constant_access(f"[{st['addr']} : {st.get('size') or 1}]",
+                                  scalars, buffers, st["line"], verb="writes")
             val = resolve_value(st["value"], scalars, buffers, st["line"])
             _rw = re.match(r"^(\w+)\s*(?:\+(.*))?$", st["addr"].strip())
             if _rw and _rw.group(1) in REGISTER_WORDS:

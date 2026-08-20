@@ -1,0 +1,40 @@
+include "../../linux.mereo"
+
+-- REJECTED on purpose, and the point is WHERE.
+--
+-- A port's requirement is not declared -- it is whatever the body does with it.
+-- `inner` calls a method on `thing`, so `thing` needs an instance; `outer` only
+-- passes its own `thing` along, so it inherits the requirement. That inheritance
+-- is why the derivation runs to a fixpoint, which terminates because recursion
+-- is refused and the call graph is finite.
+--
+-- Without deriving it, the mistake surfaced inside the splice:
+--
+--   line 2: unknown instance or definition 'n'
+--
+-- Line 2 is the INNERMOST template's header, two levels from the call, naming a
+-- scalar that is perfectly good -- its being unusable as an instance is the
+-- point, and the message did not say so. That is the error blooming inside
+-- instantiation, which is what a C++ `concept` exists to stop; mereo needs no
+-- new syntax for it because the body already says what it requires.
+--
+-- Ports stay structurally typed: `tests/progs/sibling_call` and the library's
+-- own templates splice over any instance carrying the method they call, with no
+-- shared base. This refuses only what could never work.
+--
+--   refused:  'outer' calls a method on 'thing', so it needs an INSTANCE
+
+inner (thing, n) goes
+  thing.read (buffer is 0, capacity is 0, count is n)
+end
+
+outer (thing, n) goes
+  inner (thing is thing, n is n)
+end
+
+program goes
+  n is 0
+
+  outer (thing is n, n is n)
+
+end

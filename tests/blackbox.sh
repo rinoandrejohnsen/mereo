@@ -394,6 +394,17 @@ rejects leave/definition  leave_definition  "is a definition -- it declares"
 # matching what was held there. What was wrong is that the NAME outlived the
 # thing, so a program could read what had correctly been given back.
 # `live` already knows which resources are still held; it just was not asked.
+# a constant access past a known backing, read and written. The width is a
+# literal by rule and the backing's size is what the array is declared with, so
+# both are decidable -- and GCC does not warn at the shipped flags.
+# a port's requirement is derived from the body, so a wrong connection is
+# refused at the CALL rather than inside the splice. Two templates deep, to pin
+# that the requirement propagates through one that only passes the port on.
+rejects port/needs-instance port_needs_instance "so it needs an INSTANCE"
+
+rejects access/past-end   access_past_end   "reads 101 bytes into"
+rejects access/store-past-end store_past_end "writes 101 bytes into"
+
 rejects scope/use-after   use_after_scope   "was released when the scope that acquired"
 # ...and the same mistake spelled as a VALUE rather than a receiver. Two checks,
 # two spellings: disabling either leaves the other program passing.

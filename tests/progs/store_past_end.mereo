@@ -1,0 +1,19 @@
+include "../../linux.mereo"
+
+-- REJECTED on purpose: the write side of the same decidable check.
+--
+-- Worse than the read: a store past a known backing corrupts whatever the frame
+-- laid out next to it, which is generally another live slot. The read and the
+-- write go through the same function, so this pins that the store path reaches
+-- it -- it did not at first, the check having been added where VALUES are
+-- resolved and a store's address never passing through there.
+--
+--   refused:  writes 101 bytes into 'block', which is 8 bytes
+
+program goes
+  block is 8 bytes
+
+  [block + 100 : 1] is 7
+
+  ensure [block + 0 : 1] == 0
+end
