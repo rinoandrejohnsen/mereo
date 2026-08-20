@@ -288,12 +288,64 @@ recursion and no separate compilation were all chosen to make the release tower
 and the freestanding binary work. The analysis is cheap here because the
 expensive part was settled years earlier, for a different purpose.
 
-Two cautions belong with the number. It covers 3359 accesses in a corpus written
-by the same hand as the tool, checked against four deliberately planted
-violations — not the standard of a tool validated against industrial code it has
-never seen. And moving it into `mereoc` would be mostly a *diagnostic* change
-rather than a capability one. GCC already proves these. The difference is that
-mereo could refuse, where an optimiser can only quietly succeed.
+One caution belongs with the number. It covers 3359 accesses in a corpus written
+by the same hand as the tool, checked against deliberately planted violations —
+not the standard of a tool validated against industrial code it has never seen.
+
+## What is actually beyond GCC
+
+If GCC already does this, the fair question is whether mereo adds anything it
+cannot reach. The answer splits three ways, and only the first is a clean win.
+
+**The bound hoist, which GCC provably cannot do.** `span.at` tests its bound
+against a length held in the view's bytes, so after splicing the bound is a LOAD
+on every iteration. mereo ships `-fno-strict-aliasing`, because byte views
+type-pun by design — so from GCC's side any store might have changed that
+length.
+mereo knows the store went to the buffer rather than to the view, and that fact
+is erased by the translation to C. Compiling the same program with the pass on
+and off:
+
+| | vector instructions |
+| --- | ---: |
+| bound hoisted | 41 |
+| bound left in the loop | 4 |
+
+Same compiler, same flags. The information has to be acted on before the handoff
+or not at all.
+
+**The syscall's shape, which GCC can never recover.** That a `read` writes
+`capacity` bytes into `buffer` appears nowhere in the emitted C — it is inline
+assembly with a `"memory"` clobber, and a clobber says *something changed*, not
+*this buffer, that many bytes*. mereo declares the relationship. But tested
+directly, with the result written out so nothing is dead code, **neither GCC nor
+mereoprove reports it**: the analysis classifies accesses, and a capacity is not
+an access. This one is potential rather than achievement, and it is the same gap
+as `ensure capacity <= buffer.size`.
+
+**Diagnostics GCC could reach but does not issue.** Two planted violations, each
+with a live loop and a buffer initialised first, so that an uninitialised-value
+finding could not stand in for a bounds one:
+
+| planted mistake | GCC, all warnings + `-fanalyzer` | mereoprove |
+| --- | --- | --- |
+| a loop to 100 over a 64-byte backing | silent | out of range |
+| a loop bounded by a count capped at 4096, into 16 bytes | silent | out of range |
+
+mereo catches both and GCC catches neither — but nothing *structural* stops GCC
+here. It has value-range propagation and object sizes; it simply does not
+diagnose. That is a missed diagnostic, not an impossibility, and it would be
+dishonest to bank it as a capability.
+
+Which leaves the asymmetry that is not in any of those rows. For correct code
+GCC
+proves these checks away, and the binary is byte-identical to one written
+without
+them. For incorrect code it says nothing at all. An optimiser has only two
+outcomes available — quietly succeed, or quietly fail — and no way to report *I
+could not prove this one*. A compiler can refuse. That is a difference in
+contract rather than in capability, and it is the honest argument for moving the
+analysis into `mereoc`.
 
 ## The bug that settles it
 
