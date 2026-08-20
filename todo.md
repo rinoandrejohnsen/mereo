@@ -288,61 +288,72 @@ if they bite again:
   refused; the shape is a guarded scope (`got == 1 goes`). Conditional STORES
   take `when`, calls do not.
 
-## Proving a run-time index, so `[v.data + i]` need not be taken on trust
+## Hoist a span's length, rather than prove the index
 
-**Status:** open, designed as far as the first real decision. Measured.
+**Status:** open, and the shape of the answer changed once it was measured. The
+prototype is a hand edit of generated C; nothing is implemented.
 
-**It is not evaluation.** `i` has no value while the program is being read, so
-there is nothing to compute. The operation is proving a RANGE -- showing
-`i < v.length` holds at the access -- which is abstract interpretation, and a
-different thing from Zig's `comptime` or from the constant-bounds check that is
-already in.
+The question was whether mereo could decide `[v.data + i]` for itself. It cannot
+-- `i` has no value while the program is read -- so the operation would be
+proving a RANGE, not evaluating anything. But measuring first turned up a better
+lever than the analysis.
 
-**The elimination already happens, so speed is not the prize.** In
-`tests/versus/cases/index_safe` the loop is bounded by `v.length` and `span.at`
-checks `i < v.length`; GCC proves them equal and deletes the check together with
-its whole error block. Verified on the `.dbg` build, where the labels are
-`step`, `step_done`, `error_1_read_input`, `error_3_write_terminal` and `exit`
--- and `error_2_at` is simply absent.
+### What was measured
 
-A note on how to measure that, because the obvious way is wrong: comparing
-`index_safe` against `index_fast` by instruction count says nothing, since they
-are different programs. The label is the isolable evidence.
+`tests/versus/cases/index_safe` bounds its loop by `v.length` and `span.at`
+tests `i < v.length`. Three variants, same program otherwise:
 
-**What is actually on the table** is refusing the unproven case rather than
-eliminating the proven one: turning `[v.data + i]` from "trust me" into "prove
-the bound or use `.at`". GCC cannot give that, because its job is to optimise a
-valid program rather than to reject an unproven one.
+| | vector insns | the check |
+| --- | ---: | --- |
+| bounded by `v.length` -- GCC proves it | 41 | deleted, with its whole error block |
+| bounded by the scalar `count` instead | **4** | survives |
+| ...with the check removed by hand | 41 | -- |
+| ...with the LENGTH HOISTED, check kept | **41** | survives |
 
-### Scale
+Two findings, and the second is the useful one.
 
-| | |
-| --- | --- |
-| constant-indexed accesses | 358 -- already checked |
-| run-time-indexed accesses | 143 |
-| commonest index expressions | `[c]` x39, `[off]` x35, `[i]` x24 |
+**Where GCC can prove it, emitting the check costs nothing.** Removing it from
+the generated C by hand produces a BYTE-IDENTICAL binary. So there is nothing to
+win by not emitting it, and the `error_2_at` label is simply absent from the
+`.dbg` build -- which is the isolable evidence, since comparing `index_safe`
+against `index_fast` by instruction count says nothing about the check (they are
+different programs).
 
-Nearly all are a counter initialised to a constant, incremented by a constant,
-inside a scope whose `leave L when i >= BOUND` names the bound. Recognising THAT
-SHAPE -- same scope, monotone counter, bound matching the backing's length -- is
-pattern-matching rather than a general analysis, and mereo has good raw material
-for it: no functions, so no call boundary to lose track across, and no aliasing
-between a span's length and a local counter.
+**Where GCC cannot prove it, the cost is the VECTORISATION, not the size.** Four
+vector instructions instead of forty-one -- the 51 ms against 30 ms already in
+[Performance](docs/performance.md). And the cause is not that the bound is
+unknown: it is that the bound is read THROUGH MEMORY. `v.length` is a field of a
+span, so GCC must assume a store might change it, and `-fno-strict-aliasing` --
+which mereo ships because byte views type-pun by design -- makes that worse.
 
-### The decision to settle first, before any of it is built
+### The lever
 
-What happens to the accesses the analysis cannot prove. `[off]` and `[foff]` in
-`programs/tls` are offsets walked through a record, not loop counters, and a
-cheap pattern will not prove them.
+Hoisting the length into a scalar once, before the loop, and testing against
+that recovers all 41 vector instructions **while keeping the check**. Same
+safety, same speed as unchecked.
 
-- **Refuse them** and working parsing code has to be rewritten around an
-  analysis that does not understand it.
-- **Wave them through** and the rule becomes "we check some accesses", which is
-  worse than today's clear "this one is unchecked, and it is unchecked by name".
+That is a codegen change, not an analysis. It needs no range proof and no
+dataflow: the obligation is only "is this backing written in this loop", which
+can be answered conservatively -- no store to it, no call that could reach it,
+hoist; otherwise do not.
 
-Neither is obviously right, and the analysis is not worth writing until it is
-decided -- the answer determines whether the pattern needs to be near-complete
-or merely useful.
+Two things that did NOT work, so they are not worth retrying: an `ensure count
+<= v.length` before the loop, and a `__builtin_unreachable` assumption of the
+same fact. Both leave it at 4. The equality has to survive every iteration, and
+through memory it does not.
+
+### What is left of the original question
+
+Refusing an unproven `[v.data + i]` -- turning it from "trust me" into "prove it
+or use `.at`" -- is still a separate, larger piece of work, and the decision it
+waits on has not moved: what happens to the accesses a cheap pattern cannot
+prove. `[off]` and `[foff]` in `programs/tls` walk offsets through records
+rather than counting, so refusing them means rewriting working code, and waving
+them through makes the rule "we check some accesses" -- worse than today's clear
+"this one is unchecked, by name".
+
+The hoist is worth doing first regardless: it makes the CHECKED form as fast as
+the unchecked one, which weakens the reason to reach for `[v.data + i]` at all.
 
 ## The language server is gone, and nothing replaced it
 
