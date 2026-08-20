@@ -16,19 +16,26 @@ access `[base + index : width]`:
   opaque-base       the backing itself did not resolve
 
 WHAT IT KNOWS: constant indices; induction variables bounded at the top
-(`loop_exit X >= B`) or at the bottom (`loop_end cond X < B`), each corrected for
+(`loop_exit X >= B`) or the bottom (`loop_end cond X < B`), corrected for
 increments that happen before the access; affine indices (`off is i * 8`);
-reaching definitions, so a name assigned in three loops is read as the one that
-reaches the use; syscall contract upper bounds (`ensure count <= capacity`); and
-spans, whose `data` resolves back to the buffer they were adopted over.
+interval arithmetic with BOTH ends, so subtraction is usable; reaching
+definitions with kills, each definition evaluated where it sits rather than at
+the use; `ensure` read as a premise, propagated through an assignment that
+stores the guarded expression (`ensure tlen + n <= tr.size` then `tlen is tlen +
+n`); syscall contract clauses, reached through the method's `prim` and `bind`;
+and mereo's branchless idiom -- `lt is i < 15` then `idx is idx * lt` -- by
+case-splitting on the comparison, which a plain interval domain cannot do
+because it loses the correlation between `i` and `lt`.
 
-WHAT IT DOES NOT KNOW, and these are the whole of the gap:
+WHAT IT DOES NOT KNOW: no fixpoint across a template's ports (the `opaque-base`
+rows), and no relational domain, so two variables constrained by a shared fact
+are still handled one at a time.
 
-  * `ensure` is not read as a premise. The programmer writes the missing fact
-    and the analysis ignores it -- which is why the TLS transcript index is
-    still unproved even though the bound is stated on the line above it.
-  * upper bounds only, no lower bounds, so any subtraction is refused.
-  * no fixpoint across a template's ports.
+SOUNDNESS is checked the way everything else here is: by planting violations.
+A loop bound wider than its backing, an affine index that overflows, a syscall
+capacity larger than the buffer, and an off-by-one in the branchless guard are
+each reported OUT. Across the corpus exactly ONE access is reported OUT, and it
+is `access_past_end.mereo`, which mereoc already refuses.
 
 Usage:  tools/mereoprove.py FILE...        one line per unproved access
         tools/mereoprove.py --tally FILE... corpus totals
@@ -75,19 +82,50 @@ def analyse(definitions, slots):
         d = definitions.get(inst[n]["definition"]) if n in inst else None
         return d.get("psize") if d else None
 
-    # ---------- contract upper bounds: an out-port bounded by an argument
-    cbound = {}
+    # ---------- contract bounds, from the primitive behind the method
+    # A clause names the PRIMITIVE's ports (`count as signed <= capacity`).
+    # A method reaches it through `prim` + `bind`, and the call site supplies
+    # the arguments through `conns` -- so all three hops are needed.
+    cbound, clow = {}, {}
     for st in steps:
-        if st.get("type") not in ("call", "bare"): continue
+        t = st.get("type")
+        if t not in ("call", "bare"): continue
         conns = dict((c[0], c[1]) for c in st.get("conns", []) if len(c) >= 2)
-        prim = mereoc.PRIMITIVES.get(st.get("op") or st.get("method"), {})
+        if t == "bare":
+            prim, bind = mereoc.PRIMITIVES.get(st.get("op"), {}), None
+        else:
+            dname = (inst.get(st.get("inst")) or {}).get("definition")
+            meth = ((definitions.get(dname) or {}).get("methods") or {}).get(st.get("method")) or {}
+            prim = mereoc.PRIMITIVES.get(meth.get("prim"), {})
+            bind = meth.get("bind") or {}
+        def arg(port):
+            """primitive port -> the expression written at the call site"""
+            if bind is not None:
+                b = bind.get(port)
+                port = b[0] if isinstance(b, (list, tuple)) else (b or port)
+            return conns.get(port)
         for cl in (prim.get("contract") or []):
-            raw = cl if isinstance(cl, str) else (cl[0] if cl else "")
-            m = CMPX.match(str(raw))
-            if not m or m.group(2) not in ("<=", "<"): continue
-            tgt = conns.get(m.group(1).replace(" as signed", "").strip())
-            cap = conns.get(m.group(3).strip(), m.group(3).strip())
-            if tgt and const(cap) is not None: cbound[tgt] = const(cap)
+            # a clause is already split: (lhs, op, rhs, line, mode)
+            if isinstance(cl, (list, tuple)) and len(cl) >= 3:
+                lhs, op, rhs = str(cl[0]).strip(), str(cl[1]).strip(), str(cl[2]).strip()
+            else:
+                m = CMPX.match(str(cl))
+                if not m: continue
+                lhs, op, rhs = (m.group(1).replace(" as signed", "").strip(),
+                                m.group(2), m.group(3).replace(" as signed", "").strip())
+            tgt = arg(lhs)
+            if not tgt: continue
+            val = arg(rhs)
+            if val is None: val = rhs
+            k = const(val)
+            if k is None and val in bufs: k = bufs[val]
+            if k is None: continue
+            if op in ("<=", "<"):
+                k -= 1 if op == "<" else 0
+                cbound[tgt] = min(cbound.get(tgt, k), k)
+            elif op in (">=", ">"):
+                k += 1 if op == ">" else 0
+                clow[tgt] = max(clow.get(tgt, k), k)
 
     copy = {}
     for i, st in enumerate(steps):
@@ -110,7 +148,7 @@ def analyse(definitions, slots):
         if back and endcond:
             m = CMPX.match(str(endcond))
             if m and m.group(2) in ("<", "<="):
-                bounds[m.group(1).strip()] = (m.group(3).strip(), s)
+                bounds[m.group(1).strip()] = (m.group(3).strip(), s, (s, e))
         depth = 0
         for i in range(s + 1, e):
             t = steps[i].get("type")
@@ -119,9 +157,9 @@ def analyse(definitions, slots):
             elif t == "loop_exit" and depth == 0 and steps[i].get("cond"):
                 m = CMPX.match(str(steps[i]["cond"]))
                 if m and m.group(2) in (">=", ">"):
-                    bounds[m.group(1).strip()] = (m.group(3).strip(), i)
+                    bounds[m.group(1).strip()] = (m.group(3).strip(), i, (s, e))
         # where is each bounded name incremented, and by how much
-        for name, (bexpr, from_i) in bounds.items():
+        for name, (bexpr, from_i, lp) in bounds.items():
             incs = []
             for i in range(s + 1, e):
                 st = steps[i]
@@ -135,7 +173,7 @@ def analyse(definitions, slots):
                     if pos < i:
                         if k is None: ok = False; break
                         extra += k
-                if ok: binding.setdefault(i, {})[name] = (bexpr, extra)
+                if ok: binding.setdefault(i, {})[name] = (bexpr, extra, lp)
 
     inner_loop = {}
     for s_, e_, _c, _b in sorted(loops, key=lambda L: L[1] - L[0]):
@@ -146,44 +184,227 @@ def analyse(definitions, slots):
         it, plus any inside the innermost enclosing loop (the back edge)."""
         defs = copy.get(n) or []
         before = [(i, e) for i, e in defs if i < at]
-        out = [before[-1][1]] if before else []
         lp = inner_loop.get(at)
+        # a definition inside this loop, before the use, KILLS whatever the back
+        # edge carried in -- it runs every iteration ahead of the use
+        if before and lp and before[-1][0] > lp[0]:
+            return [before[-1]]
+        out = [before[-1]] if before else []
         if lp:
-            out += [e for i, e in defs if lp[0] < i < lp[1] and i != (before[-1][0] if before else -1)]
-        return out or ([e for _i, e in defs] if not before else out)
+            out += [(i, e) for i, e in defs if lp[0] < i < lp[1] and i != (before[-1][0] if before else -1)]
+        return out or (list(defs) if not before else out)
 
-    # ---------- interval upper bound of an index expression
-    def ub(e, bnd, at, seen=()):
+    # ---------- facts asserted by `ensure`, propagated forward
+    # A guard `A <= B` is a premise the programmer wrote down. It bounds the
+    # EXPRESSION A, not just a name -- so when a later assignment stores exactly
+    # that expression, the target inherits the bound. That is the common idiom:
+    #
+    #     ensure tlen + inner_len <= tr.size
+    #     tlen is tlen + inner_len            -- tlen now <= tr.size
+    #
+    # A fact dies when anything it mentions is written.
+    def names_in(e):
+        return set(re.findall(r"[A-Za-z_][\w.]*", str(e)))
+
+    facts, live = {}, {}          # live: expr -> (rhs, strict, siblings)
+    for i, st in enumerate(steps):
+        t = st.get("type")
+        if t == "assign":
+            tgt, ex = st.get("name"), str(st.get("expr", "")).strip()
+            inherit = live.get(ex)
+            for k in [k for k, v in live.items()
+                      if tgt in names_in(k) or any(tgt in names_in(f[1]) for f in v)]:
+                live.pop(k, None)
+            if inherit: live[tgt] = list(inherit)
+        elif t in ("call", "bare"):
+            outs = set()
+            for c in st.get("conns", []):
+                if len(c) >= 2: outs |= names_in(c[1])
+            for k in [k for k, v in live.items()
+                      if outs & (names_in(k) | set().union(*(names_in(f[1]) for f in v)))]:
+                live.pop(k, None)
+        elif t == "guard" and st.get("cond"):
+            m = CMPX.match(str(st["cond"]))
+            if m and m.group(2) in ("<=", "<", ">=", ">"):
+                lhs, op, rhs = m.group(1).strip(), m.group(2), m.group(3).strip()
+                terms = [x.strip() for x in lhs.split("+")] if "-" not in lhs else []
+                live.setdefault(lhs, []).append((op, rhs, []))
+                if len(terms) > 1 and op in ("<=", "<"):
+                    for x in terms:
+                        live.setdefault(x, []).append((op, rhs, [y for y in terms if y != x]))
+        if live:
+            facts[i] = {k: list(v) for k, v in live.items()}
+
+    def size_name(e):
+        e = e.strip()
+        if e.endswith(".size"):
+            b = e[:-5]
+            if b in bufs: return bufs[b]
+            if b in inst: return psize(b)
+        return None
+
+    # ---------- interval arithmetic over the index expressions
+    import ast
+    UNK = (None, None)
+
+    def join(a, b):
+        lo = None if a[0] is None or b[0] is None else min(a[0], b[0])
+        hi = None if a[1] is None or b[1] is None else max(a[1], b[1])
+        return (lo, hi)
+
+    def loop_lo(n, lp):
+        """0 when the variable starts at 0 and only ever moves up"""
+        s_, e_ = lp
+        for i in range(s_, e_):
+            st = steps[i]
+            if st.get("type") == "assign" and st.get("name") == n:
+                ex = str(st.get("expr", "")).strip()
+                if const(ex) is not None and const(ex) >= 0: continue
+                if INC.match(ex) and INC.match(ex).group(1) == n: continue
+                if re.fullmatch(r"[\w.]+\s*-\s*[\w.]+", ex):
+                    a, b = [x.strip() for x in ex.split("-")]
+                    if a == b: continue          # `mj is mj - mj`, a zeroing
+                return None
+        return 0
+
+    def tighten(key, cur, at, sn):
+        lo, hi = cur
+        for op, rhs, others in facts.get(at, {}).get(key, []):
+            if op in ("<=", "<"):
+                lows = [iv(t, at, sn)[0] for t in others]
+                if any(l is None or l < 0 for l in lows): continue
+                rh = iv(rhs, at, sn)[1]
+                if rh is None: continue
+                cap = rh - sum(lows) - (1 if op == "<" else 0)
+                hi = cap if hi is None else min(hi, cap)
+            else:
+                rl = iv(rhs, at, sn)[0]
+                if rl is None: continue
+                flr = rl + (1 if op == ">" else 0)
+                lo = flr if lo is None else max(lo, flr)
+        return (lo, hi)
+
+    ASSUME = {}
+
+    def as_compare(nd, at, seen):
+        """this node, or the definition behind it, as a comparison"""
+        if isinstance(nd, ast.Compare): return nd
+        if isinstance(nd, ast.Name):
+            for d, ex in reaching(nd.id, at):
+                try: n2 = ast.parse(str(ex), mode="eval").body
+                except SyntaxError: continue
+                if isinstance(n2, ast.Compare): return n2
+        return None
+
+    def assuming(cnode, at, seen):
+        """the interval a comparison forces on its left operand, when true"""
+        if len(cnode.ops) != 1 or not isinstance(cnode.left, ast.Name): return None, None
+        try: rhs = ast.unparse(cnode.comparators[0])
+        except Exception: return None, None
+        r = iv(rhs, at, seen)
+        op = cnode.ops[0]
+        if isinstance(op, ast.Lt)  and r[1] is not None: return cnode.left.id, (None, r[1] - 1)
+        if isinstance(op, ast.LtE) and r[1] is not None: return cnode.left.id, (None, r[1])
+        if isinstance(op, ast.Gt)  and r[0] is not None: return cnode.left.id, (r[0] + 1, None)
+        if isinstance(op, ast.GtE) and r[0] is not None: return cnode.left.id, (r[0], None)
+        if isinstance(op, ast.Eq)  and r[0] == r[1] is not None: return cnode.left.id, r
+        return None, None
+
+    def iv(e, at, seen=()):
         e = str(e).strip()
-        if not e: return None
+        if not e: return UNK
         k = const(e)
-        if k is not None: return k if k >= 0 else None
-        toks = TOK.findall(e)
-        if len(toks) == 1 and re.match(r"[A-Za-z_]", toks[0]):
-            n = toks[0]
-            if n in seen: return None
+        if k is not None: return (k, k)
+        sz = size_name(e)
+        if sz is not None: return (sz, sz)
+        bnd = binding.get(at, {})
+        if re.fullmatch(r"[A-Za-z_][\w.]*", e):
+            n = e
+            if (n, at) in seen: return UNK
+            sn = seen + ((n, at),)
+            best = UNK
             if n in bnd:
-                bexpr, extra = bnd[n]
-                b = ub(bexpr, bnd, at, seen + (n,))
-                return None if b is None else b - 1 + extra
-            if n in cbound: return cbound[n]
-            cands = reaching(n, at)
-            if not cands: return None
-            vals = [ub(c, bnd, at, seen + (n,)) for c in cands]
-            return None if any(v is None for v in vals) else max(vals)
-        if re.search(r"[-/%|]", e): return None          # not monotone: refuse
-        names = sorted({t for t in toks if re.match(r"[A-Za-z_]", t)})
-        env = {}
-        for n in names:
-            v = ub(n, bnd, at, seen)
-            if v is None: return None
-            env[n] = v
-        expr = e
-        for n in sorted(names, key=len, reverse=True):
-            expr = re.sub(r"(?<![\w.])" + re.escape(n) + r"(?![\w.])", str(env[n]), expr)
-        if not re.fullmatch(r"[\d\s+*&^()<>]*", expr): return None
-        try: return int(eval(expr, {"__builtins__": {}}, {}))
-        except Exception: return None
+                bexpr, extra, lp = bnd[n]
+                b = iv(bexpr, at, sn)[1]
+                best = (loop_lo(n, lp), None if b is None else b - 1 + extra)
+            elif n in cbound or n in clow:
+                best = (clow.get(n), cbound.get(n))
+            else:
+                cands = reaching(n, at)
+                if cands:
+                    vals = [iv(c, d, sn) for d, c in cands]
+                    acc = vals[0]
+                    for v in vals[1:]: acc = join(acc, v)
+                    best = acc
+            best = tighten(n, best, at, sn)
+            a = ASSUME.get(n)
+            if a:
+                best = (best[0] if a[0] is None else
+                        (a[0] if best[0] is None else max(best[0], a[0])),
+                        best[1] if a[1] is None else
+                        (a[1] if best[1] is None else min(best[1], a[1])))
+            return best
+        try:
+            node = ast.parse(e.replace("^", "|"), mode="eval").body
+        except SyntaxError:
+            return UNK
+        def walk(nd):
+            if isinstance(nd, ast.Constant):
+                return (nd.value, nd.value) if isinstance(nd.value, int) else UNK
+            if isinstance(nd, ast.Name): return iv(nd.id, at, seen)
+            if isinstance(nd, ast.Attribute):
+                try: src = ast.unparse(nd)
+                except Exception: return UNK
+                z = size_name(src)
+                return (z, z) if z is not None else iv(src, at, seen)
+            if isinstance(nd, ast.Compare):
+                return (0, 1)          # mereo's branchless idiom: `lt is i < 15`
+            if isinstance(nd, ast.BinOp):
+                a, b = walk(nd.left), walk(nd.right)
+                o = nd.op
+                if isinstance(o, ast.Add):
+                    return (None if a[0] is None or b[0] is None else a[0] + b[0],
+                            None if a[1] is None or b[1] is None else a[1] + b[1])
+                if isinstance(o, ast.Sub):
+                    return (None if a[0] is None or b[1] is None else a[0] - b[1],
+                            None if a[1] is None or b[0] is None else a[1] - b[0])
+                if isinstance(o, ast.Mult):
+                    for cs, other in ((nd.left, nd.right), (nd.right, nd.left)):
+                        cn = as_compare(cs, at, seen)
+                        if cn is None: continue
+                        name, rng = assuming(cn, at, seen)
+                        if name is None: continue
+                        old = ASSUME.get(name)
+                        ASSUME[name] = rng
+                        try: t = iv(ast.unparse(other), at, seen)
+                        finally:
+                            if old is None: ASSUME.pop(name, None)
+                            else: ASSUME[name] = old
+                        if None in t: return UNK
+                        return (min(0, t[0]), max(0, t[1]))
+                    if None in a or None in b: return UNK
+                    ps = [a[0]*b[0], a[0]*b[1], a[1]*b[0], a[1]*b[1]]
+                    return (min(ps), max(ps))
+                if isinstance(o, ast.BitAnd):
+                    ks = [x for x in (b[1], a[1]) if x is not None and x >= 0]
+                    return (0, min(ks)) if ks else UNK
+                if isinstance(o, ast.LShift) and b[0] == b[1] and b[0] is not None:
+                    return (None if a[0] is None else a[0] << b[0],
+                            None if a[1] is None else a[1] << b[0])
+                if isinstance(o, ast.RShift) and b[0] == b[1] and b[0] is not None:
+                    return (None if a[0] is None else a[0] >> b[0],
+                            None if a[1] is None else a[1] >> b[0])
+                if isinstance(o, ast.Mod) and b[0] == b[1] and b[0]:
+                    return (0, b[0] - 1)
+                if isinstance(o, (ast.Div, ast.FloorDiv)) and b[0] == b[1] and b[0]:
+                    return (None if a[0] is None else a[0] // b[0],
+                            None if a[1] is None else a[1] // b[0])
+                if isinstance(o, ast.BitOr):
+                    if None in a or None in b or a[0] < 0 or b[0] < 0: return UNK
+                    top = a[1] | b[1]
+                    return (0, (1 << top.bit_length()) - 1)
+            return UNK
+        return tighten(e, walk(node), at, seen)
 
     def base_of(e, depth=0):
         e = e.strip()
@@ -212,10 +433,11 @@ def analyse(definitions, slots):
                 if size is None:
                     out.append(["opaque-base", lhs.strip(), inner]); continue
                 bnd = binding.get(i, {})
-                hi = ub(idx.strip(), bnd, i) if idx.strip() else 0
-                if hi is None:
+                lo, hi = iv(idx.strip(), i) if idx.strip() else (0, 0)
+                if hi is None or lo is None or lo < 0:
                     first = re.split(r"[^\w.]", idx.strip())[0]
-                    kind = "bound-unresolved" if (first in bnd or first in copy) else "data-dependent"
+                    known = first in bnd or first in copy or first in facts.get(i, {})
+                    kind = "bound-unresolved" if known else "data-dependent"
                     out.append([kind, bname, inner]); continue
                 out.append([("proved" if hi + width <= size else "OUT"), bname, inner])
     STASH["rows"] = out

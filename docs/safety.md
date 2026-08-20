@@ -171,36 +171,48 @@ IR and classifies every access. Over the corpus — 86 programs, 3359 accesses:
 
 | | | |
 | --- | ---: | --- |
-| **proved** | **2722** | **81.0%** |
-| bound-unresolved | 592 | 17.6% |
+| **proved** | **3277** | **97.6%** |
+| bound-unresolved | 45 | 1.3% |
 | opaque-base | 31 | 0.9% |
-| data-dependent | 13 | 0.4% |
+| data-dependent | 5 | 0.1% |
 | out of range | 1 | 0.0% |
 
 Read the last row first. The single access that does *not* fit is
 `access_past_end.mereo`, the planted violation that mereo already refuses — the
-analysis finds it independently and flags nothing else. That is the project's
-standing non-vacuity rule holding.
+analysis finds it independently and flags nothing else in 3359. Its soundness is
+checked the way everything else here is: a loop bound wider than its backing, an
+affine index that overflows, a syscall capacity larger than its buffer, and an
+off-by-one in the branchless guard are each planted and each reported.
 
-Read the fourth row next. Only **13 accesses in the whole corpus** are genuinely
-data-dependent, with no bound in scope at any level. The bound almost always
-exists.
+The first honest version of this reached 81%, and every point from there to 97.6%
+came from removing an approximation rather than from adding information:
+tracking both ends of an interval instead of only the upper, so a subtraction is
+usable; evaluating each definition where it sits rather than at the use; killing
+what a dominating assignment overwrites; and case-splitting on mereo's branchless
+idiom — `lt is i < 15` then `idx is idx * lt` — which a plain interval domain
+gets wrong, because it loses the correlation between `i` and `lt` and concludes
+the index can reach 16.
 
-The 17.6% in the middle is the honest part: a bound exists and the prototype
-cannot chase it. Nearly all of it is x25519's carry loops and the TLS parser,
-and the two gaps are specific. It tracks upper bounds only, so any subtraction
-is refused. And — the one that matters — **it does not read `ensure` as a
-premise.** At the exact site of the overflow described below, the transcript
-index is unproved despite the fact being stated one line above it:
+That last one is worth dwelling on, because it briefly reported 406 accesses out
+of range. Every one was a false alarm. An analysis that cries wolf is worse than
+one that says nothing, so the rule is that anything not *proved* is reported as
+unproved — never as a bug — unless the index is a constant.
+
+**The 2.4% that remains is almost entirely the TLS parser.** Some of it is still
+the analysis: there is no fixpoint across a template's ports. But some of it is
+not, and that is the more interesting half — the program does not state enough.
+The transcript index needs `tlen >= 36` for its *lower* bound, which is true, and
+which the programmer knows, and which is written nowhere:
 
 ```
-  ensure tlen + inner_len <= tr.size     -- the fact
-  foff is tlen - 36                      -- refused: a subtraction
-  a is [tr + foff : 1]                   -- so: unproved
+  ensure tlen + inner_len <= tr.size     -- stated
+  foff is tlen - 36                      -- needs tlen >= 36, which is NOT
+  a is [tr + foff : 1]
 ```
 
-The language already has the mechanism. The compiler does not yet read what the
-programmer wrote as something it may assume.
+Adding that one line proves all four of those accesses. Without it, none of them.
+That is the boundary this page has been looking for: not what the compiler cannot
+compute, but what the program never said.
 
 ## What that would buy, with performance in the background
 
@@ -212,9 +224,16 @@ one. Proving them a second time, earlier, removes no instruction that is still
 there.
 
 What it buys is the **list**. A compiler that classifies accesses can report the
-ones nobody has proved, and that report is currently a fifth of the corpus,
+ones nobody has proved, and that report is 82 accesses out of 3359,
 concentrated almost entirely in the one program that parses hostile input. The
-value is not a faster binary. It is knowing where to look.
+value is not a faster binary. It is a list short enough to read.
+
+It also buys checks the compiler does not currently make. `read (buffer is small,
+capacity is 4096)` where `small is 16 bytes` is accepted today, and emits a
+syscall asking the kernel to write 4096 bytes into a 16-byte stack buffer — while
+the *view* form of the same mistake, `small as big`, has always been refused by
+the fit check. Both are two literals compared. No program in the corpus does it,
+so refusing it would cost nothing.
 
 ## The bug that settles it
 
