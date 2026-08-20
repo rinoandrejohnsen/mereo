@@ -418,18 +418,56 @@ that is the prize worth aiming at.
 
 **Done:** the bound hoist (`hoist_guard_bounds`), which makes a checked access
 in a loop cost what an unchecked one costs; the TLS bounds, which were a
-remotely-triggerable overflow rather than an analysis question; and the contract
-upper bounds.
+remotely-triggerable overflow rather than an analysis question; the contract
+upper bounds; and `tools/mereoprove.py`, which measures how far the analysis
+reaches without being part of the compiler -- **97.6%**, 3277 of 3359 accesses,
+with 82 left over and almost all of them in the TLS parser.
 
 On the last: it is **six** primitives, not the 35 said here earlier. 35 declare a
 LOWER bound, but only six promise a result bounded by an argument -- `read`,
 `write`, `getrandom`, `getdents64`, `readlinkat`, `ppoll`. The rest answer with a
 descriptor, a position or zero, and have no argument to be bounded by.
 
-1. **The loop analysis**, in the `leave`-at-top shape first, then do-while with
+1. **Refuse what the analysis proves WRONG -- not what it cannot prove.** This
+   is the step that costs nothing, and it was missed for a while because the
+   decision below looked like the only one available. There are three postures,
+   and only the third narrows the language:
+
+   | | accesses that stop compiling, in today's corpus |
+   | --- | ---: |
+   | report only | 0 |
+   | **refuse what is proven wrong** | **0 new** |
+   | refuse what cannot be proven | 81 |
+
+   The proven-wrong count is 1, and it is `access_past_end.mereo`, which mereoc
+   already refuses for other reasons. So nothing that compiles today would stop.
+   What it BUYS is two planted mistakes that GCC does not report at `-Wall
+   -Wextra -Warray-bounds=2 -Wstringop-overflow=4 -fanalyzer`: a loop to 100
+   over a 64-byte backing, and a loop bounded by a count capped at 4096 into 16
+   bytes. Both tested with live loops and initialised buffers, so that an
+   uninitialised-value finding could not stand in for a bounds one.
+
+   The discipline this depends on is the one the prototype learned the hard way:
+   **nothing is reported wrong unless it is proven wrong.** A single missing
+   correlation between two variables once produced 406 false alarms out of 3359.
+   An analysis that cries wolf is worse than one that says nothing, so anything
+   merely unproven is reported as unproven, never as a mistake.
+
+   Same shape, same zero cost, and worth doing alongside: `ensure capacity <=
+   buffer.size` as a contract clause. `read (buffer is small, capacity is 4096)`
+   where `small is 16 bytes` is accepted today and asks the kernel to write 4096
+   bytes into a 16-byte stack frame, while the view form of the identical
+   mistake has always been refused by the fit check. Zero sites in the corpus do
+   it. It needs the contract grammar to accept `PORT.size` on the right-hand
+   side, which it does not yet -- it takes `ensure PORT CMP VALUE`.
+
+2. **The loop analysis**, in the `leave`-at-top shape first, then do-while with
    the initial value.
-2. **Then decide** what happens to what is left, which is the question that has
-   not moved: refuse it, or leave it unchecked by name.
+3. **Then decide** what happens to what is left, which is the question that has
+   not moved: refuse it, or leave it unchecked by name. This is the row that
+   costs 81 accesses, four of which are CORRECT code in the TLS parser that the
+   program simply never states enough about -- `tlen >= 36` is true, known to
+   whoever wrote it, and written nowhere. Adding that one line proves all four.
 
 ### Measured on the way, and worth keeping
 
@@ -459,6 +497,11 @@ TLS stack, counted once for each of the four programs that include it
 (`example_client`, `hello`, `https`, `rest` at 590 each, `x25519` at 252). The
 distinct non-crypto programs have handfuls. Any claim about "how much of the
 corpus is provable" should be made per distinct program, not per access.
+
+The same caution applies to the 97.6% above, and doubly: it counts accesses
+after splicing, so a template used ten times contributes ten, and the corpus and
+the tool were written by the same hand. It is a useful number for deciding where
+to look next. It is not a validation result.
 
 ## The language server is gone, and nothing replaced it
 
