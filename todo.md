@@ -288,6 +288,62 @@ if they bite again:
   refused; the shape is a guarded scope (`got == 1 goes`). Conditional STORES
   take `when`, calls do not.
 
+## Proving a run-time index, so `[v.data + i]` need not be taken on trust
+
+**Status:** open, designed as far as the first real decision. Measured.
+
+**It is not evaluation.** `i` has no value while the program is being read, so
+there is nothing to compute. The operation is proving a RANGE -- showing
+`i < v.length` holds at the access -- which is abstract interpretation, and a
+different thing from Zig's `comptime` or from the constant-bounds check that is
+already in.
+
+**The elimination already happens, so speed is not the prize.** In
+`tests/versus/cases/index_safe` the loop is bounded by `v.length` and `span.at`
+checks `i < v.length`; GCC proves them equal and deletes the check together with
+its whole error block. Verified on the `.dbg` build, where the labels are
+`step`, `step_done`, `error_1_read_input`, `error_3_write_terminal` and `exit`
+-- and `error_2_at` is simply absent.
+
+A note on how to measure that, because the obvious way is wrong: comparing
+`index_safe` against `index_fast` by instruction count says nothing, since they
+are different programs. The label is the isolable evidence.
+
+**What is actually on the table** is refusing the unproven case rather than
+eliminating the proven one: turning `[v.data + i]` from "trust me" into "prove
+the bound or use `.at`". GCC cannot give that, because its job is to optimise a
+valid program rather than to reject an unproven one.
+
+### Scale
+
+| | |
+| --- | --- |
+| constant-indexed accesses | 358 -- already checked |
+| run-time-indexed accesses | 143 |
+| commonest index expressions | `[c]` x39, `[off]` x35, `[i]` x24 |
+
+Nearly all are a counter initialised to a constant, incremented by a constant,
+inside a scope whose `leave L when i >= BOUND` names the bound. Recognising THAT
+SHAPE -- same scope, monotone counter, bound matching the backing's length -- is
+pattern-matching rather than a general analysis, and mereo has good raw material
+for it: no functions, so no call boundary to lose track across, and no aliasing
+between a span's length and a local counter.
+
+### The decision to settle first, before any of it is built
+
+What happens to the accesses the analysis cannot prove. `[off]` and `[foff]` in
+`programs/tls` are offsets walked through a record, not loop counters, and a
+cheap pattern will not prove them.
+
+- **Refuse them** and working parsing code has to be rewritten around an
+  analysis that does not understand it.
+- **Wave them through** and the rule becomes "we check some accesses", which is
+  worse than today's clear "this one is unchecked, and it is unchecked by name".
+
+Neither is obviously right, and the analysis is not worth writing until it is
+decided -- the answer determines whether the pattern needs to be near-complete
+or merely useful.
+
 ## The language server is gone, and nothing replaced it
 
 **Status:** open, deliberately.
