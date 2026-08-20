@@ -288,72 +288,132 @@ if they bite again:
   refused; the shape is a guarded scope (`got == 1 goes`). Conditional STORES
   take `when`, calls do not.
 
-## Hoist a span's length, rather than prove the index
+## Deciding accesses before committing to C
 
-**Status:** open, and the shape of the answer changed once it was measured. The
-prototype is a hand edit of generated C; nothing is implemented.
+**Status:** open, measured, and the order of work is now clear. Nothing
+implemented; the prototypes below are throwaway scripts and hand edits.
 
-The question was whether mereo could decide `[v.data + i]` for itself. It cannot
--- `i` has no value while the program is read -- so the operation would be
-proving a RANGE, not evaluating anything. But measuring first turned up a better
-lever than the analysis.
+The ambition: mereo forces whole-program, no functions, no heap, and splices
+everything, so after expansion it holds more about a program than GCC ever
+sees. It should be able to decide most accesses itself, and emit a run-time
+check only where it genuinely cannot.
 
-### What was measured
+That is the right ambition and the substrate supports it. What the measuring
+changed is the ORDER: the analysis is not the first missing piece.
 
-`tests/versus/cases/index_safe` bounds its loop by `v.length` and `span.at`
-tests `i < v.length`. Three variants, same program otherwise:
+### The substrate is good
 
-| | vector insns | the check |
-| --- | ---: | --- |
-| bounded by `v.length` -- GCC proves it | 41 | deleted, with its whole error block |
-| bounded by the scalar `count` instead | **4** | survives |
-| ...with the check removed by hand | 41 | -- |
-| ...with the LENGTH HOISTED, check kept | **41** | survives |
+`expand_procedures` already produces the flat IR, and `plan` lowers it to C, so
+the two-stage structure this needs EXISTS -- an analysis sits between them. No
+interpreter and no second language: an interpreter is the wrong tool anyway,
+since `count` comes from the kernel and there is nothing concrete to evaluate.
+What is wanted is abstract interpretation, and for the common shape not even
+that.
 
-Two findings, and the second is the useful one.
+`tests/versus/cases/index_safe`, post-splice:
 
-**Where GCC can prove it, emitting the check costs nothing.** Removing it from
-the generated C by hand produces a BYTE-IDENTICAL binary. So there is nothing to
-win by not emitting it, and the `error_2_at` label is simply absent from the
-`.dbg` build -- which is the isolable evidence, since comparing `index_safe`
-against `index_fast` by instruction count says nothing about the check (they are
-different programs).
+```
+loop_start   step
+loop_exit    step, cond 'i >= v.length'      <- the bound
+loop_start   at_1                            <- the spliced `span.at`
+assign       at_1_b = 0
+guard        cond 'i < length'               <- the check
+assign       at_1_b = [data + i]             <- the access
+loop_end     at_1
+assign       total = total + b
+assign       i = i + 1
+loop_end     step
+```
 
-**Where GCC cannot prove it, the cost is the VECTORISATION, not the size.** Four
-vector instructions instead of forty-one -- the 51 ms against 30 ms already in
-[Performance](docs/performance.md). And the cause is not that the bound is
-unknown: it is that the bound is read THROUGH MEMORY. `v.length` is a field of a
-span, so GCC must assume a store might change it, and `-fno-strict-aliasing` --
-which mereo ships because byte views type-pun by design -- makes that worse.
+Everything is in one list, and here the guard and the loop's exit condition are
+the SAME predicate on the same names -- a syntactic match, not a lattice. Field
+names resolve globally through `INSTANCE_FIELDS`, so `length` and `v.length`
+denote one thing.
 
-### The lever
+### But there is almost nothing to elide
 
-Hoisting the length into a scalar once, before the loop, and testing against
-that recovers all 41 vector instructions **while keeping the check**. Same
-safety, same speed as unchecked.
+Across the whole corpus there are **109 guards, of which 7 are `IDX < BOUND`,
+of which 1 is implied by its enclosing loop.** Eliding proven checks would save
+almost nothing, because the corpus already reaches for the UNCHECKED form
+(`[v.data + i]`) nearly everywhere.
 
-That is a codegen change, not an analysis. It needs no range proof and no
-dataflow: the obligation is only "is this backing written in this loop", which
-can be answered conservatively -- no store to it, no call that could reach it,
-hoist; otherwise do not.
+So the goal is the inverse of what it looks like: not removing checks that
+exist, but making the CHECKED form cost nothing, so that reaching for the raw
+access stops being worth it.
 
-Two things that did NOT work, so they are not worth retrying: an `ensure count
-<= v.length` before the loop, and a `__builtin_unreachable` assumption of the
-same fact. Both leave it at 4. The equality has to survive every iteration, and
+### Two loop shapes, and only one is easy
+
+| | where the bound is tested | what a proof needs |
+| --- | --- | --- |
+| `leave L when i >= N` | at the top -- a while | the loop condition alone |
+| `repeat L when i < N` | at the bottom -- a do-while | ...and the initial value, since the body runs before the first test |
+
+The second is the corpus's dominant idiom. `examples/wcl` reads a byte and only
+then tests, so the first iteration is guarded by `i is 0` and by the ENCLOSING
+loop's `leave fill when count == 0`.
+
+### The piece without which none of it works
+
+**35 syscall contracts declare a lower bound. Zero declare an upper one.**
+
+```
+  read is assembly "syscall"
+    count out rax
+    capacity in rdx
+    ensure count as signed >= 0       -- and nothing about capacity
+  end
+```
+
+The kernel guarantees `read` returns at most `capacity`, and programs pass
+`buffer.size` for it. Without that clause the chain cannot close however good
+the analysis is, because nothing relates the loop's bound to the backing's size.
+
+With it, `examples/wcl` closes completely, and every link is already present:
+
+1. `capacity is 4096`, `buffer is capacity bytes` -> the backing is 4096
+2. `read` returns `count <= capacity` -> **the missing clause**
+3. `repeat scan when i < count` -> `i < count` on every iteration after the first
+4. `i is 0` -> and on the first
+5. therefore `i + 1 <= 4096`, so `[buffer + i : 1]` is in range
+
+### Order of work
+
+1. **Add the upper bound to the 35 contracts.** Small, declarative, and the
+   fact nothing else can substitute for. It also improves the error records on
+   its own.
+2. **The loop analysis**, in the `leave`-at-top shape first, then do-while with
+   the initial value.
+3. **Then decide** what happens to what is left, which is the question that has
+   not moved: refuse it, or leave it unchecked by name.
+
+### Measured on the way, and worth keeping
+
+Where GCC can prove the bound, emitting the check costs NOTHING -- removing it
+from the generated C by hand gives a byte-identical binary, and the `error_2_at`
+label is absent from the `.dbg` build. (That label is the isolable evidence;
+comparing `index_safe` against `index_fast` by instruction count says nothing,
+they are different programs.)
+
+Where GCC cannot, the cost is the VECTORISATION rather than the size: 4 vector
+instructions against 41. The cause is that the bound is read THROUGH MEMORY --
+`v.length` is a span field, so a store might change it, and `-fno-strict-aliasing`
+(which mereo ships because byte views type-pun by design) makes that worse.
+**Hoisting the length into a scalar once recovers all 41 while KEEPING the
+check** -- same safety, same speed as unchecked. That is a codegen change rather
+than an analysis, and worth doing whatever happens above.
+
+Two things that did not work, so they are not retried: an `ensure count <=
+v.length` before the loop, and a `__builtin_unreachable` assumption of the same
+fact. Both leave it at 4: the equality has to survive every iteration, and
 through memory it does not.
 
-### What is left of the original question
+### On the corpus figures
 
-Refusing an unproven `[v.data + i]` -- turning it from "trust me" into "prove it
-or use `.at`" -- is still a separate, larger piece of work, and the decision it
-waits on has not moved: what happens to the accesses a cheap pattern cannot
-prove. `[off]` and `[foff]` in `programs/tls` walk offsets through records
-rather than counting, so refusing them means rewriting working code, and waving
-them through makes the rule "we check some accesses" -- worse than today's clear
-"this one is unchecked, by name".
-
-The hoist is worth doing first regardless: it makes the CHECKED form as fast as
-the unchecked one, which weakens the reason to reach for `[v.data + i]` at all.
+2642 run-time-indexed accesses sounds large and is misleading: 89% of it is the
+TLS stack, counted once for each of the four programs that include it
+(`example_client`, `hello`, `https`, `rest` at 590 each, `x25519` at 252). The
+distinct non-crypto programs have handfuls. Any claim about "how much of the
+corpus is provable" should be made per distinct program, not per access.
 
 ## The language server is gone, and nothing replaced it
 
