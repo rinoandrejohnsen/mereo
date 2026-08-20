@@ -1655,7 +1655,7 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                                          "volatile": mod != "pure",
                                          "args": [], "out": None,
                                          "constraints": {}, "clobbers": [],
-                                         "constvals": {}, "contract": None,
+                                         "constvals": {}, "contract": [],
                                          "line": n}
                 continue
             m = re.match(r"^(\w+) is helper (\w+)$", s)
@@ -1672,7 +1672,7 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                 in_namespace(name, ns_of_line.get(n))
                 section = prims[qualified(name, ns_of_line.get(n))] = {
                                          "kind": "helper", "cfunc": m.group(2),
-                                         "noreturn": False, "contract": None,
+                                         "noreturn": False, "contract": [],
                                          "args": [], "out": None}
                 continue
             m = re.match(r"^program(?: \((.*)\))? is$", s)
@@ -1806,11 +1806,14 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                         # method that wants a different contract writes its own
                         # `ensure`, which REPLACES this one (so `written ==
                         # count` still costs a single compare, not two).
-                        if section["contract"] is not None:
-                            fail(f"line {n}: '{name}' already declares a "
-                                 "contract -- one `ensure` per assembly")
-                        section["contract"] = (m.group(1), m.group(3),
-                                               m.group(4), n, m.group(2))
+                        # SEVERAL clauses are allowed, because a call can
+                        # promise more than one thing: `read` returns -errno or
+                        # a count, AND that count is at most the capacity it was
+                        # given. The second is not a check on the program -- it
+                        # is what the kernel guarantees -- and stating it is how
+                        # a bound reaches the code that indexes with it.
+                        section["contract"].append(
+                            (m.group(1), m.group(3), m.group(4), n, m.group(2)))
                         continue
                     m = re.match(r"^(\w+) (in|out) (\S+)$", s)
                     if not m:
@@ -4831,9 +4834,14 @@ def call_parts(meth, valmap):
         # No contract of its own -- inherit the syscall's. A method that writes
         # any `ensure` REPLACES it (it has taken responsibility), and a release
         # never gets one: a failed release cannot reroute.
-        port, cmp_, val, ln, reading = prim["contract"]
-        if port in meth["bind"]:
-            ens = [(meth["bind"][port][0], cmp_, val, ln, reading)]
+        ens = []
+        for port, cmp_, val, ln, reading in prim["contract"]:
+            if port not in meth["bind"]:
+                continue
+            # the right-hand side may name another PORT (`count <= capacity`),
+            # which is wired at the call site like any other
+            rhs = meth["bind"][val][0] if val in meth["bind"] else val
+            ens.append((meth["bind"][port][0], cmp_, rhs, ln, reading))
     clauses = []
     for e in ens:
         l, c, r, _ = e[0], e[1], e[2], e[3]
@@ -6226,6 +6234,10 @@ def plan(definitions, slots, steps, overrides):
                      "a construction or a method call")
             prim = PRIMITIVES[st["op"]]
             conns = {p: (a, ln) for p, a, ln in st["conns"]}
+            # kept whole: a contract clause may name another PORT on its right
+            # (`ready <= count`), and the argument loop below POPS the ports as
+            # it consumes them, so by then `count` would be gone
+            wired = dict(conns)
             args = []
             for kind, port in prim["args"]:
                 if kind == "const":          # baked into the asm, not an argument
@@ -6241,11 +6253,15 @@ def plan(definitions, slots, steps, overrides):
             if prim["out"] and prim["out"] in conns:
                 actual, ln = conns.pop(prim["out"])
                 out = resolve_value(actual, scalars, buffers, ln)
-                if prim.get("contract") and prim["contract"][0] == prim["out"]:
-                    _p, _cmp, _val, _ln, _read = prim["contract"]
+                for _p, _cmp, _val, _ln, _read in prim.get("contract") or ():
+                    if _p != prim["out"]:
+                        continue
                     lhs = (f"({'long' if _read == 'signed' else 'unsigned long'})"
                            f"({out})") if _read else out
-                    clauses = [f"{lhs} {_cmp} {_val}"]
+                    rhs = _val
+                    if _val in wired:
+                        rhs = resolve_value(wired[_val][0], scalars, buffers, ln)
+                    clauses.append(f"{lhs} {_cmp} {rhs}")
             for port, (_, ln) in conns.items():
                 fail(f"line {ln}: '{st['op']}' has no port '{port}'")
             ps = {"pname": st["op"], "noreturn": prim["noreturn"],

@@ -46,6 +46,7 @@ linux is
     capacity in rdx
     clobbers rcx and r11 and memory
     ensure count as signed >= 0
+    ensure count as signed <= capacity
   end
 
   write is assembly "syscall"
@@ -56,6 +57,7 @@ linux is
     count in rdx
     clobbers rcx and r11 and memory
     ensure written as signed >= 0
+    ensure written as signed <= count
   end
 
   open is assembly "syscall"
@@ -165,6 +167,7 @@ linux is
     flags in rdx
     clobbers rcx and r11 and memory
     ensure count as signed >= 0
+    ensure count as signed <= length
   end
 
   lseek is assembly "syscall"
@@ -345,6 +348,7 @@ linux is
     capacity in rdx
     clobbers rcx and r11 and memory
     ensure count as signed >= 0
+    ensure count as signed <= capacity
   end
 
   -- unlinkat(base, path, flags) -- remove a name. flags is 0 for a file,
@@ -422,6 +426,7 @@ linux is
     capacity in r10
     clobbers rcx and r11 and memory
     ensure count as signed >= 0
+    ensure count as signed <= capacity
   end
 
   fchmodat is assembly "syscall"
@@ -505,6 +510,7 @@ linux is
     mask_size in r8
     clobbers rcx and r11 and memory
     ensure ready as signed >= 0
+    ensure ready as signed <= count
   end
 
   -- --------------------------------------------------------------- descriptors

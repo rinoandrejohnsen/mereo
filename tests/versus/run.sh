@@ -126,6 +126,14 @@ runspec() {  # runspec CASE -> "stdin<TAB>args"
 # matches its twin's syscall count outright.
 waiver() {
     case "$1" in
+    two_resources)
+        echo "the extra site is \`read\`'s UPPER bound -- the kernel returns at"\
+             "most the capacity it was given, and saying so is what lets a bound"\
+             "reach the code that indexes with it. It costs a compare and a"\
+             "branch into an error block that already exists, and pays for"\
+             "itself across the corpus: 960 bytes SMALLER over 88 binaries,"\
+             "with the TLS programs down 576 to 768 each, because the range"\
+             "lets GCC delete more than the check costs." ;;
     *) echo "" ;;
     esac
 }

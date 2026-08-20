@@ -417,15 +417,18 @@ that is the prize worth aiming at.
 ### Order of work
 
 **Done:** the bound hoist (`hoist_guard_bounds`), which makes a checked access
-in a loop cost what an unchecked one costs -- and the TLS bounds, which were a
-remotely-triggerable overflow rather than an analysis question.
+in a loop cost what an unchecked one costs; the TLS bounds, which were a
+remotely-triggerable overflow rather than an analysis question; and the contract
+upper bounds.
 
-1. **Add the upper bound to the 35 contracts.** Small, declarative, and the
-   fact nothing else can substitute for. It also improves the error records on
-   its own.
-2. **The loop analysis**, in the `leave`-at-top shape first, then do-while with
+On the last: it is **six** primitives, not the 35 said here earlier. 35 declare a
+LOWER bound, but only six promise a result bounded by an argument -- `read`,
+`write`, `getrandom`, `getdents64`, `readlinkat`, `ppoll`. The rest answer with a
+descriptor, a position or zero, and have no argument to be bounded by.
+
+1. **The loop analysis**, in the `leave`-at-top shape first, then do-while with
    the initial value.
-3. **Then decide** what happens to what is left, which is the question that has
+2. **Then decide** what happens to what is left, which is the question that has
    not moved: refuse it, or leave it unchecked by name.
 
 ### Measured on the way, and worth keeping
