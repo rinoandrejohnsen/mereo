@@ -75,7 +75,20 @@ def strings(st):
 
 def analyse(definitions, slots):
     steps = STASH["steps"]
-    bufs = {s["name"]: const(s["size"]) for s in slots if s["kind"] == "buffer"}
+    # `buffer is capacity bytes` gives the size as a NAME. The emitter resolves
+    # it through the scalar's init (see `buffer_size` in mereoc.py); so does a
+    # reader, without noticing. Do the same.
+    sinit = {s["name"]: s.get("init") for s in slots if s["kind"] == "scalar"}
+    def bufsize(v):
+        k = const(v)
+        if k is not None: return k
+        seen = set()
+        while isinstance(v, str) and v in sinit and v not in seen:
+            seen.add(v); v = sinit[v]
+            k = const(v)
+            if k is not None: return k
+        return None
+    bufs = {s["name"]: bufsize(s["size"]) for s in slots if s["kind"] == "buffer"}
     inst = {s["name"]: s for s in slots if s["kind"] == "instance"}
 
     # A resource's OWN state array is not a slot -- it lives on the definition
@@ -99,7 +112,7 @@ def analyse(definitions, slots):
     # A method reaches it through `prim` + `bind`, and the call site supplies
     # the arguments through `conns` -- so all three hops are needed.
     cbound, clow = {}, {}
-    for st in steps:
+    for idx, st in enumerate(steps):
         t = st.get("type")
         if t not in ("call", "bare"): continue
         conns = dict((c[0], c[1]) for c in st.get("conns", []) if len(c) >= 2)
@@ -129,15 +142,12 @@ def analyse(definitions, slots):
             if not tgt: continue
             val = arg(rhs)
             if val is None: val = rhs
-            k = const(val)
-            if k is None and val in bufs: k = bufs[val]
-            if k is None: continue
+            # resolved lazily: the bound may be a name whose value is only
+            # knowable at the call site
             if op in ("<=", "<"):
-                k -= 1 if op == "<" else 0
-                cbound[tgt] = min(cbound.get(tgt, k), k)
+                cbound.setdefault(tgt, []).append((val, op == "<", idx))
             elif op in (">=", ">"):
-                k += 1 if op == ">" else 0
-                clow[tgt] = max(clow.get(tgt, k), k)
+                clow.setdefault(tgt, []).append((val, op == ">", idx))
 
     copy = {}
     for i, st in enumerate(steps):
@@ -154,9 +164,15 @@ def analyse(definitions, slots):
         elif t == "loop_end" and stack:
             s = stack.pop()
             loops.append((s, i, st.get("cond"), st.get("back", False)))
-    binding = {}                       # step -> {name: (bound_expr, extra)}
+    binding, desc = {}, {}
     for s, e, endcond, back in loops:
-        bounds = {}
+        bounds, lows = {}, {}
+        # a COUNTING-DOWN loop: `i is 254` before it, `i is i - 1` inside, and
+        # `repeat when i >= 0`. The ceiling is the value it started at.
+        if back and endcond:
+            m = CMPX.match(str(endcond))
+            if m and m.group(2) in (">=", ">"):
+                lows[m.group(1).strip()] = (m.group(3).strip(), s)
         if back and endcond:
             m = CMPX.match(str(endcond))
             if m and m.group(2) in ("<", "<="):
@@ -170,6 +186,24 @@ def analyse(definitions, slots):
                 m = CMPX.match(str(steps[i]["cond"]))
                 if m and m.group(2) in (">=", ">"):
                     bounds[m.group(1).strip()] = (m.group(3).strip(), i, (s, e))
+        for name, (loexpr, from_i) in lows.items():
+            decs, ok = [], True
+            for i in range(s + 1, e):
+                st = steps[i]
+                if st.get("type") == "assign" and st.get("name") == name:
+                    m = re.match(r"^\s*([\w.]+)\s*-\s*(\d+)\s*$", str(st.get("expr", "")))
+                    if m and m.group(1) == name: decs.append((i, int(m.group(2))))
+                    else: ok = False; break
+            if not ok: continue
+            entry = None
+            cands = [(j, steps[j].get("expr")) for j in range(s)
+                     if steps[j].get("type") == "assign" and steps[j].get("name") == name]
+            if cands: entry = cands[-1]
+            if entry is None: continue
+            for i in range(s + 1, e):
+                before = sum(k for pos, k in decs if pos < i)
+                desc.setdefault(i, {})[name] = (entry, loexpr, before)
+
         # where is each bounded name incremented, and by how much
         for name, (bexpr, from_i, lp) in bounds.items():
             incs = []
@@ -204,7 +238,10 @@ def analyse(definitions, slots):
         out = [before[-1]] if before else []
         if lp:
             out += [(i, e) for i, e in defs if lp[0] < i < lp[1] and i != (before[-1][0] if before else -1)]
-        return out or (list(defs) if not before else out)
+        if out: return out
+        ini = sinit.get(n)
+        if not before and ini is not None: return [(-1, str(ini))]
+        return list(defs)
 
     # ---------- facts asserted by `ensure`, propagated forward
     # A guard `A <= B` is a premise the programmer wrote down. It bounds the
@@ -247,6 +284,24 @@ def analyse(definitions, slots):
         if live:
             facts[i] = {k: list(v) for k, v in live.items()}
 
+    # An instance whose bytes are never written keeps the values it was adopted
+    # with, so `v.length` is the number in `already span (length is 17)`. If
+    # anything stores into it -- `take` narrows a span that way -- give up.
+    mutated = set()
+    for st in steps:
+        if st.get("type") not in ("store", "fstore", "atomic"): continue
+        head = str(st.get("addr", "")).partition("+")[0].strip()
+        if head in inst: mutated.add(head)
+        for nm in inst:
+            if re.match(rf"{re.escape(nm)}\b", head): mutated.add(nm)
+
+    def adopted_field(e):
+        if "." not in e: return None
+        a, _, f = e.partition(".")
+        if a not in inst or a in mutated: return None
+        pend = (inst[a].get("pending") or {}).get(f)
+        return pend[0] if pend else None
+
     def size_name(e):
         e = e.strip()
         if e.endswith(".size"):
@@ -264,8 +319,10 @@ def analyse(definitions, slots):
         hi = None if a[1] is None or b[1] is None else max(a[1], b[1])
         return (lo, hi)
 
-    def loop_lo(n, lp):
-        """0 when the variable starts at 0 and only ever moves up"""
+    def loop_lo(n, lp, seen=()):
+        """the floor of a counting-up variable: the value it entered with.
+        `ii is 1` before the loop makes `poff is ii * 8 - 8` non-negative --
+        assuming 0 is sound but too loose to prove anything."""
         s_, e_ = lp
         for i in range(s_, e_):
             st = steps[i]
@@ -277,7 +334,42 @@ def analyse(definitions, slots):
                     a, b = [x.strip() for x in ex.split("-")]
                     if a == b: continue          # `mj is mj - mj`, a zeroing
                 return None
+        entry = [(j, steps[j].get("expr")) for j in range(s_)
+                 if steps[j].get("type") == "assign" and steps[j].get("name") == n]
+        if entry:
+            j, ex = entry[-1]
+            if (n, j) not in seen:
+                v = iv(str(ex), j, seen + ((n, j),))[0]
+                if v is not None and v >= 0: return v
         return 0
+
+    ASSUME = {}
+
+    def as_compare(nd, at, seen):
+        """this node, or the definition behind it, as a comparison"""
+        if isinstance(nd, ast.Compare): return nd
+        if isinstance(nd, ast.Name):
+            for d, ex in reaching(nd.id, at):
+                try: n2 = ast.parse(str(ex), mode="eval").body
+                except SyntaxError: continue
+                if isinstance(n2, ast.Compare): return n2
+        return None
+
+    def assuming(cnode, at, seen):
+        """the interval a comparison forces on its left operand, when true"""
+        if len(cnode.ops) != 1 or not isinstance(cnode.left, ast.Name): return None, None
+        try: rhs = ast.unparse(cnode.comparators[0])
+        except Exception: return None, None
+        r = iv(rhs, at, seen)
+        op = cnode.ops[0]
+        if isinstance(op, ast.Lt)  and r[1] is not None: return cnode.left.id, (None, r[1] - 1)
+        if isinstance(op, ast.LtE) and r[1] is not None: return cnode.left.id, (None, r[1])
+        if isinstance(op, ast.Gt)  and r[0] is not None: return cnode.left.id, (r[0] + 1, None)
+        if isinstance(op, ast.GtE) and r[0] is not None: return cnode.left.id, (r[0], None)
+        if isinstance(op, ast.Eq)  and r[0] == r[1] is not None: return cnode.left.id, r
+        return None, None
+
+    LOAD = re.compile(r"^\[[^\[\]]*?(?::\s*(\d+)\s*)?\]$")
 
     def tighten(key, cur, at, sn):
         lo, hi = cur
@@ -324,6 +416,8 @@ def analyse(definitions, slots):
 
     LOAD = re.compile(r"^\[[^\[\]]*?(?::\s*(\d+)\s*)?\]$")
 
+    LOAD = re.compile(r"^\[[^\[\]]*?(?::\s*(\d+)\s*)?\]$")
+
     def iv(e, at, seen=()):
         e = str(e).strip()
         if not e: return UNK
@@ -339,18 +433,38 @@ def analyse(definitions, slots):
         if k is not None: return (k, k)
         sz = size_name(e)
         if sz is not None: return (sz, sz)
+        af = adopted_field(e)
+        if af is not None and (af, at) not in seen:
+            return iv(af, at, seen + ((af, at),))
         bnd = binding.get(at, {})
         if re.fullmatch(r"[A-Za-z_][\w.]*", e):
             n = e
             if (n, at) in seen: return UNK
             sn = seen + ((n, at),)
             best = UNK
-            if n in bnd:
+            if n in desc.get(at, {}):
+                (ej, eexpr), loexpr, before = desc[at][n]
+                hi = iv(str(eexpr), ej, sn)[1]
+                lo = iv(loexpr, at, sn)[0]
+                best = (None if lo is None else lo - before,
+                        None if hi is None else hi - before)
+            elif n in bnd:
                 bexpr, extra, lp = bnd[n]
                 b = iv(bexpr, at, sn)[1]
-                best = (loop_lo(n, lp), None if b is None else b - 1 + extra)
+                best = (loop_lo(n, lp, sn), None if b is None else b - 1 + extra)
             elif n in cbound or n in clow:
-                best = (clow.get(n), cbound.get(n))
+                hi = lo = None
+                for val, strict, idx in cbound.get(n, []):
+                    v = iv(val, idx, sn)[1]
+                    if v is None: continue
+                    v -= 1 if strict else 0
+                    hi = v if hi is None else min(hi, v)
+                for val, strict, idx in clow.get(n, []):
+                    v = iv(val, idx, sn)[0]
+                    if v is None: continue
+                    v += 1 if strict else 0
+                    lo = v if lo is None else max(lo, v)
+                best = (lo, hi)
             else:
                 cands = reaching(n, at)
                 if cands:
@@ -444,6 +558,26 @@ def analyse(definitions, slots):
             if p: return base_of(p[0], depth + 1)
         return None, None
 
+    def resolve_base(expr, at, depth=0):
+        """(name, size, offset-interval) -- chasing a scalar that HOLDS an
+        address. `shmsg is sh_rec + 5` makes `[shmsg + 38]` an access into
+        sh_rec at 43, which is how a reader takes it."""
+        expr = expr.strip()
+        bn, size = base_of(expr)
+        if size is not None: return bn, size, (0, 0)
+        if depth > 4 or not re.fullmatch(r"[A-Za-z_][\w.]*", expr):
+            return None, None, None
+        for d, ex in reaching(expr, at):
+            ex = str(ex).strip()
+            head, plus, tail = ex.partition("+")
+            bn2, sz2, off2 = resolve_base(head, d, depth + 1)
+            if sz2 is None: continue
+            if not plus: return bn2, sz2, off2
+            add = iv(tail, d)
+            if None in add or None in off2: continue
+            return bn2, sz2, (off2[0] + add[0], off2[1] + add[1])
+        return None, None, None
+
     out = []
     for i, st in enumerate(steps):
         for s in strings(st):
@@ -452,11 +586,13 @@ def analyse(definitions, slots):
                 if not sep: body, w = inner, "1"
                 width = const(w) or 1
                 lhs, _, idx = body.partition("+")
-                bname, size = base_of(lhs)
+                bname, size, off = resolve_base(lhs, i)
                 if size is None:
                     out.append(["opaque-base", lhs.strip(), inner]); continue
                 bnd = binding.get(i, {})
                 lo, hi = iv(idx.strip(), i) if idx.strip() else (0, 0)
+                if lo is not None and hi is not None:
+                    lo, hi = lo + off[0], hi + off[1]
                 if hi is None or lo is None or lo < 0:
                     first = re.split(r"[^\w.]", idx.strip())[0]
                     known = first in bnd or first in copy or first in facts.get(i, {})

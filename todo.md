@@ -455,10 +455,30 @@ reaches without being part of the compiler.
 
 **The metric is not the percentage.** By the rule above the target is a person,
 so the score that means anything is **the count of places a skilled C programmer
-beats the tool** -- currently **74**, and every one is in scope by definition,
-because the programs are correct and therefore the expert could deduce them. The
-percentage (3284 of 3359, 97.8%) flatters, since it counts accesses after
-splicing and a template used ten times contributes ten.
+beats the tool** -- now **44**, down from 74, and all 44 in the TLS parser. They
+sort by cause, which is what the metric is for:
+
+| cause | | |
+| --- | ---: | --- |
+| the program never states the fact | 20 | `tlen >= 36`, true and written nowhere |
+| an invariant the compiler could enforce and does not | 7 | a span's `length` vs its backing |
+| genuinely dependent on hostile input | 16 | an index off the wire -- the honest floor |
+| an unresolved base | 1 | |
+
+Only the last two rows are tool work, and the third is not work at all: an index
+parsed from a ServerHello cannot be bounded by any analysis, and it is where an
+expert keeps a run-time check -- so mereo may too, at parity.
+
+Closed on the way, each a case where a reader is not even conscious of deducing:
+a load's WIDTH bounds its value, and the width may be implicit (`b is [data + i]`
+is a byte); a resource's own state array is not a slot but splices to
+`<instance>_<field>`; `buffer is capacity bytes` names its size, which the
+emitter already resolves through the scalar's init; a scalar slot's init is a
+value even though no `assign` step carries it; a scalar can HOLD AN ADDRESS
+(`shmsg is sh_rec + 5`), so the base is reached by chasing it; loops that count
+DOWN take their ceiling from the value they entered with; and a counting-up loop
+that starts at 1 has floor 1, not 0 -- assuming 0 is sound but too loose to
+prove `poff is ii * 8 - 8` non-negative.
 
 Two of those places were closed by writing this down, which is the argument for
 the metric. A load's WIDTH bounds its value -- `b is [data + i]` makes `b` a

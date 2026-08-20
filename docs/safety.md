@@ -1,36 +1,47 @@
 # Safety, and what it costs
 
-## Safety was never the goal
+## The barrier
 
 This page compares mereo's safety with other languages, so it should say at the
-top what the project is actually trying to do — because it is not this.
+top what the project is actually trying to do — because it is not that.
 
-Competing on safety was never a design goal. The single bar is **performance
-parity with a hand-written, optimised, Linux-correct C program**, and no safety
-feature is accepted that costs more than that. What follows from that rule is
+> **The barrier is performance parity with a hand-written, optimised,
+> Linux-correct C program. No safety feature is accepted that costs more than
+> that.**
+
+Competing on safety was never a design goal. What follows from the barrier is
 not less safety but a redirection of it: compile-time work is free at run time,
-so everything that can be settled before the program runs is worth taking, and
-everything that has to be paid for while it runs is not.
+so everything settleable before the program runs is worth taking, and everything
+that has to be paid for while it runs is not.
 
-That is why the page reads the way it does. The long list of faults mereo cannot
-have is a by-product of constraints adopted for other reasons; the checks it
-performs are the ones that cost nothing; and the gaps left open — overflow,
+| aimed for | not aimed for |
+| --- | --- |
+| whatever static analysis can decide, since it is free | a proof of memory safety |
+| refusing what is provably wrong at compile time | refusing what merely cannot be proved |
+| deducing what an expert C programmer deduces | discharging every obligation, as SPARK does |
+| a run-time check where an expert would also keep one | a run-time check an expert's C would not carry |
+| being told which accesses nobody has proved | a guarantee that the rest are correct |
+
+**The standard is a person, not a theorem.** What a super-skilled C programmer
+can deduce from the program to be safe, and therefore leave unchecked, mereo
+should deduce too. That is a better target than proving everything: it is
+bounded, it is reachable, and it is the one the barrier implies — an expert's
+binary has no checks in it precisely because the expert did the deducing.
+
+It also settles what happens where the deduction fails. **The expert writes a
+check.** So mereo may write one too, at the same cost, and still be at parity.
+The barrier forbids checks the expert's C would not carry — not checks as such.
+
+That is why the rest of the page reads as it does. The long list of faults mereo
+cannot have is a by-product of constraints adopted for other reasons; the checks
+it performs are the ones that cost nothing; and the gaps left open — overflow,
 uninitialised reads, division by zero — are open because the run-time fix for
 each would spend exactly what the constraints bought. Their COMPILE-TIME halves
 are a different matter, and are unbuilt rather than declined.
 
-The standard the analysis is held to follows from the same rule, and it is a
-person rather than a theorem: **what a super-skilled C programmer can deduce
-from the program to be safe, and therefore leave unchecked, mereo should deduce
-too.** That is a better target than proving everything. It is bounded, it is
-reachable, and it is the one the performance goal implies — an expert's binary
-has no checks in it precisely because the expert did the deducing.
-
-It also settles what happens where the deduction fails. The expert writes a
-check. mereo may write one too, at the same cost, and still be at parity: the
-rule forbids checks the expert's C would not carry, not checks as such.
-
 The comparisons below are therefore a measurement, not a claim to be winning.
+Where another language is ahead, it is ahead; that costs mereo nothing it was
+trying to keep.
 
 ## Four ways to be safe
 
@@ -214,21 +225,22 @@ IR and classifies every access. Over the corpus — 86 programs, 3359 accesses:
 
 | | | |
 | --- | ---: | --- |
-| **proved** | **3277** | **97.6%** |
-| bound-unresolved | 45 | 1.3% |
-| opaque-base | 31 | 0.9% |
-| data-dependent | 5 | 0.1% |
+| **proved** | **3314** | **98.7%** |
+| bound-unresolved | 39 | 1.2% |
+| data-dependent | 4 | 0.1% |
+| opaque-base | 1 | 0.0% |
 | out of range | 1 | 0.0% |
 
 Read the last row first. The single access that does *not* fit is
 `access_past_end.mereo`, the planted violation that mereo already refuses — the
-analysis finds it independently and flags nothing else in 3359. Its soundness is
+analysis finds it independently and flags nothing else in 3359. Six further
+violations planted outside the corpus are each reported. Its soundness is
 checked the way everything else here is: a loop bound wider than its backing, an
 affine index that overflows, a syscall capacity larger than its buffer, and an
 off-by-one in the branchless guard are each planted and each reported.
 
 The first honest version of this reached 81%, and every point from there to
-97.6% came from removing an approximation rather than from adding information:
+98.7% came from removing an approximation rather than from adding information:
 tracking both ends of an interval instead of only the upper, so a subtraction
 is usable; evaluating each definition where it sits rather than at the use;
 killing what a dominating assignment overwrites; and case-splitting on mereo's
@@ -241,11 +253,18 @@ of range. Every one was a false alarm. An analysis that cries wolf is worse than
 one that says nothing, so the rule is that anything not *proved* is reported as
 unproved — never as a bug — unless the index is a constant.
 
-**The 2.4% that remains is almost entirely the TLS parser.** Some of it is still
-the analysis: there is no fixpoint across a template's ports. But some of it is
-not, and that is the more interesting half — the program does not state enough.
-The transcript index needs `tlen >= 36` for its *lower* bound, which is true,
-and which the programmer knows, and which is written nowhere:
+**All 44 that remain are in the TLS parser**, and they sort by cause rather
+than by difficulty — which is what holding the tool to a person rather than to
+a percentage is for:
+
+| cause | | |
+| --- | ---: | --- |
+| the program never states the fact | 20 | `tlen >= 36` is true, known to whoever wrote it, written nowhere |
+| an invariant the compiler could enforce and does not | 7 | a span's `length` is never checked against its backing |
+| genuinely dependent on hostile input | 16 | an index parsed out of a ServerHello |
+| an unresolved base | 1 | |
+
+The first group is one line per site, and the line belongs in the program:
 
 ```
   ensure tlen + inner_len <= tr.size     -- stated
@@ -253,9 +272,11 @@ and which the programmer knows, and which is written nowhere:
   a is [tr + foff : 1]
 ```
 
-Adding that one line proves all four of those accesses. Without it, none of
-them. That is the boundary this page has been looking for: not what the
-compiler cannot compute, but what the program never said.
+Adding it proves all four of those accesses; without it, none. The second group
+is a compiler fix. **The third is the honest floor** — an index taken off the
+wire cannot be bounded by any analysis, and it is precisely where a skilled C
+programmer keeps a run-time check. So mereo may keep one too, at the same cost,
+and still be at parity.
 
 ## What that would buy, with performance in the background
 
@@ -267,9 +288,9 @@ one. Proving them a second time, earlier, removes no instruction that is still
 there.
 
 What it buys is the **list**. A compiler that classifies accesses can report the
-ones nobody has proved, and that report is 82 accesses out of 3359,
-concentrated almost entirely in the one program that parses hostile input. The
-value is not a faster binary. It is a list short enough to read.
+ones nobody has proved, and that report is 44 accesses out of 3359 — every one
+of them in the program that parses hostile input. The value is not a faster
+binary. It is a list short enough to read in a minute.
 
 It also buys checks the compiler does not currently make. `read (buffer is
 small, capacity is 4096)` where `small is 16 bytes` is accepted today, and
