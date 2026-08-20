@@ -1,0 +1,26 @@
+include "../../linux.mereo"
+
+-- REJECTED on purpose: a literal connected to a port the body ASSIGNS.
+--
+-- `give` writes `value`, so `value` needs somewhere to land. Reported from
+-- inside the splice this was
+--
+--   line 2: '5' is not a scalar slot (declare it with `NAME is NUMBER` before
+--           assigning)
+--
+-- -- the template's line, and advice to declare `5` as a slot, which cannot be
+-- done. The requirement is right; where it was reported was not.
+--
+--   refused:  'give' assigns 'value', so it needs a SCALAR SLOT to land in
+
+give (value) goes
+  value is 7
+end
+
+program goes
+  n is 0
+
+  give (value is 5)
+
+  ensure n == 0
+end

@@ -401,6 +401,11 @@ rejects leave/definition  leave_definition  "is a definition -- it declares"
 # refused at the CALL rather than inside the splice. Two templates deep, to pin
 # that the requirement propagates through one that only passes the port on.
 rejects port/needs-instance port_needs_instance "so it needs an INSTANCE"
+# ...and the other three kinds a body can need of a port. A LAYOUT instance is
+# still accepted where an address is wanted -- its name IS its bytes -- which is
+# how the TLS programs hand a `sockaddr_in` to `connect`.
+rejects port/needs-value  port_needs_value  "reads 'a', so it needs a VALUE"
+rejects port/needs-slot   port_needs_slot   "so it needs a SCALAR SLOT"
 
 rejects access/past-end   access_past_end   "reads 101 bytes into"
 rejects access/store-past-end store_past_end "writes 101 bytes into"

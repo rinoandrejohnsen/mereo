@@ -2999,61 +2999,74 @@ def cleanup_arg(inst_name, a, defn, backing, scalars, buffers):
 
 
 def derive_port_needs(definitions):
-    """For every method, which of its ports the body uses as a RECEIVER.
+    """What each method's body needs of each of its ports. Nothing is declared.
 
-    A body says what it needs of each port; nothing has to be declared. Two
-    shapes matter here:
+    Four uses, read off the body's text:
 
-        thing.read (...)          `thing` must be an instance
-        inner (thing is thing)    ...and so must whatever `inner` needs
+        thing.read (...)      `instance` -- it is a receiver
+        [area + k : w]        `address`  -- a buffer, a literal, or a scalar
+                                            holding one; never an instance
+        n + 1, n > 0          `value`    -- likewise never an instance
+        value is ...          `out`      -- it must land in a scalar slot
 
-    The second is why this runs to a fixpoint: a template that only passes a
-    port on inherits the requirement of the one it passes it to. That
-    terminates because recursion is refused, so the call graph is finite.
+    A template that only passes a port on inherits whatever the one it passes it
+    to requires, so this runs to a FIXPOINT. That terminates because recursion
+    is refused and the call graph is finite.
 
-    Scanned from the body's TEXT rather than from a parse of it. The shapes are
-    unambiguous, and a parse at this point would have to bind the resource's
-    state and the caller's actuals, which is what the splice exists to do."""
-    direct, passes = {}, {}
+    Read from text rather than from a parse: the shapes are unambiguous, and a
+    parse here would have to bind the resource's state and the caller's actuals,
+    which is exactly what the splice exists to do."""
+    need, passes = {}, {}
     for dname, defn in definitions.items():
         for mname, meth in (defn.get("methods") or {}).items():
             body = meth.get("procedure")
             if not body:
                 continue
-            key = (dname, mname)
-            need, sends = set(), []
+            kinds = {port: set() for port in meth["params"]}
+            sends = []
             for raw in body:
                 line = _unquoted(raw).strip()
+                rhs = line.partition(" is ")[2]
                 for port in meth["params"]:
-                    if re.search(rf"\b{re.escape(port)}\.\w+\s*\(", line):
-                        need.add(port)
-                # `NAME (p is actual, ...)` -- a call that forwards a port
+                    e = re.escape(port)
+                    if re.search(rf"\b{e}\.\w+\s*\(", line):
+                        kinds[port].add("instance")
+                    if re.search(rf"\[\s*{e}\b", line):
+                        kinds[port].add("address")
+                    if re.match(rf"^{e} is\b", line):
+                        kinds[port].add("out")
+                    if re.search(rf"\b{e}\b", rhs) and not re.search(
+                            rf"\b{e}\.\w+\s*\(|\[\s*{e}\b", rhs):
+                        kinds[port].add("value")
                 call = re.match(r"^([\w.]+)\s*\((.*)\)$", line)
                 if call:
-                    for p, a in re.findall(r"(\w+)\s+is\s+([\w.]+)", call.group(2)):
-                        if a in meth["params"]:
-                            sends.append((call.group(1), p, a))
-            direct[key] = need
-            passes[key] = sends
+                    for pt, ac in re.findall(r"(\w+)\s+is\s+([\w.]+)",
+                                             call.group(2)):
+                        if ac in meth["params"]:
+                            sends.append((call.group(1), pt, ac))
+            need[(dname, mname)] = kinds
+            passes[(dname, mname)] = sends
 
-    def find(target, port):
-        """Which methods named `target` require `port` as a receiver."""
-        for (dn, mn), need in direct.items():
-            if mn == target or target.endswith("." + mn) or target == dn:
-                if port in need:
-                    return True
-        return False
+    def required(target, port):
+        """What every method `target` could name requires of `port`."""
+        out = set()
+        for (dn, mn), kinds in need.items():
+            if ((mn == target or target.endswith("." + mn) or target == dn)
+                    and port in kinds):
+                out |= kinds[port]
+        return out
 
     changed = True
-    while changed:                       # the fixpoint: requirements propagate
+    while changed:
         changed = False
         for key, sends in passes.items():
-            for target, p, mine in sends:
-                if mine not in direct[key] and find(target, p):
-                    direct[key].add(mine)
+            for target, pt, mine in sends:
+                extra = required(target, pt) - need[key].get(mine, set())
+                if extra:
+                    need[key].setdefault(mine, set()).update(extra)
                     changed = True
-    for (dname, mname), need in direct.items():
-        definitions[dname]["methods"][mname]["needs_instance"] = need
+    for (dname, mname), kinds in need.items():
+        definitions[dname]["methods"][mname]["port_needs"] = kinds
 
 
 def validate_method(defn, meth, check_params=True):
@@ -5376,12 +5389,12 @@ def resolve_lenses(definitions, slots):
 def check_port_needs(definitions, slots, steps):
     """Check every connection against what the body needs of that port.
 
-    The message is the whole point. Without this, connecting a scalar to a port
-    an inner body uses as a receiver is reported from inside the splice --
-    `line 2: unknown instance or definition 'n'`, naming the innermost
-    template's header and a scalar that is perfectly good, just not an
-    instance."""
-    names = {sl["name"] for sl in slots if sl.get("kind") == "instance"}
+    The message is the whole point. Reported from inside the splice, a wrong
+    connection names the template's own line and a name that is perfectly good
+    elsewhere -- and for an out-port it advised declaring `5` as a slot."""
+    insts = {sl["name"]: sl["definition"] for sl in slots
+             if sl.get("kind") == "instance"}
+    scal = {sl["name"] for sl in slots if sl.get("kind") == "scalar"}
 
     def walk(sts):
         for st in sts:
@@ -5395,21 +5408,42 @@ def check_port_needs(definitions, slots, steps):
             defn = definitions.get(st.get("inst"))
             if defn is None:
                 for sl in slots:
-                    if sl.get("kind") == "instance" and sl.get("name") == st["inst"]:
+                    if (sl.get("kind") == "instance"
+                            and sl.get("name") == st["inst"]):
                         defn = definitions.get(sl["definition"])
                         break
             meth = (defn or {}).get("methods", {}).get(st.get("method"))
             if meth is None:
                 continue
+            needs = meth.get("port_needs") or {}
             for port, actual, ln in st.get("conns") or ():
-                if port not in (meth.get("needs_instance") or ()):
+                kinds = needs.get(port) or set()
+                if not kinds:
                     continue
-                if actual in names:
-                    continue
-                fail(f"line {ln}: `{port} is {actual}` -- '{meth['name']}' "
-                     f"calls a method on '{port}', so it needs an INSTANCE, "
-                     f"and '{actual}' is not one. Connect a resource, a view, "
-                     "or something else declared with a definition.")
+                head = f"line {ln}: `{port} is {actual}` -- '{meth['name']}'"
+                if "instance" in kinds and actual not in insts:
+                    fail(f"{head} calls a method on '{port}', so it needs an "
+                         f"INSTANCE, and '{actual}' is not one. Connect a "
+                         "resource, a view, or something else declared with a "
+                         "definition.")
+                if "instance" not in kinds and actual in insts:
+                    # ...unless it is a LAYOUT instance, whose name IS the
+                    # address of its bytes -- `linux.sockaddr_in` handed to
+                    # `connect` is the ordinary way to use one. A resource has
+                    # no address: its state is register cells.
+                    adefn = definitions.get(insts[actual])
+                    if adefn is not None and is_pure_layout(adefn):
+                        continue
+                    how, what = (("indexes", "an ADDRESS -- a buffer, a "
+                                  "literal, or a scalar holding one")
+                                 if "address" in kinds else ("reads", "a VALUE"))
+                    fail(f"{head} {how} '{port}', so it needs {what}. "
+                         f"'{actual}' is a resource, which has no address of "
+                         "its own: name one of its fields instead.")
+                if "out" in kinds and actual not in scal:
+                    fail(f"{head} assigns '{port}', so it needs a SCALAR SLOT "
+                         f"to land in, and '{actual}' is not one. Declare one "
+                         "with `NAME is NUMBER` and connect that.")
     walk(steps)
 
 

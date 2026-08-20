@@ -1,0 +1,33 @@
+include "../../linux.mereo"
+
+-- REJECTED on purpose: a RESOURCE connected to a port the body reads as a
+-- value.
+--
+-- `add` does arithmetic on `a`, so `a` needs a value. A resource has no value
+-- to give: its state is register cells, and its name is not an address the way
+-- a buffer's is. Reported inside the splice, this was
+--
+--   line 2: unknown name 'f' in expression 'f + 1'
+--
+-- which names the template's own line and calls `f` unknown when it is a
+-- perfectly good instance -- being unusable as a value is the point.
+--
+-- The rule is not "no instances". A LAYOUT instance's name IS the address of
+-- its bytes, which is how `linux.sockaddr_in` is handed to `connect`, and the
+-- three TLS programs do exactly that -- so only a resource is refused here.
+--
+--   refused:  'add' reads 'a', so it needs a VALUE
+
+add (a, result) goes
+  s is a + 1
+  result is s
+end
+
+program goes
+  n is 0
+
+  f is already linux.file (descriptor is 1)
+
+  add (a is f, result is n)
+
+end
