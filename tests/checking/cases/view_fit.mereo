@@ -1,0 +1,20 @@
+include "../../../linux.mereo"
+
+-- A view laid over a backing too small for it. `as` is a LENS: it converts
+-- nothing, copies nothing, and the instance IS those bytes -- so the fit is
+-- decidable from the layout's size and the backing's, both of which are
+-- declared.
+
+rec is
+  a is 8 bytes
+  b is 8 bytes
+end
+
+program goes
+  block is 4 bytes
+
+  h is block as rec                             -- MISTAKE
+
+  h.a is 1
+  ensure h.a == 1
+end

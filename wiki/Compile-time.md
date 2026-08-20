@@ -160,6 +160,7 @@ Two things are recorded, because *refused* alone is not the interesting half:
 | a port used as a receiver, given a number | refused | refused | refused, **inside the template** |
 | a template that reaches itself | **refused** | accepted | accepted |
 | a resource named after its scope | refused | refused | refused |
+| a view laid over a backing too small for it | **refused** | accepted | accepted |
 | a local nothing reads | refused | **warned** | refused |
 
 Every "refused" above is also *at the mistake* — the first diagnostic names the
@@ -167,9 +168,9 @@ line the mistake is on — except where the table says otherwise. A warning is
 recorded separately from a refusal, because it still compiles, and counting one
 as the other would flatter every language that only warns.
 
-Read it for where mereo is *not* alone. C++ agrees on five of seven, and the row
-it loses outright is the one where an unchecked subscript is documented
-behaviour. Three rows are worth stopping on:
+Read it for where mereo is *not* alone. C++ agrees on five of eight, and two of
+the three it loses are places where reinterpretation is the documented
+behaviour. Four rows are worth stopping on:
 
 - **the port row** separates the three only in *where* the error lands. Zig's
   `anytype` is unconstrained, so the mistake surfaces inside the instantiation
@@ -179,6 +180,12 @@ behaviour. Three rows are worth stopping on:
   Splicing has no frame to recurse in, so a template that reaches itself has no
   terminating expansion. Both others accept it, because a function call is a
   real call.
+- **the view row** is the one mereo wins alone. `as` is a lens — it converts
+  nothing and the instance IS those bytes — so the fit is decidable from two
+  declared sizes. C++'s `reinterpret_cast` does not check it, and neither does
+  Zig's `@ptrCast`. Zig's *value* cast does: `@bitCast` on the same pair reports
+  a size mismatch, so the gap is specific to the pointer form, which is the one
+  that corresponds to `as`.
 - **the scope row** is where mereo does real work the others do not have to.
   C++ and Zig scope a name to its block, so the mistake is a name error. mereo
   does not — a scalar or a buffer outlives its block — so it is caught from the
