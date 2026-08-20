@@ -18,6 +18,7 @@ ORDER = ["index",
          "citizen",
          "library",
          "implementation",
+         "compile-time",
          "performance",
          "limitations",
          "comparison",
@@ -430,7 +431,8 @@ SIDEBAR = [
     ("Syntax and semantics", ["syntax", "control-flow", "memory", "templates",
                               "resources", "errors", "citizen"]),
     ("Standard library",     ["library"]),
-    ("Implementation",       ["implementation", "performance", "limitations"]),
+    ("Implementation",       ["implementation", "compile-time", "performance",
+                              "limitations"]),
     ("Reference",            ["comparison", "examples", "syntax-summary"]),
 ]
 

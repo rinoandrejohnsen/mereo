@@ -1,0 +1,32 @@
+include "../../linux.mereo"
+
+-- REJECTED on purpose: a RESOURCE connected to a port the body INDEXES.
+--
+-- `peek` writes `[area + 0 : 1]`, so `area` needs an address. A resource has
+-- none of its own: its state is register cells, not a block. Reported from
+-- inside the splice this was
+--
+--   line 2: unknown name 'f' in expression '[f + 0 : 1]'
+--
+-- naming the template's own line, and calling `f` unknown when it is a
+-- perfectly good instance.
+--
+-- A LAYOUT instance is still accepted here, because its name IS the address of
+-- its bytes -- which is how `linux.sockaddr_in` is handed to `connect`, and
+-- what the three TLS programs do. Only a resource is refused.
+--
+--   refused:  'peek' indexes 'area', so it needs an ADDRESS
+
+peek (area, value) goes
+  v is [area + 0 : 1]
+  value is v
+end
+
+program goes
+  n is 0
+
+  f is already linux.file (descriptor is 1)
+
+  peek (area is f, value is n)
+
+end

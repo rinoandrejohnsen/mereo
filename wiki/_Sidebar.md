@@ -17,6 +17,7 @@
 
 **Implementation**
 - [Implementation](Implementation)
+- [What the compiler decides](Compile-time)
 - [Performance](Performance)
 - [Limitations](Limitations)
 

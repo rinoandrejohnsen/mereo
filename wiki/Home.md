@@ -63,6 +63,9 @@ How it is built and what it costs:
 
 - **[Implementation](Implementation)** — the transpiler, the tools, and the
   oracles every claim is checked against.
+- **[What the compiler decides](Compile-time)** — what freestanding,
+  whole-program and no-functions settle before the program runs, and how that
+  compares with Zig's `comptime` and C++'s `concept`.
 - **[Performance](Performance)** — measured against hand-written C.
 - **[Limitations](Limitations)** — what is deliberate, and what is unfinished.
 
