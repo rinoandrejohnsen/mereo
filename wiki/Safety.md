@@ -17,6 +17,17 @@ uninitialised reads, division by zero — are open because the run-time fix for
 each would spend exactly what the constraints bought. Their COMPILE-TIME halves
 are a different matter, and are unbuilt rather than declined.
 
+The standard the analysis is held to follows from the same rule, and it is a
+person rather than a theorem: **what a super-skilled C programmer can deduce
+from the program to be safe, and therefore leave unchecked, mereo should deduce
+too.** That is a better target than proving everything. It is bounded, it is
+reachable, and it is the one the performance goal implies — an expert's binary
+has no checks in it precisely because the expert did the deducing.
+
+It also settles what happens where the deduction fails. The expert writes a
+check. mereo may write one too, at the same cost, and still be at parity: the
+rule forbids checks the expert's C would not carry, not checks as such.
+
 The comparisons below are therefore a measurement, not a claim to be winning.
 
 ## Four ways to be safe

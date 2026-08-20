@@ -451,8 +451,22 @@ default, which is what the rest of this entry is about.
 in a loop cost what an unchecked one costs; the TLS bounds, which were a
 remotely-triggerable overflow rather than an analysis question; the contract
 upper bounds; and `tools/mereoprove.py`, which measures how far the analysis
-reaches without being part of the compiler -- **97.6%**, 3277 of 3359 accesses,
-with 82 left over and almost all of them in the TLS parser.
+reaches without being part of the compiler.
+
+**The metric is not the percentage.** By the rule above the target is a person,
+so the score that means anything is **the count of places a skilled C programmer
+beats the tool** -- currently **74**, and every one is in scope by definition,
+because the programs are correct and therefore the expert could deduce them. The
+percentage (3284 of 3359, 97.8%) flatters, since it counts accesses after
+splicing and a template used ten times contributes ten.
+
+Two of those places were closed by writing this down, which is the argument for
+the metric. A load's WIDTH bounds its value -- `b is [data + i]` makes `b` a
+byte, and `[digits + (b >> 4)]` is then obviously in range, which a reader sees
+without effort and the tool did not. And a resource's own state array is not a
+slot; it lives on the definition and splices to `<instance>_<field>`, so
+`[doc_block + 0 : 1]` -- a CONSTANT index of zero -- was unresolved. Both are now
+handled, and `text_bytes` and `own_state_bytes` are at 100%.
 
 On the last: it is **six** primitives, not the 35 said here earlier. 35 declare a
 LOWER bound, but only six promise a result bounded by an argument -- `read`,
@@ -494,11 +508,15 @@ descriptor, a position or zero, and have no argument to be bounded by.
 
 2. **The loop analysis**, in the `leave`-at-top shape first, then do-while with
    the initial value.
-3. **Then decide** what happens to what is left, which is the question that has
-   not moved: refuse it, or leave it unchecked by name. This is the row that
-   costs 81 accesses, four of which are CORRECT code in the TLS parser that the
-   program simply never states enough about -- `tlen >= 36` is true, known to
-   whoever wrote it, and written nowhere. Adding that one line proves all four.
+3. **What is left is no longer an open question.** It used to read "refuse it,
+   or leave it unchecked by name". The bar above answers it: where a skilled C
+   programmer cannot deduce the access safe, THE EXPERT WRITES A CHECK -- so
+   mereo may write one too, at the same cost, and still be at parity. Refusal
+   was never the right answer, because the expert does not refuse to write the
+   program. What is still to decide is only the spelling: an automatic check, or
+   a refusal that demands the programmer state the missing fact. `tlen >= 36` is
+   the worked example -- true, known to whoever wrote it, written nowhere, and
+   one line proves all four accesses.
 
 ### Measured on the way, and worth keeping
 

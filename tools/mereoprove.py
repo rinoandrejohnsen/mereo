@@ -78,6 +78,18 @@ def analyse(definitions, slots):
     bufs = {s["name"]: const(s["size"]) for s in slots if s["kind"] == "buffer"}
     inst = {s["name"]: s for s in slots if s["kind"] == "instance"}
 
+    # A resource's OWN state array is not a slot -- it lives on the definition
+    # and is spliced to `<instance>_<field>`. Its size is in the layout.
+    own = {}
+    for sl in slots:
+        if sl.get("kind") != "instance": continue
+        d = definitions.get(sl.get("definition")) or {}
+        lay = d.get("playout") or {}
+        for fld in (d.get("arrays") or ()):
+            ent = lay.get(fld)
+            if ent and len(ent) >= 2:
+                own[f"{sl['name']}_{fld}"] = ent[1]
+
     def psize(n):
         d = definitions.get(inst[n]["definition"]) if n in inst else None
         return d.get("psize") if d else None
@@ -310,9 +322,19 @@ def analyse(definitions, slots):
         if isinstance(op, ast.Eq)  and r[0] == r[1] is not None: return cnode.left.id, r
         return None, None
 
+    LOAD = re.compile(r"^\[[^\[\]]*?(?::\s*(\d+)\s*)?\]$")
+
     def iv(e, at, seen=()):
         e = str(e).strip()
         if not e: return UNK
+        # `b is [block + i : 1]` makes b a BYTE. A skilled reader uses that
+        # without thinking; the width is right there in the access.
+        m = LOAD.match(e)
+        if m:
+            w = int(m.group(1) or 1)          # no `: N` means one byte
+            return (0, (1 << (8 * w)) - 1) if w <= 4 else UNK
+        # a width/sign modifier is not part of the arithmetic
+        e = re.sub(r"\s+as\s+(unsigned|signed|big|little)\b", "", e).strip()
         k = const(e)
         if k is not None: return (k, k)
         sz = size_name(e)
@@ -414,6 +436,7 @@ def analyse(definitions, slots):
             try: return "literal", len(m.group(1).encode().decode("unicode_escape"))
             except Exception: return "literal", len(m.group(1))
         if e in bufs: return e, bufs[e]
+        if e in own:  return e, own[e]
         if e in inst: return e, psize(e)
         if "." in e:
             a, _, f = e.partition(".")
