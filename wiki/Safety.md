@@ -182,14 +182,14 @@ checked the way everything else here is: a loop bound wider than its backing, an
 affine index that overflows, a syscall capacity larger than its buffer, and an
 off-by-one in the branchless guard are each planted and each reported.
 
-The first honest version of this reached 81%, and every point from there to 97.6%
-came from removing an approximation rather than from adding information:
-tracking both ends of an interval instead of only the upper, so a subtraction is
-usable; evaluating each definition where it sits rather than at the use; killing
-what a dominating assignment overwrites; and case-splitting on mereo's branchless
-idiom — `lt is i < 15` then `idx is idx * lt` — which a plain interval domain
-gets wrong, because it loses the correlation between `i` and `lt` and concludes
-the index can reach 16.
+The first honest version of this reached 81%, and every point from there to
+97.6% came from removing an approximation rather than from adding information:
+tracking both ends of an interval instead of only the upper, so a subtraction
+is usable; evaluating each definition where it sits rather than at the use;
+killing what a dominating assignment overwrites; and case-splitting on mereo's
+branchless idiom — `lt is i < 15` then `idx is idx * lt` — which a plain
+interval domain gets wrong, because it loses the correlation between `i` and
+`lt` and concludes the index can reach 16.
 
 That last one is worth dwelling on, because it briefly reported 406 accesses out
 of range. Every one was a false alarm. An analysis that cries wolf is worse than
@@ -199,8 +199,8 @@ unproved — never as a bug — unless the index is a constant.
 **The 2.4% that remains is almost entirely the TLS parser.** Some of it is still
 the analysis: there is no fixpoint across a template's ports. But some of it is
 not, and that is the more interesting half — the program does not state enough.
-The transcript index needs `tlen >= 36` for its *lower* bound, which is true, and
-which the programmer knows, and which is written nowhere:
+The transcript index needs `tlen >= 36` for its *lower* bound, which is true,
+and which the programmer knows, and which is written nowhere:
 
 ```ada
   ensure tlen + inner_len <= tr.size     -- stated
@@ -208,9 +208,9 @@ which the programmer knows, and which is written nowhere:
   a is [tr + foff : 1]
 ```
 
-Adding that one line proves all four of those accesses. Without it, none of them.
-That is the boundary this page has been looking for: not what the compiler cannot
-compute, but what the program never said.
+Adding that one line proves all four of those accesses. Without it, none of
+them. That is the boundary this page has been looking for: not what the
+compiler cannot compute, but what the program never said.
 
 ## What that would buy, with performance in the background
 
@@ -226,12 +226,72 @@ ones nobody has proved, and that report is 82 accesses out of 3359,
 concentrated almost entirely in the one program that parses hostile input. The
 value is not a faster binary. It is a list short enough to read.
 
-It also buys checks the compiler does not currently make. `read (buffer is small,
-capacity is 4096)` where `small is 16 bytes` is accepted today, and emits a
-syscall asking the kernel to write 4096 bytes into a 16-byte stack buffer — while
-the *view* form of the same mistake, `small as big`, has always been refused by
-the fit check. Both are two literals compared. No program in the corpus does it,
-so refusing it would cost nothing.
+It also buys checks the compiler does not currently make. `read (buffer is
+small, capacity is 4096)` where `small is 16 bytes` is accepted today, and
+emits a syscall asking the kernel to write 4096 bytes into a 16-byte stack
+buffer — while the *view* form of the same mistake, `small as big`, has always
+been refused by the fit check. Both are two literals compared. No program in
+the corpus does it, so refusing it would cost nothing.
+
+## Why this is rare, and why it is cheap here
+
+The obvious question about the previous section is why, if the information is
+right there, other languages have not done it. They have — repeatedly, and
+better.
+
+| | |
+| --- | --- |
+| **Ada SPARK** | this, plus a prover to discharge it — absence of run-time errors since the 1980s |
+| **Astrée** | an abstract interpreter used to prove absence of run-time errors in Airbus flight-control C |
+| **Frama-C** | value analysis over C by abstract interpretation, with contracts in ACSL |
+| **Dafny, Why3, F\*, ATS** | languages where carrying the proof is the entire point |
+| **GCC and LLVM** | value-range propagation and scalar evolution, in every optimiser in use |
+
+The last row is the pointed one. **GCC already runs a version of this analysis
+on mereo's output.** That is why the bounds checks vanish, and why removing one
+by hand produced a byte-identical binary. Nothing above was a discovery; it was
+a re-derivation, less well done, of something the backend does as a matter of
+course.
+
+So the real question is narrower: why is this not a hard *gate* — a compiler
+that refuses what it cannot prove — in general-purpose languages? Four reasons,
+and mereo evades three of them by accident.
+
+**Separate compilation.** The decisive one. Whole-program analysis cannot
+coexist with compiling one translation unit at a time and linking against
+libraries whose source is absent. Every mainstream systems language treats that
+as non-negotiable. mereo gave it up for unrelated reasons.
+
+**False positives.** Rice's theorem guarantees that any such gate rejects some
+correct programs. The prototype here demonstrated it: one missing correlation
+between two variables produced 406 false alarms out of 3359 accesses. With a
+heap, aliasing, dynamic dispatch and function pointers in the language, that
+rate grows rather than shrinks. Astrée's success rests on a deliberately
+restricted target — no dynamic allocation, no recursion — which is mereo's
+shape, arrived at independently.
+
+**Annotation burden.** SPARK works, and the price is contracts written
+everywhere. That price is paid where certification demands it, in avionics and
+rail, and almost nowhere else.
+
+**Economics.** Rust's answer is that proving is unnecessary: check at run time,
+let the optimiser delete what it can prove, and memory safety arrives with no
+false positives and no annotations. For general-purpose code that is the better
+trade. Proving wins only where the check cannot be afforded or a certificate is
+required.
+
+mereo is therefore not unusual for having the idea. It is unusual in having
+**already paid the bill for other reasons** — whole-program, no heap, no
+recursion and no separate compilation were all chosen to make the release tower
+and the freestanding binary work. The analysis is cheap here because the
+expensive part was settled years earlier, for a different purpose.
+
+Two cautions belong with the number. It covers 3359 accesses in a corpus written
+by the same hand as the tool, checked against four deliberately planted
+violations — not the standard of a tool validated against industrial code it has
+never seen. And moving it into `mereoc` would be mostly a *diagnostic* change
+rather than a capability one. GCC already proves these. The difference is that
+mereo could refuse, where an optimiser can only quietly succeed.
 
 ## The bug that settles it
 
