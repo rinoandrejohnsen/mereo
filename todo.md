@@ -485,8 +485,8 @@ the metric. A load's WIDTH bounds its value -- `b is [data + i]` makes `b` a
 byte, and `[digits + (b >> 4)]` is then obviously in range, which a reader sees
 without effort and the tool did not. And a resource's own state array is not a
 slot; it lives on the definition and splices to `<instance>_<field>`, so
-`[doc_block + 0 : 1]` -- a CONSTANT index of zero -- was unresolved. Both are now
-handled, and `text_bytes` and `own_state_bytes` are at 100%.
+`[doc_block + 0 : 1]` -- a CONSTANT index of zero -- was unresolved. Both are
+now handled, and `text_bytes` and `own_state_bytes` are at 100%.
 
 On the last: it is **six** primitives, not the 35 said here earlier. 35 declare a
 LOWER bound, but only six promise a result bounded by an argument -- `read`,
@@ -518,13 +518,42 @@ descriptor, a position or zero, and have no argument to be bounded by.
    An analysis that cries wolf is worse than one that says nothing, so anything
    merely unproven is reported as unproven, never as a mistake.
 
-   Same shape, same zero cost, and worth doing alongside: `ensure capacity <=
-   buffer.size` as a contract clause. `read (buffer is small, capacity is 4096)`
-   where `small is 16 bytes` is accepted today and asks the kernel to write 4096
-   bytes into a 16-byte stack frame, while the view form of the identical
-   mistake has always been refused by the fit check. Zero sites in the corpus do
-   it. It needs the contract grammar to accept `PORT.size` on the right-hand
-   side, which it does not yet -- it takes `ensure PORT CMP VALUE`.
+   **The does-it-fit family.** Three places ask the same question -- does this
+   thing fit in that backing -- from two sizes both known at compile time.
+   mereo answers one of them:
+
+   | | today |
+   | --- | --- |
+   | `small as wide`, a view over a backing too small | **refused**: "backing 'small' is 16 bytes, too small to view 4096-byte 'wide' at offset 0" |
+   | `read (buffer is small, capacity is 4096)` | accepted -- asks the kernel to write 4096 bytes into a 16-byte stack frame |
+   | `already span (data is line, length is 999)` over a 5-byte `line` | accepted -- every later `[v.data + i]` inherits the lie |
+
+   Zero sites in the corpus violate either of the open two, so refusing them
+   breaks nothing, and the span one unblocks 7 of the 44 below: the analysis
+   cannot assume `length <= data.size` while nothing enforces it.
+
+   Both want one and the same thing, which is why they are filed together:
+   **`ensure` must take `PORT.size` on its right.** The grammar allows
+   `ensure PORT CMP VALUE` and a `.size` member is not a VALUE. With it, the
+   syscall case is a clause on the primitive:
+
+       read is assembly "syscall"
+         ...
+         ensure capacity <= buffer.size
+
+   and the span case is the same clause on the resource, checked where it is
+   adopted rather than where it is declared:
+
+       span is
+         data is 8 bytes
+         length is 8 bytes
+         ensure length <= data.size
+
+   That second form is new -- a resource stating an invariant over its own
+   fields, checked at adoption when both sides are literals. It is the same
+   keyword doing the same job one level out, which is the cheaper move than
+   inventing a spelling for it. Note `size of X` does NOT exist; the member is
+   `X.size`.
 
 2. **The loop analysis**, in the `leave`-at-top shape first, then do-while with
    the initial value.
