@@ -1,0 +1,10 @@
+include "../../../linux.mereo"
+
+-- A local nothing reads. mereo refuses it because a name that is written and
+-- never read is either dead or a typo, and the two are indistinguishable.
+
+program goes
+  n is 0
+  spare is 7                                    -- MISTAKE
+  ensure n == 0
+end

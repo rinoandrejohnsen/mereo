@@ -7,8 +7,8 @@
 #
 # Two things are recorded, because "refused" alone is not the interesting part:
 #
-#   REFUSED   does the compiler reject the program at all?
-#   AT SITE   does the first error point at the line the mistake is ON?
+#   OUTCOME   refused, warned (it still compiles), or accepted silently
+#   AT SITE   does the first diagnostic point at the line the mistake is ON?
 #
 # The second is the whole argument about `concept` and about deriving a port's
 # requirement. A diagnostic that names a template's own line, two levels from
@@ -37,9 +37,14 @@ run_mereo () {
     echo "refused $(sed -n 's/.*[Ll]ine \([0-9]\+\):.*/\1/p' "$OUT/e" | head -1)"
 }
 run_cpp () {
+    # three outcomes, not two: a WARNING still compiles, and treating it as a
+    # refusal would flatter every language that only warns
     if g++ -std=c++20 -O2 -Wall -Wextra -fsyntax-only "$1" >/dev/null 2>"$OUT/e"; then
-        echo "accepted"; return; fi
-    echo "refused $(grep -oE ':[0-9]+:[0-9]+: (error|warning)' "$OUT/e" | head -1 | cut -d: -f2)"
+        local w; w=$(grep -oE ':[0-9]+:[0-9]+: warning' "$OUT/e" | head -1 | cut -d: -f2)
+        [ -n "$w" ] && echo "warned $w" || echo "accepted"
+        return
+    fi
+    echo "refused $(grep -oE ':[0-9]+:[0-9]+: error' "$OUT/e" | head -1 | cut -d: -f2)"
 }
 run_zig () {
     [ "$have_zig" = 1 ] || { echo "skipped"; return; }
@@ -51,6 +56,9 @@ verdict () {   # verdict RESULT EXPECTED_LINE
     case "$1" in
         accepted) printf 'accepted' ;;
         skipped)  printf 'skipped' ;;
+        warned*)  local ln=${1#warned }
+                  [ "$ln" = "$2" ] && printf 'warned, at the mistake' \
+                                   || printf 'warned, at line %s' "${ln:-?}" ;;
         *) local ln=${1#refused }
            if [ "$ln" = "$2" ]; then printf 'refused, at the mistake'
            else printf 'refused, at line %s' "${ln:-?}"; fi ;;

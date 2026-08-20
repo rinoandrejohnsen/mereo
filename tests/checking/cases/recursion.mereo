@@ -1,0 +1,22 @@
+include "../../../linux.mereo"
+
+-- The row mereo LOSES, and it is here for that reason. Reuse is splicing, so
+-- there is no frame to recurse in: a template that reaches itself has no
+-- terminating expansion. C++ and Zig both accept this, because a function call
+-- is a real call with a real frame.
+--
+-- The cost is stated in Limitations rather than hidden: no recursion, and so no
+-- recursive descent, no tree walk without an explicit stack.
+--
+-- The marker sits on the DECLARATION, not on the call inside it: the template
+-- as a whole is what cannot terminate, and a step inside a spliced body carries
+-- the splice's own line numbers rather than the file's.
+
+down (n) goes                                   -- MISTAKE
+  down (n is n)
+end
+
+program goes
+  n is 0
+  down (n is n)
+end

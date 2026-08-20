@@ -1,0 +1,10 @@
+include "../../../linux.mereo"
+
+-- A write to a read-only buffer. `is constant "..."` puts the bytes in .rodata
+-- with no stack copy, so the store would fault at run time.
+
+program goes
+  msg is constant "hi"
+  [msg + 0 : 1] is 65                           -- MISTAKE
+  ensure [msg + 1 : 1] == 105
+end

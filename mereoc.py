@@ -5341,9 +5341,21 @@ def expand_procedures(definitions, slots, steps, prims):
         steps, changed = one_pass(steps)
         if not changed:
             return steps
-    fail("procedure expansion did not terminate -- a procedure method calls "
-         "itself (directly or in a cycle); mereo is function-free, so a "
-         "procedure cannot recurse")
+    # Still expanding after the cap: something calls itself, directly or round a
+    # cycle. Name it and the call, rather than reporting only that a limit was
+    # reached -- the limit is an implementation detail and the cycle is not.
+    culprit = ""
+    for st in _walk_steps(steps):
+        meth = procedure_call(st, definitions, slots)
+        if meth is not None:
+            # the METHOD's line, not the step's: a step inside a spliced body
+            # is numbered in the splice's own re-parse, not in the file
+            culprit = (f"line {meth['line']}: `{meth['name']}` is still being "
+                       "spliced after 64 passes, so it reaches itself: ")
+            break
+    fail(culprit + "a procedure method calls itself (directly or in a cycle); "
+         "mereo is function-free, so a procedure cannot recurse -- there is no "
+         "frame to recurse in")
 
 
 def resolve_lenses(definitions, slots):

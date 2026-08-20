@@ -154,26 +154,39 @@ Two things are recorded, because *refused* alone is not the interesting half:
 
 | case | mereo | C++ (concepts) | Zig |
 | --- | --- | --- | --- |
-| a constant index past a known array | refused, at the mistake | accepted | refused, at the mistake |
-| a port used as a receiver, given a number | refused, at the mistake | refused, at the mistake | refused, **inside the template** |
-| an out-port given a literal | refused, at the mistake | refused, at the mistake | refused, at the mistake |
-| a resource named after its scope | refused, at the mistake | refused, at the mistake | refused, at the mistake |
+| a constant index past a known array | refused | **accepted** | refused |
+| a write to a read-only buffer | refused | refused | refused |
+| an out-port given a literal | refused | refused | refused |
+| a port used as a receiver, given a number | refused | refused | refused, **inside the template** |
+| a template that reaches itself | **refused** | accepted | accepted |
+| a resource named after its scope | refused | refused | refused |
+| a local nothing reads | refused | **warned** | refused |
 
-Read it for where each language is *not* alone. C++ and mereo agree on three of
-four, and the row C++ loses is the one where an unchecked subscript is the
-documented behaviour. Zig decides the constant index and mereo does too. The
-row that separates them is the second, and only in *where* the error lands:
-`anytype` is unconstrained, so the mistake surfaces inside the instantiation
-with a reference trace back to the call — which is what C++ did before concepts,
-and what mereo did before a port's requirement was derived.
+Every "refused" above is also *at the mistake* — the first diagnostic names the
+line the mistake is on — except where the table says otherwise. A warning is
+recorded separately from a refusal, because it still compiles, and counting one
+as the other would flatter every language that only warns.
 
-The last row is the one where mereo is doing real work for a reason the others
-do not have: C++ and Zig scope a name to its block, so the mistake is a name
-error. mereo does not — a scalar or a buffer outlives its block — so it is
-caught by liveness instead, from the set of resources still held.
+Read it for where mereo is *not* alone. C++ agrees on five of seven, and the row
+it loses outright is the one where an unchecked subscript is documented
+behaviour. Three rows are worth stopping on:
 
-Disabling any of the three checks moves mereo's column, which is how the suite
-is kept honest.
+- **the port row** separates the three only in *where* the error lands. Zig's
+  `anytype` is unconstrained, so the mistake surfaces inside the instantiation
+  with a reference trace back to the call — which is what C++ did before
+  concepts, and what mereo did before a port's requirement was derived.
+- **the recursion row is one mereo loses**, and it is here for that reason.
+  Splicing has no frame to recurse in, so a template that reaches itself has no
+  terminating expansion. Both others accept it, because a function call is a
+  real call.
+- **the scope row** is where mereo does real work the others do not have to.
+  C++ and Zig scope a name to its block, so the mistake is a name error. mereo
+  does not — a scalar or a buffer outlives its block — so it is caught from the
+  set of resources still held.
+
+Disabling any of mereo's checks moves its column, which is how the suite is kept
+honest: the port row falls back to *refused, at line 2*, which is exactly the
+diagnostic the derivation replaced.
 
 ## What none of this is
 
