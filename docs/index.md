@@ -68,9 +68,9 @@ How it is built and what it costs:
 - **[What the compiler decides](compile-time.md)** — what freestanding,
   whole-program and no-functions settle before the program runs, and how that
   compares with Zig's `comptime` and C++'s `concept`.
-- **[Safety](safety.md)** — what is removed, what is refused, what is still
-  unchecked, and how that compares with Rust, SPARK and the C++ profiles.
 - **[Performance](performance.md)** — measured against hand-written C.
+- **[Safety](safety.md)** — the barrier, what is removed, what is refused, what
+  is still unchecked, and how far the analysis reaches.
 - **[Limitations](limitations.md)** — what is deliberate, and what is unfinished.
 
 Reference:

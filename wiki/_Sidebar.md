@@ -18,8 +18,8 @@
 **Implementation**
 - [Implementation](Implementation)
 - [What the compiler decides](Compile-time)
-- [Safety, and what it costs](Safety)
 - [Performance](Performance)
+- [Safety](Safety)
 - [Limitations](Limitations)
 
 **Reference**

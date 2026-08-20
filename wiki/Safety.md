@@ -1,225 +1,94 @@
 ## The barrier
 
-This page compares mereo's safety with other languages, so it should say at the
-top what the project is actually trying to do — because it is not that.
-
 > **The barrier is performance parity with a hand-written, optimised,
 > Linux-correct C program. No safety feature is accepted that costs more than
 > that.**
 
-Competing on safety was never a design goal. What follows from the barrier is
-not less safety but a redirection of it: compile-time work is free at run time,
-so everything settleable before the program runs is worth taking, and everything
-that has to be paid for while it runs is not.
+Competing on safety is not a design goal. The barrier redirects safety rather
+than reducing it: compile-time work is free at run time, so everything
+settleable before the program runs is worth taking, and everything paid for
+while it runs is not.
 
 | aimed for | not aimed for |
 | --- | --- |
-| whatever static analysis can decide, since it is free | a proof of memory safety |
+| whatever static analysis decides, since it is free | a proof of memory safety |
 | refusing what is provably wrong at compile time | refusing what merely cannot be proved |
 | deducing what an expert C programmer deduces | discharging every obligation, as SPARK does |
-| a run-time check where an expert would also keep one | a run-time check an expert's C would not carry |
-| being told which accesses nobody has proved | a guarantee that the rest are correct |
+| a run-time check where an expert would keep one | a check an expert's C would not carry |
+| knowing which accesses nobody has proved | a guarantee that the rest are correct |
 
 **The standard is a person, not a theorem.** What a super-skilled C programmer
-can deduce from the program to be safe, and therefore leave unchecked, mereo
-should deduce too. That is a better target than proving everything: it is
-bounded, it is reachable, and it is the one the barrier implies — an expert's
-binary has no checks in it precisely because the expert did the deducing.
+deduces from the program to be safe, and therefore leaves unchecked, mereo aims
+to deduce too. That target is bounded and reachable, and it is the one the
+barrier implies: an expert's binary carries no checks because the expert did the
+deducing. Where the deduction fails the expert writes a check — so mereo may
+write one too, at the same cost, and still be at parity.
 
-It also settles what happens where the deduction fails. **The expert writes a
-check.** So mereo may write one too, at the same cost, and still be at parity.
-The barrier forbids checks the expert's C would not carry — not checks as such.
-
-That is why the rest of the page reads as it does. The long list of faults mereo
-cannot have is a by-product of constraints adopted for other reasons; the checks
-it performs are the ones that cost nothing; and the gaps left open — overflow,
-uninitialised reads, division by zero — are open because the run-time fix for
-each would spend exactly what the constraints bought. Their COMPILE-TIME halves
-are a different matter, and are unbuilt rather than declined.
-
-The comparisons below are therefore a measurement, not a claim to be winning.
-Where another language is ahead, it is ahead; that costs mereo nothing it was
-trying to keep.
-
-## Four ways to be safe
-
-There are four ways a language can stop a program from corrupting memory, and
-they are usually discussed as if they were competing answers to one question.
-They are not. They are answers to different questions, bought at very different
-prices.
-
-| strategy | the question it answers | who |
-| --- | --- | --- |
-| **Prove it** | can a prover discharge every run-time error as impossible? | SPARK |
-| **Type it** | can the type system make the mistake unrepresentable? | Rust |
-| **Analyse it** | can a checker reject the bad programs in a language that permits them? | the C++ profiles proposal |
-| **Remove it** | can the construct that creates the fault simply not exist? | mereo |
-
-mereo is the fourth, and that is worth stating plainly because it is the one
-most easily mistaken for the third. mereo does very little static analysis. What
-it has instead is a shape in which whole families of fault have nowhere to live
-— and, in the places where analysis is what is actually required, it is
-currently the weakest of the four.
-
-This page is that comparison, with the gaps measured rather than described.
+Everything below is a measurement, not a claim to be winning.
 
 ## What is removed, and therefore never checked
 
-Three decisions do nearly all of the work, and none of them is a safety feature.
-Each was made for another reason and pays a safety dividend.
+Three decisions do most of the work. None is a safety feature; each pays a
+safety dividend.
 
-**There is no heap.** No allocator, no `free`, no pointer that outlives what it
-points to. Use-after-free, double-free and allocator corruption are not caught
-here; they are unrepresentable. This is also why mereo needs no borrow checker:
-the borrow checker exists to police lifetimes among values that can outlive
-their creator, and nothing here can.
+**No heap.** No allocator, no `free`, no pointer outliving what it points to.
+Use-after-free, double-free and allocator corruption are unrepresentable rather
+than caught. This is also why no borrow checker is needed: it exists to police
+lifetimes among values that outlive their creator, and nothing here can.
 
-**There are no functions.** Reuse is splicing, so there is no call, no frame, no
-return. Every buffer in the program is declared once in the single frame that
-`_start` opens, which means **every address in a mereo program is valid for the
-program's entire life**. A dangling stack pointer has no mechanism. The price is
-stack space — a template spliced ten times occupies ten slots — and it is a real
-price, paid to make a whole family impossible.
+**No functions.** Reuse is splicing, so there is no call, no frame, no return.
+Every buffer is declared in the single frame `_start` opens, so **every address
+is valid for the program's whole life** and a dangling stack pointer has no
+mechanism. The price is stack space: a template spliced ten times occupies ten
+slots.
 
-**There are no threads.** Data races are absent the way they are absent from a
-single-threaded C program: vacuously, and only until threads arrive.
+**No threads.** Data races are absent as they are from a single-threaded C
+program — vacuously, and only until threads arrive.
 
-To those, add the one thing mereo does derive rather than remove: the release
-tower. Cleanup is read off the scope, so a resource cannot be released twice and
-cannot be forgotten. That is checked against C++ destructors across 53 paired
-scenarios in `tests/scopes`, and it is the one place mereo is straightforwardly
-ahead of Rust — Rust permits conditional moves and so needs a hidden boolean to
-record whether a value still needs dropping, and Rust treats leaks as safe.
+To those add the one thing derived rather than removed: cleanup is read off the
+scope, so a resource cannot be released twice or forgotten. `tests/scopes`
+checks that against C++ destructors across 53 paired scenarios.
 
 ## What is refused
 
-Beyond removal, mereo refuses ten specific mistakes. These are checks, and
-`tests/checking` writes each one three times — mereo, C++ with the requirement
-as a `concept`, Zig — and compiles all three. The full table is in
-[What the compiler decides](Compile-time); the safety-relevant rows are:
+`tests/checking` writes each mistake three times — mereo, C++ with the
+requirement as a `concept`, Zig — and compiles all three.
 
 | the mistake | mereo | C++ | Zig |
 | --- | --- | --- | --- |
 | a constant index past a known array | refused | accepted | refused |
-| a view laid over a backing too small for it | refused | accepted | accepted |
+| a view over a backing too small for it | refused | accepted | accepted |
 | a two-step acquisition with no ownership boundary | refused | accepted (leaks) | accepted (leaks) |
 | a fallible call whose failure is ignored | refused | warned | refused |
 | a resource named after the scope that released it | refused | refused | refused |
 | a write to a read-only buffer | refused | refused | refused |
 
-The pattern is that mereo decides things that are decidable from the text and
-declines to guess at anything else. A view's fit is two declared sizes compared;
-a constant index is one number against another. None of it requires a prover.
+The pattern: mereo decides what is decidable from the text and declines to guess
+at the rest. A view's fit is two declared sizes compared: `backing 'small' is
+16 bytes, too small to view 4096-byte 'wide' at offset 0`. None of it needs a
+prover.
 
 ## What is not checked
 
-This is the half that matters for an honest comparison, and all three of these
-were confirmed by compiling the program, not by reading the compiler.
+| | |
+| --- | --- |
+| run-time bounds | `[buffer + i : 1]` is as unchecked as C. `.at` checks, and costs 10% |
+| integer overflow | a scalar is a C `long` and the build passes no `-fwrapv` |
+| division by zero | accepted, even for a literal zero divisor |
+| uninitialised reads | a layout is zero-filled; `raw is 8 bytes` is not |
+| a syscall capacity larger than its buffer | accepted |
+| a span's `length` larger than its backing | accepted |
 
-**Run-time bounds are unchecked by default.** `[buffer + i : 1]` is exactly as
-unchecked as C. There is a checked form, `.at`, and the corpus uses it **9
-times against 485 unchecked accesses**. The default is the unsafe one, and the
-default is what gets written.
+Each gap is open because its run-time fix spends what the barrier protects. The
+**compile-time** half of each is admissible, and unbuilt rather than declined —
+the last three are decidable from two literals. `-fwrapv` is admissible on
+measurement: 377248 bytes against 379168 across 89 binaries, 75.4 ms against
+77.4 ms over 800M byte-loads, identically vectorised.
 
-**Uninitialised reads are accepted.** A layout is zero-filled — `data is rec`
-emits `char data[8] = {0};` — but a raw buffer is not: `raw is 8 bytes` emits
-`char raw[8];`. Reading it before writing it compiles without complaint.
+## How far the analysis reaches
 
-**Signed overflow is undefined.** A scalar is a C `long`, the build does not
-pass `-fwrapv`, and so `n is n + 1` at `LONG_MAX` is undefined behaviour that
-the optimiser is entitled to assume cannot happen. Defined wrapping is not a
-*check* — but it is free, which by the rule above is the only question that
-decides whether it is admissible. Measured across the corpus and on a hot loop:
-
-| | 89 binaries | 800M byte-loads | vector instructions |
-| --- | ---: | ---: | ---: |
-| baseline | 379168 bytes | 77.4 ms | 42 |
-| `-fwrapv` | 377248 bytes | 75.4 ms | 42 |
-
-Smaller, no slower, identically vectorised. The expectation was that it would
-cost — `-fno-wrapv` is what lets an optimiser assume an induction variable never
-wraps — and it does not.
-
-Rust checks all three: bounds at run time, initialisation in the type system,
-overflow with a panic in debug and defined wrapping in release. SPARK proves all
-three absent before the program runs. mereo does neither, today.
-
-## Stroustrup's argument, and what mereo is evidence for
-
-The argument — that C++ can reach safety through profiles and static analysis
-rather than by adopting a borrow checker — is usually met with the objection
-that analysing C++ is hard *because* C++ permits unrestricted aliasing, pointer
-arithmetic and unbounded lifetimes. mereo is a data point on that dispute, but
-not the one it first appears to be.
-
-Analysis here is easy. Whole-program, freestanding, no functions, no heap — the
-preconditions really are as good as they can get, and the consequence is that
-the compiler settles lifetimes, layout, release order and connections without
-anything resembling a solver.
-
-But that ease was **bought, not discovered**. It is the direct consequence of
-restrictions far heavier than the ones Stroustrup is arguing against. Rust asks
-you to give up aliasing with mutation. mereo asks you to give up the heap,
-functions, recursion, threads, generics and data structures. If the choice is
-framed as restriction versus analysis, mereo does not vindicate analysis — it
-shows that the analysis was downstream of the restriction all along.
-
-So the fair reading is the uncomfortable one. Measured as *theorem proved per
-unit of expressiveness surrendered*, the borrow checker is a bargain and mereo
-is not. What mereo buys with its much larger payment is a different good: a
-language with no runtime, no ABI and no allocator, in which the safety is a side
-effect rather than the goal.
-
-## SPARK, and what mereo would have to become
-
-SPARK is the language this project is actually reaching toward, and it is
-comfortably ahead. GNATprove discharges verification conditions to prove
-**absence of run-time errors** — no buffer overflow, no overflow, no division by
-zero, no uninitialised read — which is precisely the list mereo does not cover.
-
-The resemblance is close enough to be misleading. mereo has `ensure`, 118 of
-them in the corpus, and they look like SPARK contracts:
-
-```ada
-  read (buffer is block, capacity is 4096, count is n)
-  ensure n as signed <= capacity
-```
-
-They are not contracts in SPARK's sense. A SPARK precondition is a proof
-obligation discharged before the program runs; a mereo `ensure` is a run-time
-comparison that the optimiser may or may not notice it can fold. The difference
-is between *knowing* and *checking and hoping the optimiser agrees*.
-
-The gap between those is the open work. Every bounds check in the corpus is
-already eliminated by GCC — only the deliberately out-of-range case keeps one —
-so the mechanism is working; what is missing is the compiler being able to
-*state* that it worked. Of the accesses in the corpus, roughly 98% are induction
-variables whose bound chains back to a constant, and are provable in principle.
-The remaining 2% are data-dependent, and every one of them is in the TLS parser.
-
-The analysis lands exactly on the security-critical code. That is either
-encouraging or ominous, and the next section decides which.
-
-## How much of the expert's proof is recoverable?
-
-The argument for trying is this. A C programmer writing optimal, Linux-correct
-code omits the bounds check because they *hold a proof* — they know the index
-cannot run past the buffer. That proof is real; it is simply never written down.
-mereo sees more of the program than GCC does, so it should be able to
-reconstruct it. Here is `span_scan.c` from `tests/versus`, doing exactly that:
-
-```c
-count = _sys3(SYS_read, input, (long)block, 64);   /* block is 64 bytes */
-if (!(count >= 0)) goto err_read;
-long n = _scan(block, count, 58);                  /* no check on count */
-```
-
-The expert relied on `count <= 64` — a promise of Linux, not of the C. That fact
-now exists in mereo, written on the `read` primitive as
-`ensure count as signed <= capacity`.
-
-`tools/mereoprove.py` measures how far this reaches. It runs on the post-splice
-IR and classifies every access. Over the corpus — 86 programs, 3359 accesses:
+`tools/mereoprove.py` classifies every access in the post-splice IR. It is a
+measurement, not part of the compiler.
 
 | | | |
 | --- | ---: | --- |
@@ -229,40 +98,26 @@ IR and classifies every access. Over the corpus — 86 programs, 3359 accesses:
 | opaque-base | 1 | 0.0% |
 | out of range | 1 | 0.0% |
 
-Read the last row first. The single access that does *not* fit is
-`access_past_end.mereo`, the planted violation that mereo already refuses — the
-analysis finds it independently and flags nothing else in 3359. Six further
-violations planted outside the corpus are each reported. Its soundness is
-checked the way everything else here is: a loop bound wider than its backing, an
-affine index that overflows, a syscall capacity larger than its buffer, and an
-off-by-one in the branchless guard are each planted and each reported.
+The one out-of-range access is `access_past_end.mereo`, which mereoc already
+refuses. Six violations planted outside the corpus — a loop wider than its
+backing, an affine index that overflows, a syscall capacity larger than its
+buffer, an off-by-one in a branchless guard, and two with live loops and
+initialised buffers — are each reported.
 
-The first honest version of this reached 81%, and every point from there to
-98.7% came from removing an approximation rather than from adding information:
-tracking both ends of an interval instead of only the upper, so a subtraction
-is usable; evaluating each definition where it sits rather than at the use;
-killing what a dominating assignment overwrites; and case-splitting on mereo's
-branchless idiom — `lt is i < 15` then `idx is idx * lt` — which a plain
-interval domain gets wrong, because it loses the correlation between `i` and
-`lt` and concludes the index can reach 16.
+Nothing is reported wrong unless it is **proven** wrong. A non-relational
+interval domain loses the correlation between two variables and will call a safe
+access out of range; anything merely unproved is reported as unproved.
 
-That last one is worth dwelling on, because it briefly reported 406 accesses out
-of range. Every one was a false alarm. An analysis that cries wolf is worse than
-one that says nothing, so the rule is that anything not *proved* is reported as
-unproved — never as a bug — unless the index is a constant.
-
-**All 44 that remain are in the TLS parser**, and they sort by cause rather
-than by difficulty — which is what holding the tool to a person rather than to
-a percentage is for:
+**The 44 remaining are all in the TLS parser**, and sort by cause:
 
 | cause | | |
 | --- | ---: | --- |
-| the program never states the fact | 20 | `tlen >= 36` is true, known to whoever wrote it, written nowhere |
-| an invariant the compiler could enforce and does not | 7 | a span's `length` is never checked against its backing |
+| the program never states the fact | 20 | `tlen >= 36` is true and written nowhere |
+| an invariant the compiler could enforce | 7 | a span's `length` against its backing |
 | genuinely dependent on hostile input | 16 | an index parsed out of a ServerHello |
 | an unresolved base | 1 | |
 
-The first group is one line per site, and the line belongs in the program:
+The first is one line per site, in the program:
 
 ```ada
   ensure tlen + inner_len <= tr.size     -- stated
@@ -270,169 +125,54 @@ The first group is one line per site, and the line belongs in the program:
   a is [tr + foff : 1]
 ```
 
-Adding it proves all four of those accesses; without it, none. The second group
-is a compiler fix. **The third is the honest floor** — an index taken off the
-wire cannot be bounded by any analysis, and it is precisely where a skilled C
-programmer keeps a run-time check. So mereo may keep one too, at the same cost,
-and still be at parity.
+The second is a compiler fix. **The third is the floor** — an index off the wire
+is bounded by no analysis, and is exactly where an expert keeps a run-time
+check.
 
-## What that would buy, with performance in the background
+The number to read is 44, not 98.7%. The percentage counts accesses after
+splicing, so a template used ten times contributes ten; and the corpus and the
+tool share an author.
 
-Nothing, at run time. This is the result worth being clear about, because the
-intuition runs the other way. Every bounds check in the corpus is *already*
-eliminated — GCC proves them redundant and deletes the check and its error block
-together, which [Performance](Performance) measures against C that never had
-one. Proving them a second time, earlier, removes no instruction that is still
-there.
+## What proving them early would buy
 
-What it buys is the **list**. A compiler that classifies accesses can report the
-ones nobody has proved, and that report is 44 accesses out of 3359 — every one
-of them in the program that parses hostile input. The value is not a faster
-binary. It is a list short enough to read in a minute.
+Nothing at run time. Every bounds check in the corpus is already eliminated —
+GCC proves it redundant and removes the check and its error block together,
+matching C that never had one, which [Performance](Performance) measures.
 
-It also buys checks the compiler does not currently make. `read (buffer is
-small, capacity is 4096)` where `small is 16 bytes` is accepted today, and
-emits a syscall asking the kernel to write 4096 bytes into a 16-byte stack
-buffer — while the *view* form of the same mistake, `small as big`, has always
-been refused by the fit check. Both are two literals compared. No program in
-the corpus does it, so refusing it would cost nothing.
+What it buys is the **list**: 44 accesses out of 3359, all in the program that
+parses hostile input. Not a faster binary — a list short enough to read.
 
-## Why this is rare, and why it is cheap here
+## What is beyond GCC
 
-The obvious question about the previous section is why, if the information is
-right there, other languages have not done it. They have — repeatedly, and
-better.
-
-| | |
-| --- | --- |
-| **Ada SPARK** | this, plus a prover to discharge it — absence of run-time errors since the 1980s |
-| **Astrée** | an abstract interpreter used to prove absence of run-time errors in Airbus flight-control C |
-| **Frama-C** | value analysis over C by abstract interpretation, with contracts in ACSL |
-| **Dafny, Why3, F\*, ATS** | languages where carrying the proof is the entire point |
-| **GCC and LLVM** | value-range propagation and scalar evolution, in every optimiser in use |
-
-The last row is the pointed one. **GCC already runs a version of this analysis
-on mereo's output.** That is why the bounds checks vanish, and why removing one
-by hand produced a byte-identical binary. Nothing above was a discovery; it was
-a re-derivation, less well done, of something the backend does as a matter of
-course.
-
-So the real question is narrower: why is this not a hard *gate* — a compiler
-that refuses what it cannot prove — in general-purpose languages? Four reasons,
-and mereo evades three of them by accident.
-
-**Separate compilation.** The decisive one. Whole-program analysis cannot
-coexist with compiling one translation unit at a time and linking against
-libraries whose source is absent. Every mainstream systems language treats that
-as non-negotiable. mereo gave it up for unrelated reasons.
-
-**False positives.** Rice's theorem guarantees that any such gate rejects some
-correct programs. The prototype here demonstrated it: one missing correlation
-between two variables produced 406 false alarms out of 3359 accesses. With a
-heap, aliasing, dynamic dispatch and function pointers in the language, that
-rate grows rather than shrinks. Astrée's success rests on a deliberately
-restricted target — no dynamic allocation, no recursion — which is mereo's
-shape, arrived at independently.
-
-**Annotation burden.** SPARK works, and the price is contracts written
-everywhere. That price is paid where certification demands it, in avionics and
-rail, and almost nowhere else.
-
-**Economics.** Rust's answer is that proving is unnecessary: check at run time,
-let the optimiser delete what it can prove, and memory safety arrives with no
-false positives and no annotations. For general-purpose code that is the better
-trade. Proving wins only where the check cannot be afforded or a certificate is
-required.
-
-mereo is therefore not unusual for having the idea. It is unusual in having
-**already paid the bill for other reasons** — whole-program, no heap, no
-recursion and no separate compilation were all chosen to make the release tower
-and the freestanding binary work. The analysis is cheap here because the
-expensive part was settled years earlier, for a different purpose.
-
-One caution belongs with the number. It covers 3359 accesses in a corpus written
-by the same hand as the tool, checked against deliberately planted violations —
-not the standard of a tool validated against industrial code it has never seen.
-
-## What is actually beyond GCC
-
-If GCC already does this, the fair question is whether mereo adds anything it
-cannot reach. The answer splits three ways, and only the first is a clean win.
-
-**The bound hoist, which GCC provably cannot do.** `span.at` tests its bound
-against a length held in the view's bytes, so after splicing the bound is a LOAD
-on every iteration. mereo ships `-fno-strict-aliasing`, because byte views
-type-pun by design — so from GCC's side any store might have changed that
-length.
-mereo knows the store went to the buffer rather than to the view, and that fact
-is erased by the translation to C. Compiling the same program with the pass on
-and off:
+**The bound hoist.** `span.at` tests a length held in the view's bytes, so after
+splicing the bound is a load per iteration. mereo ships `-fno-strict-aliasing`
+because byte views type-pun by design, so from GCC's side any store might have
+changed that length; mereo knows the store went to the buffer. That fact is
+erased by the translation to C.
 
 | | vector instructions |
 | --- | ---: |
 | bound hoisted | 41 |
-| bound left in the loop | 4 |
+| bound in the loop | 4 |
 
-Same compiler, same flags. The information has to be acted on before the handoff
-or not at all.
+**The syscall's shape.** That a `read` writes `capacity` bytes into `buffer`
+appears nowhere in the emitted C — it is inline assembly with a `"memory"`
+clobber, and a clobber says *something changed*, not *this buffer, that many
+bytes*. mereo declares it; GCC cannot recover it.
 
-**The syscall's shape, which GCC can never recover.** That a `read` writes
-`capacity` bytes into `buffer` appears nowhere in the emitted C — it is inline
-assembly with a `"memory"` clobber, and a clobber says *something changed*, not
-*this buffer, that many bytes*. mereo declares the relationship. But tested
-directly, with the result written out so nothing is dead code, **neither GCC nor
-mereoprove reports it**: the analysis classifies accesses, and a capacity is not
-an access. This one is potential rather than achievement, and it is the same gap
-as `ensure capacity <= buffer.size`.
+Everything else mereo reports and GCC does not is a missed diagnostic rather
+than an impossibility. GCC has value-range propagation and object sizes; it
+stays silent on a loop to 100 over a 64-byte backing even at `-Wall -Wextra
+-Warray-bounds=2 -Wstringop-overflow=4 -fanalyzer`. The real asymmetry is that
+an optimiser has two outcomes — quietly succeed or quietly fail — and no way to
+report *I could not prove this one*. A compiler can refuse.
 
-**Diagnostics GCC could reach but does not issue.** Two planted violations, each
-with a live loop and a buffer initialised first, so that an uninitialised-value
-finding could not stand in for a bounds one:
-
-| planted mistake | GCC, all warnings + `-fanalyzer` | mereoprove |
-| --- | --- | --- |
-| a loop to 100 over a 64-byte backing | silent | out of range |
-| a loop bounded by a count capped at 4096, into 16 bytes | silent | out of range |
-
-mereo catches both and GCC catches neither — but nothing *structural* stops GCC
-here. It has value-range propagation and object sizes; it simply does not
-diagnose. That is a missed diagnostic, not an impossibility, and it would be
-dishonest to bank it as a capability.
-
-Which leaves the asymmetry that is not in any of those rows. For correct code
-GCC
-proves these checks away, and the binary is byte-identical to one written
-without
-them. For incorrect code it says nothing at all. An optimiser has only two
-outcomes available — quietly succeed, or quietly fail — and no way to report *I
-could not prove this one*. A compiler can refuse. That is a difference in
-contract rather than in capability, and it is the honest argument for moving the
-analysis into `mereoc`.
-
-## The bug that settles it
-
-While writing the contract bounds that this page describes, a
-remotely-triggerable buffer overflow turned up in mereo's own TLS client.
-`read_record` took a 16-bit length off the wire, added five, and wrote up to
-65540 bytes into a caller-supplied buffer with no bound on it — and the
-ServerHello path passes a 512-byte buffer, before authentication.
-
-It was in a whole-program, freestanding, no-heap, no-functions language with
-every precondition this page has been praising. It compiled cleanly. It passed
-every gate. It was found by reading the code, not by any analysis, and it was
-fixed by writing the bound down by hand.
-
-That is the argument against believing this page's first half too readily.
-Removing a family of fault removes that family. It does not make the rest
-smaller, and the one mereo left in place — a run-time index into a buffer — is
-the one that has been the leading source of remote compromise for thirty years.
-
-## Where each language actually stands
+## Where each language stands
 
 | | C | C++ | Rust | SPARK | mereo |
 | --- | --- | --- | --- | --- | --- |
 | Use after free | — | RAII, partial | prevented | prevented | **absent** (no heap) |
-| Double free | — | RAII, partial | prevented | prevented | **absent** (no heap) |
+| Double free | — | RAII | prevented | prevented | **absent** (no heap) |
 | Leak | — | RAII | permitted | prevented | **prevented** (derived) |
 | Dangling stack pointer | — | — | prevented | prevented | **absent** (no frames) |
 | Bounds, constant | — | — | prevented | proved | **refused** |
@@ -443,18 +183,41 @@ the one that has been the leading source of remote compromise for thirty years.
 | Type confusion via cast | — | — | prevented | prevented | **fit refused** |
 | Unhandled failure | — | warned | `Result` | prevented | **refused** |
 
-Read the mereo column as two blocks. Everything marked *absent* is free and
-permanent — it cost expressiveness, not analysis. Everything marked *unchecked*
-is work not yet done, and no amount of the first block substitutes for it.
+Read the mereo column as two blocks. *Absent* is free and permanent — it cost
+expressiveness, not analysis. *Unchecked* is work not done, and no amount of the
+first substitutes for it.
+
+**SPARK** is ahead and is the nearest relative. GNATprove discharges every
+run-time check as a proof obligation and reports each it cannot; nothing stays
+unproved silently. mereo's `ensure` resembles a SPARK contract and is not one —
+it is a run-time comparison the optimiser may fold, not an obligation discharged
+before running. SPARK's ranges are also *declared*, which hands its prover the
+fact; mereo infers everything from loop shape and syscall contracts.
+
+**Stroustrup's argument**, that C++ can reach safety through profiles and static
+analysis rather than a borrow checker, gets a data point here that is not the
+one it looks like. Analysis is easy in mereo because the language was restricted
+first — whole-program, no heap, no recursion, no separate compilation. The
+analysis is downstream of the restriction, and mereo's restrictions are far
+heavier than the ones the argument resists. Rust asks for aliasing with
+mutation; mereo asks for the heap, functions, recursion, threads, generics and
+data structures. Per theorem proved, the borrow checker is the better bargain.
+
+This is also why a compile-time gate is rare rather than novel. SPARK, Astrée
+and Frama-C all do it, and GCC and LLVM run a version of it on mereo's own
+output. What blocks it elsewhere is separate compilation, the false-positive
+rate in a language with aliasing and dynamic dispatch, the annotation burden,
+and the economics: checking at run time costs nothing once the optimiser deletes
+the provable ones. mereo evades the first three because it paid for them
+already, for other reasons.
 
 ## What none of this is
 
-It is not a claim that mereo is safer than Rust or SPARK. On the faults each
-language actually proves, both are ahead, and SPARK is ahead of everything here.
+It is not a claim to be safer than Rust or SPARK. On the faults each proves,
+both are ahead, and SPARK is ahead of everything here.
 
-The claim is narrower and, I think, more interesting: a language can reach a
-large part of memory safety by subtraction rather than by proof, and the
-subtraction is cheap to implement and impossible to get wrong, because there is
-no analysis to be wrong. What it cannot do is reach the rest. For the rest there
-is no shortcut — the bound has to be written down, or proved, and mereo is at
-the beginning of that work rather than the end.
+The claim is narrower: a language can reach much of memory safety by
+subtraction rather than proof, and subtraction is cheap and impossible to get
+wrong because there is no analysis to be wrong. It cannot reach the rest. For
+the rest the bound has to be written down or deduced — and the measure of the
+deducing is a skilled C programmer, not a prover.
