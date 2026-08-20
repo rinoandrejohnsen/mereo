@@ -288,6 +288,35 @@ if they bite again:
   refused; the shape is a guarded scope (`got == 1 goes`). Conditional STORES
   take `when`, calls do not.
 
+## A constant access into a known buffer is not bounds-checked
+
+**Status:** open, small, and decidable. Measured.
+
+Everything is present at compile time: `block is 8 bytes` puts the size in the
+compiler's own table, and `[block + 100 : 1]` has a literal offset and a literal
+width — the rule that a width must be 1, 2, 4 or 8 guarantees the second. The
+access is still accepted, and GCC does not warn at the shipped flags either:
+
+```
+  block is 8 bytes
+  n is [block + 100 : 1]        -- compiles; reads past the frame
+```
+
+A view IS checked against its backing (`backing 'block' is 4 bytes, too small to
+view 16`), so the machinery and the message shape both exist; raw accesses just
+never went through it.
+
+**Measured across the corpus:** 314 accesses have a literal offset, a literal
+width, and a backing whose size is known. None of them overruns, so the check
+would be a guard rather than a fix — which is what a planted violation is for.
+
+**What it does not reach**, and why that is not a failing: an index computed at
+run time (`[block + i : 1]`, where `i` came from a `read`) is not decidable by
+any amount of whole-program analysis, because the value comes from the kernel.
+The answer there is already in [Performance](docs/performance.md): bound the
+loop by the same length the check tests and the compiler proves the check
+redundant, so the safety costs nothing.
+
 ## The language server is gone, and nothing replaced it
 
 **Status:** open, deliberately.
