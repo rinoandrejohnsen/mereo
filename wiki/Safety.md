@@ -146,6 +146,74 @@ The remaining 2% are data-dependent, and every one of them is in the TLS parser.
 The analysis lands exactly on the security-critical code. That is either
 encouraging or ominous, and the next section decides which.
 
+## How much of the expert's proof is recoverable?
+
+The argument for trying is this. A C programmer writing optimal, Linux-correct
+code omits the bounds check because they *hold a proof* — they know the index
+cannot run past the buffer. That proof is real; it is simply never written down.
+mereo sees more of the program than GCC does, so it should be able to
+reconstruct it. Here is `span_scan.c` from `tests/versus`, doing exactly that:
+
+```c
+count = _sys3(SYS_read, input, (long)block, 64);   /* block is 64 bytes */
+if (!(count >= 0)) goto err_read;
+long n = _scan(block, count, 58);                  /* no check on count */
+```
+
+The expert relied on `count <= 64` — a promise of Linux, not of the C. That fact
+now exists in mereo, written on the `read` primitive as
+`ensure count as signed <= capacity`.
+
+`tools/mereoprove.py` measures how far this reaches. It runs on the post-splice
+IR and classifies every access. Over the corpus — 86 programs, 3359 accesses:
+
+| | | |
+| --- | ---: | --- |
+| **proved** | **2722** | **81.0%** |
+| bound-unresolved | 592 | 17.6% |
+| opaque-base | 31 | 0.9% |
+| data-dependent | 13 | 0.4% |
+| out of range | 1 | 0.0% |
+
+Read the last row first. The single access that does *not* fit is
+`access_past_end.mereo`, the planted violation that mereo already refuses — the
+analysis finds it independently and flags nothing else. That is the project's
+standing non-vacuity rule holding.
+
+Read the fourth row next. Only **13 accesses in the whole corpus** are genuinely
+data-dependent, with no bound in scope at any level. The bound almost always
+exists.
+
+The 17.6% in the middle is the honest part: a bound exists and the prototype
+cannot chase it. Nearly all of it is x25519's carry loops and the TLS parser,
+and the two gaps are specific. It tracks upper bounds only, so any subtraction
+is refused. And — the one that matters — **it does not read `ensure` as a
+premise.** At the exact site of the overflow described below, the transcript
+index is unproved despite the fact being stated one line above it:
+
+```ada
+  ensure tlen + inner_len <= tr.size     -- the fact
+  foff is tlen - 36                      -- refused: a subtraction
+  a is [tr + foff : 1]                   -- so: unproved
+```
+
+The language already has the mechanism. The compiler does not yet read what the
+programmer wrote as something it may assume.
+
+## What that would buy, with performance in the background
+
+Nothing, at run time. This is the result worth being clear about, because the
+intuition runs the other way. Every bounds check in the corpus is *already*
+eliminated — GCC proves them redundant and deletes the check and its error block
+together, which [Performance](Performance) measures against C that never had
+one. Proving them a second time, earlier, removes no instruction that is still
+there.
+
+What it buys is the **list**. A compiler that classifies accesses can report the
+ones nobody has proved, and that report is currently a fifth of the corpus,
+concentrated almost entirely in the one program that parses hostile input. The
+value is not a faster binary. It is knowing where to look.
+
 ## The bug that settles it
 
 While writing the contract bounds that this page describes, a
