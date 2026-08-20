@@ -320,6 +320,11 @@ abc 3 11
 # ...and the two `ensure`s that a raw pointer-and-count pair had nowhere to put:
 # reading past the end of a span, and appending past the end of a builder. Both
 # must END the program, not answer wrongly.
+# a CHECKED access in a loop bounded by a scalar rather than by the span's own
+# length -- the shape the bound hoist is for. Reading the bound from memory each
+# pass stops the loop vectorising, and GCC cannot lift it under
+# -fno-strict-aliasing. 4 vector instructions without the hoist, 41 with it.
+bb   views/hoisted-bound span_hoist "abc" 0 "294"
 bb   views/at-past-end   views_at_past_end   "" 1 ""
 bb   views/add-past-end  views_add_past_end  "" 1 ""
 # `already` must STORE what it is handed, with or without a method on the

@@ -5459,6 +5459,117 @@ def check_port_needs(definitions, slots, steps):
     walk(steps)
 
 
+def hoist_guard_bounds(steps, slots):
+    """Read a guard's BOUND once, before the loop, instead of every iteration.
+
+    `span.at` tests `offset < length`, and after splicing that is a LOAD from the
+    view's bytes -- `i < [v + 8 : 8]` -- so the bound is fetched from memory on
+    every pass. GCC cannot hoist it: under `-fno-strict-aliasing`, which mereo
+    ships because byte views type-pun by design, any store might have changed it.
+    A memory read per iteration is what stops the loop vectorising.
+
+    Measured on `index_safe` with its loop bounded by a scalar rather than by
+    `v.length`, so GCC cannot prove the check away: 4 vector instructions with
+    the load in the loop, 41 with it hoisted -- the same 41 as dropping the check
+    altogether. Same check, same error block, same safety.
+
+    This is not the optimiser's work done twice. GCC provably cannot do it, and
+    mereo can because it knows a store went to the buffer rather than to the
+    view. That is information the generated C does not carry.
+
+    TWO conditions, and both are necessary rather than cautious:
+
+      * nothing in the loop may WRITE memory -- a store, a call, a construction,
+        a crossroad -- or the bound could change under the hoisted copy;
+      * the bound must not mention a name the loop ASSIGNS, or it is not a
+        loop-invariant expression at all (`[data + i]` is not).
+
+    Both are syntactic, and a bound with no memory access in it is left alone:
+    it is already a register."""
+    WRITES = {"store", "fstore", "atomic", "call", "bare",
+              "construct", "adopt", "branch"}
+    CMP = re.compile(r"^(.+?)\s*(<=|>=|==|!=|<|>)\s*(.+)$")
+
+    opens, span, dirty = [], {}, {}
+    for i, st in enumerate(steps):
+        t = st.get("type")
+        if t == "loop_start":
+            opens.append(i); dirty[i] = False
+        elif t == "loop_end":
+            if opens:
+                a = opens.pop()
+                # only a REPEATING loop is worth hoisting out of. A splice opens
+                # a scope with the same two markers and `back` false, and it runs
+                # once -- lifting a load out of it buys nothing and costs a slot.
+                if st.get("back"):
+                    span[a] = i
+                if opens and dirty[a]:
+                    dirty[opens[-1]] = True
+        elif t in WRITES:
+            for a in opens:
+                dirty[a] = True
+
+    def assigned_in(a, b):
+        return {steps[k].get("name") for k in range(a, b)
+                if steps[k].get("type") == "assign"}
+
+    inserts, made = {}, [0]
+    for i, st in enumerate(steps):
+        if st.get("type") != "guard":
+            continue
+        m = CMP.match(str(st.get("cond") or ""))
+        if not m:
+            continue
+        # outermost clean enclosing loop first: hoisting to an inner one would
+        # still reload once per pass of the outer
+        cands = sorted(a for a, b in span.items() if a < i < b and not dirty[a])
+
+        def loop_conds(a):
+            """the names the loop's OWN conditions mention"""
+            out = set()
+            for k in range(a, span[a] + 1):
+                c = steps[k].get("cond")
+                if steps[k].get("type") in ("loop_exit", "loop_end", "loop_start") \
+                        and isinstance(c, str):
+                    out |= set(re.findall(r"[A-Za-z_]\w*", c))
+            return out
+        for side in (1, 3):
+            expr = m.group(side).strip()
+            if "[" not in expr:
+                continue                      # already a register
+            words = set(re.findall(r"[A-Za-z_]\w*", expr))
+            # STAND BACK where any enclosing loop already tests the same
+            # thing. There GCC proves the check redundant and deletes it
+            # outright; hoisting one side breaks the match it was relying on and
+            # the check survives -- measured as two extra syscalls on
+            # `index_safe`, which is worse than doing nothing. The test is over
+            # EVERY enclosing loop, not just the one being hoisted to: falling
+            # through to an inner loop whose own condition is empty breaks the
+            # outer one's proof just the same.
+            tested = set().union(*(loop_conds(a) for a in cands)) if cands else set()
+            if words & tested:
+                continue
+            at = next((a for a in cands if not (words & assigned_in(a, span[a]))),
+                      None)
+            if at is None:
+                continue                      # not loop-invariant anywhere
+            made[0] += 1
+            name = f"_bound_{made[0]}"
+            slots.append({"kind": "scalar", "name": name, "init": "0",
+                          "line": st.get("line", 0)})
+            inserts.setdefault(at, []).append(
+                {"type": "assign", "name": name, "expr": expr,
+                 "pname": None, "line": st.get("line", 0)})
+            st["cond"] = st["cond"].replace(expr, name, 1)
+    if not inserts:
+        return steps
+    out = []
+    for i, st in enumerate(steps):
+        out.extend(inserts.get(i, ()))
+        out.append(st)
+    return out
+
+
 def plan(definitions, slots, steps, overrides):
     elaborate_classes(definitions)
     resolve_lenses(definitions, slots)
@@ -5468,6 +5579,7 @@ def plan(definitions, slots, steps, overrides):
     derive_port_needs(definitions)
     check_port_needs(definitions, slots, steps)
     steps = expand_procedures(definitions, slots, steps, PRIMITIVES)
+    steps = hoist_guard_bounds(steps, slots)
     scalars, buffers, instances = check_slots(definitions, slots)
 
     if not steps and not HAS_PROGRAM:

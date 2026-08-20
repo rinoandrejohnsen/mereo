@@ -1,0 +1,55 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- A CHECKED access in a loop whose bound is a scalar rather than the span's own
+-- length. That shape is what the bound hoist is for.
+--
+-- `span.at` tests `offset < length`, and after splicing that is a LOAD from the
+-- view's bytes -- so without the hoist the bound is fetched from memory on every
+-- pass, and a memory read per iteration stops the loop vectorising. GCC cannot
+-- lift it: under `-fno-strict-aliasing`, which mereo ships because byte views
+-- type-pun by design, any store might have changed it.
+--
+-- Measured on this shape: 4 vector instructions with the load in the loop, 41
+-- with it hoisted -- the same 41 as dropping the check altogether. The check is
+-- still here, and `tests/progs/views_at_past_end` pins that it still fires.
+--
+-- Note the loop is bounded by `count`, NOT by `v.length`. Where they are the
+-- same name GCC proves the check redundant and deletes it, and the hoist stands
+-- back rather than breaking that -- `tests/versus/cases/index_safe` is that
+-- case, and it reports EXTRA SYSCALLS if the hoist stops standing back.
+--
+--   echo -n abc | span_hoist   ->  294        (97 + 98 + 99)
+
+program goes
+  block is 4096 bytes
+  count is 0
+  i is 0
+  b is 0
+  total is 0
+  room is 64 bytes
+
+  page is already builder (data is room, count is 0, limit is 64)
+
+  input is already linux.file (descriptor is 0)
+
+  input.read (buffer is block, capacity is 4096, count is count)
+
+  v is already span (data is block, length is count)
+
+  step goes
+    leave step when i >= count
+    v.at (offset is i, byte is b)
+    total is total + b
+    i is i + 1
+    repeat step
+  end
+
+  page.number (value is total)
+  page.byte (value is 10)
+
+  screen is already linux.file (descriptor is 1)
+
+  screen.write (buffer is page.data, count is page.count)
+
+end
