@@ -8,7 +8,7 @@ include "net.mereo"
 -- asked. LENGTH is the body length the header declares, TOTAL the whole record.
 -- It was these same fourteen steps written twice, differing only in the buffer
 -- and the loop names.
-read_record (link, rec, length, total) goes
+read_record (link, rec, capacity, length, total) goes
   got is 0
   n is 0
   at is 0
@@ -24,6 +24,12 @@ read_record (link, rec, length, total) goes
 
   length is [rec + 3 : 2] as big
   total is length + 5
+  -- LENGTH came off the wire: a peer may declare up to 65535, and the body loop
+  -- below writes `total` bytes into REC whatever REC's size is. Without this the
+  -- ServerHello alone -- 512 bytes here -- takes ~65 KB from a hostile server,
+  -- before anything is authenticated. It is also the fact that makes every
+  -- `[rec + off]` after it decidable: the bound now ends in a constant.
+  ensure total <= capacity
 
   body goes
     at is rec + got
@@ -123,7 +129,7 @@ client is
     link is stream (domain is 2, type is 1, protocol is 0)
     link.dial (address is address, length is 16)
     link.transmit (buffer is ch, length is chlen)
-    read_record (link is link, rec is sh_rec, length is shlen, total is reclen)
+    read_record (link is link, rec is sh_rec, capacity is sh_rec.size, length is shlen, total is reclen)
     shmsg is sh_rec + 5
     crypto.server_hello (rec is shmsg, pub is spub)
     curve.x25519 (secret is cpriv, point is spub, shared is shared)
@@ -178,10 +184,10 @@ client is
                                labellen is lbl_iv.size,
                                sink is c_hs_iv,
                                outlen is 12)
-    read_record (link is link, rec is rec, length is rlen, total is reclen)
+    read_record (link is link, rec is rec, capacity is rec.size, length is rlen, total is reclen)
     seq is 0
     flightproc goes
-      read_record (link is link, rec is rec, length is rlen, total is reclen)
+      read_record (link is link, rec is rec, capacity is rec.size, length is rlen, total is reclen)
       crypto.open (key is s_hs_key,
                    iv is s_hs_iv,
                    seq is seq,
@@ -189,6 +195,11 @@ client is
                    reclen is reclen,
                    sink is plain)
       inner_len is reclen - 22
+      -- TLEN accumulates a length the peer chose, once per record of the
+      -- flight, and the copy below writes at `tr + tlen`. Bounding each step
+      -- against the transcript's own size is what stops a long flight walking
+      -- off the end of it -- and it is what leaves `foff` below decidable.
+      ensure tlen + inner_len <= tr.size
       ci is 0
       text.copy (source is plain, target is tr + tlen, length is inner_len)
       tlen is tlen + inner_len

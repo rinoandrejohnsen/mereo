@@ -416,6 +416,10 @@ that is the prize worth aiming at.
 
 ### Order of work
 
+**Done:** the bound hoist (`hoist_guard_bounds`), which makes a checked access
+in a loop cost what an unchecked one costs -- and the TLS bounds, which were a
+remotely-triggerable overflow rather than an analysis question.
+
 1. **Add the upper bound to the 35 contracts.** Small, declarative, and the
    fact nothing else can substitute for. It also improves the error records on
    its own.
