@@ -159,7 +159,7 @@ def classify(tok, kind, src, at):
         return ("structure"
                 if _bold or not code[at - lo + len(tok):].strip() else "bind")
     # A scope NAME keeps that formatting wherever it is named: after `leave` or
-    # `repeat`, and on the road header that reopens a crossroad. A name should
+    # `repeat`. A name should
     # not change appearance between where it is declared and where it is used.
     if re.search(r"\b(?:leave|repeat) $", line[:at - lo]):
         return "decl"

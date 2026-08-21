@@ -153,9 +153,9 @@
         <RegExpr String="^\s*(?!(?:program|namespace|failures|acquire|release|scope|end)\b)\w+(?=(?: \([^)]*\))? is\s*(?:--.*)?$)" attribute="Declaration" context="#stay"/>
         <RegExpr String="^\s*(?!(?:scope|end)\b)\w+(?= (?:likely )?goes\s*(?:--.*)?$)" attribute="Declaration" context="#stay"/>
         <!-- ...and a scope NAME keeps that formatting wherever it is named:
-             after `leave` or `repeat`, and on the road header that reopens a
-             crossroad. Placed after the word lists, so `leave program` leaves
-             `program` looking like the keyword it is at `program is`. -->
+               after `leave` or `repeat`. Placed after the word lists, so
+               `leave program` leaves `program` looking like the keyword it
+               is at `program is`. -->
         <RegExpr String="(?&lt;=\bleave )\w+" attribute="Declaration" context="#stay"/>
         <RegExpr String="(?&lt;=\brepeat )\w+" attribute="Declaration" context="#stay"/>
         <RegExpr String="^\s*\w+(?= when .+ goes\s*(?:--.*)?$)" attribute="Declaration" context="#stay"/>

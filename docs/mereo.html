@@ -117,10 +117,10 @@ blockquote p:last-child{margin-bottom:0}
 <p>mereo's design follows from one commitment — that what is written is what the machine does — and from the constraints accepted to keep it. There is no runtime, so nothing happens that the source does not say; no allocator, so memory is where it was declared; and no functions, so control flow is visible in the text rather than in a call graph.</p>
 <h3>Etymology</h3>
 <p>The name comes from <strong>mereology</strong>, the study of part–whole relationships, from Greek <em>μέρος</em> (<em>méros</em>), "part". The project began under the working name Mereology-Oriented Programming, whose first-order principle was that everything is a part and that programs are built by fusing smaller parts into larger wholes.</p>
-<p>Little of that formal apparatus survives in the language as it now stands, but the idea it was named for does: the <strong>scope</strong> is mereo's part, a named region that owns what it holds and releases it on the way out, and every other construct — a loop, a branch road, a template, the program itself — is one.</p>
+<p>Little of that formal apparatus survives in the language as it now stands, but the idea it was named for does: the <strong>scope</strong> is mereo's part, a named region that owns what it holds and releases it on the way out, and every other construct — a loop, a guarded scope, a template, the program itself — is one.</p>
 <h3>Everything is a scope</h3>
 <p>The language has one organising construct. <code>NAME goes</code> opens a named scope, and every other form of control flow is made from it:</p>
-<ul><li>a <strong>loop</strong> is a scope whose body ends by repeating itself;</li><li>an <strong><code>if</code></strong> is a scope with an entry condition;</li><li>a <strong>branch road</strong> is a scope selected by a guard;</li><li>a <strong>template</strong> is a scope spliced into its use site;</li><li>the <strong>program</strong> is a scope.</li></ul>
+<ul><li>a <strong>loop</strong> is a scope whose body ends by repeating itself;</li><li>an <strong><code>if</code></strong> is a scope with an entry condition;</li><li>a <strong>conditional scope</strong> is a scope entered only if its guard holds;</li><li>a <strong>template</strong> is a scope spliced into its use site;</li><li>the <strong>program</strong> is a scope.</li></ul>
 <p>Two jumps operate on scopes by name — <code>repeat NAME</code> returns to the top, <code>leave NAME</code> continues past the bottom — and both release exactly what that scope holds. There is no <code>break</code>, no <code>continue</code> and no <code>goto</code>, because there is nothing for them to mean that naming a scope does not already say.</p>
 <h3>Lifetimes are derived, not registered</h3>
 <p>A resource is acquired in exactly one step. That restriction is what makes the rest possible: the transpiler always knows how far acquisition has progressed, so cleanup is emitted as a ladder of labels entered at the point matching the progress made, and no state is kept at runtime to record it.</p>
@@ -138,7 +138,7 @@ release_server:
   <span class="t-plain">n</span> <span class="t-bind">is</span> <span class="t-operator">[</span><span class="t-plain">header</span> <span class="t-operator">+</span> <span class="t-number">4</span> <span class="t-operator">:</span> <span class="t-number">2</span><span class="t-operator">]</span> <span class="t-inside">as</span> <span class="t-inside">big</span>          <span class="t-comment">-- two, big-endian</span></code></pre>
 <p>A <a href="#memory">view</a> names those readings once so a record describes itself, but it converts nothing and copies nothing: it is a statement about bytes that already exist. Nothing is coerced silently, because there is nothing to coerce.</p>
 <h3>Optimisation claims are checked, not hinted</h3>
-<p><code>LABEL likely goes</code> keeps the common case inline and moves the rest past the program's exit. The build then disassembles the binary it produced and fails if that layout was not achieved, so the construct is a claim the toolchain verifies rather than a hint the compiler may ignore.</p>
+<p>A cold block — the record an <code>ensure</code> writes when it fails — is emitted past the program's exit, out of the path that runs. The build then disassembles the binary it produced and fails if that layout was not achieved, so the placement is a claim the toolchain verifies rather than a hint the compiler may ignore.</p>
 <p>The same principle covers safety. A bounds check is not something to switch off for speed; it is something to state once so the compiler can prove it redundant. Bounding a loop by the same length the check tests removes the check from the binary entirely — see <a href="#performance">Performance</a>, which measures both.</p>
 <h3>What was deliberately left out</h3>
 <p>The absences are load-bearing rather than incidental:</p>
@@ -288,7 +288,7 @@ release_server:
   <span class="t-plain">argc</span> <span class="t-operator">!=</span> <span class="t-number">1</span> <span class="t-structure">goes</span>
     <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>
   <span class="t-structure">end</span></code></pre>
-<p>For a chain of alternatives where one arm is the common case, the construct is the <strong>crossroad</strong> described in the next section, which has the others dispatched rather than tested in turn. It is written inside out compared with C: the <code>likely</code> road is the <strong><code>else</code></strong>, the default that runs inline, and each <code>when</code> road is a condition moved out of the way.</p>
+<p>For a chain of alternatives, each arm is a conditional scope that <code>leave</code>s the one around it — described in the next section. There is no <code>else</code> keyword, because there is nothing for one to do.</p>
 <p>Where the arms only choose a <em>value</em>, neither form is needed.</p>
 <h4>Choosing a value</h4>
 <p><code>when</code> states a dependence and lets the target lower it however it can:</p>
@@ -297,21 +297,32 @@ release_server:
 <pre><code>  <span class="t-plain">my_number</span> <span class="t-bind">is</span> <span class="t-number">40</span> <span class="t-inside">when</span> <span class="t-plain">argument_count</span> <span class="t-operator">&gt;</span> <span class="t-number">2</span> <span class="t-inside">or</span>
                <span class="t-number">50</span> <span class="t-inside">when</span> <span class="t-plain">argument_count</span> <span class="t-operator">&gt;</span> <span class="t-number">1</span></code></pre>
 <p><code>branchless</code> <em>requires</em> that no branch be emitted, and is refused where the machine could not honour it. Reach for it only when the condition is genuinely unpredictable: on a well-predicted branch a conditional move is pure overhead, and a plain cascade lets the compiler choose.</p>
-<h3>Branches and roads</h3>
-<p>Where one case is common and the rest are exceptions, a <strong>crossroad</strong> keeps the common road inline and moves the others past the program's exit, rejoining at the label:</p>
-<pre><code>  <span class="t-decl">name</span> <span class="t-structure">likely</span> <span class="t-structure">goes</span>                <span class="t-comment">-- the common case, inline</span>
-    <span class="t-plain">out_ptr</span> <span class="t-bind">is</span> <span class="t-plain">comp_at</span>
+<h3>If, else if, else</h3>
+<p>An arm is a conditional scope that takes its path and leaves. Whatever follows it in the enclosing scope is the other path, so the <strong><code>else</code> is not a keyword</strong> — it is the code the guards did not jump over:</p>
+<pre><code>  <span class="t-decl">pick</span> <span class="t-structure">goes</span>
+    <span class="t-plain">path</span><span class="t-operator">.</span><span class="t-member">length</span> <span class="t-operator">==</span> <span class="t-number">0</span> <span class="t-structure">goes</span>           <span class="t-comment">-- if</span>
+      <span class="t-plain">out_ptr</span> <span class="t-bind">is</span> <span class="t-plain">arg</span>
+      <span class="t-plain">out_len</span> <span class="t-bind">is</span> <span class="t-number">0</span>
+      <span class="t-structure">leave</span> <span class="t-decl">pick</span>
+    <span class="t-structure">end</span>
+    <span class="t-plain">comp_len</span> <span class="t-operator">==</span> <span class="t-number">0</span> <span class="t-structure">goes</span>              <span class="t-comment">-- else if</span>
+      <span class="t-plain">out_ptr</span> <span class="t-bind">is</span> <span class="t-plain">root</span>
+      <span class="t-plain">out_len</span> <span class="t-bind">is</span> <span class="t-number">1</span>
+      <span class="t-structure">leave</span> <span class="t-decl">pick</span>
+    <span class="t-structure">end</span>
+    <span class="t-plain">out_ptr</span> <span class="t-bind">is</span> <span class="t-plain">comp_at</span>              <span class="t-comment">-- else</span>
     <span class="t-plain">out_len</span> <span class="t-bind">is</span> <span class="t-plain">comp_len</span>
   <span class="t-structure">end</span>
 
-  <span class="t-plain">output</span><span class="t-operator">.</span><span class="t-call">write</span> <span class="t-operator">(</span><span class="t-label">buffer</span> <span class="t-bind">is</span> <span class="t-plain">out_ptr</span><span class="t-operator">,</span> <span class="t-label">count</span> <span class="t-bind">is</span> <span class="t-plain">out_len</span><span class="t-operator">)</span>
-
-  <span class="t-decl">name</span> <span class="t-structure">when</span> <span class="t-plain">path</span><span class="t-operator">.</span><span class="t-member">length</span> <span class="t-operator">==</span> <span class="t-number">0</span> <span class="t-structure">goes</span> <span class="t-comment">-- an exception, past the merge</span>
-    <span class="t-plain">out_ptr</span> <span class="t-bind">is</span> <span class="t-plain">arg</span>
-    <span class="t-plain">out_len</span> <span class="t-bind">is</span> <span class="t-number">0</span>
+  <span class="t-plain">output</span><span class="t-operator">.</span><span class="t-call">write</span> <span class="t-operator">(</span><span class="t-label">buffer</span> <span class="t-bind">is</span> <span class="t-plain">out_ptr</span><span class="t-operator">,</span> <span class="t-label">count</span> <span class="t-bind">is</span> <span class="t-plain">out_len</span><span class="t-operator">)</span></code></pre>
+<p>Each arm only <em>selects</em>; the work after is written once. Arms are scopes, so an arm that acquires something releases it before the flow rejoins — which is what <code>tests/scopes</code> checks against the equivalent C++ block, arm for arm.</p>
+<h4><code>likely</code></h4>
+<p>A guard is predicted <strong>not taken</strong> unless it says otherwise, which makes the fall-through the hot path — and the fall-through is the <code>else</code>. That is what a guard written to step over an exceptional case wants, and it needs no annotation to get it.</p>
+<p><code>likely</code> on a guard predicts it the other way, and means exactly what it means in C:</p>
+<pre><code>  <span class="t-decl">ready</span> <span class="t-structure">likely</span> <span class="t-structure">goes</span>        <span class="t-comment">-- if (__builtin_expect(ready, 1))</span>
+    <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>
   <span class="t-structure">end</span></code></pre>
-<p>Each road only <em>selects</em>; the work after the merge is written once. Roads are scopes, so a road that acquires something releases it before rejoining.</p>
-<p>"Inline" and "moved away" are claims about the emitted machine code, so the build disassembles the binary and fails if the layout was not achieved. A crossroad may be nested inside a cold road, and the guarantee still holds: the inner dispatch sits where its enclosing road does, and its own roads go past it.</p>
+<p>It rides on a condition and nowhere else: <code>likely</code> on a named scope is refused, because there is no branch to predict.</p>
 <h3>Ending the program</h3>
 <p>Reaching the program's <code>end</code> releases everything and returns zero. <code>leave program</code> is the way out from the middle, and takes no status:</p>
 <pre><code>  <span class="t-structure">leave</span> <span class="t-inside">program</span> <span class="t-inside">when</span> <span class="t-plain">nothing_to_do</span></code></pre>
@@ -857,7 +868,7 @@ $ echo $?
 line   5: `[rbuf + i + copy_1_i : 1]` not proved in range -- the index comes
           from input and nothing bounds it here -- this wants a run-time guard</code></pre>
 <p>That is the analysis behaving as designed — reporting rather than guessing — and it is also a list of work.</p>
-<p><strong>Three things about writing mereo that only writing 357 lines of it shows.</strong> There are no top-level constants and no top-level buffers, so a size used in two places is a literal in two places. A <code>likely</code> road cannot hold a template call. And <code>compare</code> answers <strong>1 for equal</strong>, which reads backwards next to C's <code>memcmp</code> and cost the first hour of debugging — the table never found an entry and every path came out counted once.</p>
+<p><strong>Three things about writing mereo that only writing 357 lines of it shows.</strong> There are no top-level constants and no top-level buffers, so a size used in two places is a literal in two places. A <code>likely</code> road could not hold a template call (roads are gone now). And <code>compare</code> answers <strong>1 for equal</strong>, which reads backwards next to C's <code>memcmp</code> and cost the first hour of debugging — the table never found an entry and every path came out counted once.</p>
 <h3>What it does not show</h3>
 <p>One program is one program. It is a byte pipeline over a fixed table, which is the shape mereo is built for; nothing here says anything about the shapes it is not built for, and <a href="#limitations">Limitations</a> lists those.</p>
 <p>The verification is also not proof. It is two analysers, two sanitizers, valgrind, and 800 adversarial inputs against an independent implementation — which is enough to say the two programs agree and neither reaches out of bounds on anything tried, and not enough to say more than that.</p>
@@ -1044,17 +1055,19 @@ port -&gt; 8080</code></pre>
 <span class="t-structure">repeat</span> <span class="t-decl">NAME</span> <span class="t-inside">when</span> <span class="t-plain">COND</span>          <span class="t-comment">-- either one, conditionally</span>
 <span class="t-structure">leave</span> <span class="t-inside">program</span>                  <span class="t-comment">-- release everything, exit 0</span></code></pre>
 <p>Both jumps release everything the scope holds, innermost first. A <strong>loop</strong> is a scope whose body ends by repeating. See <a href="#control-flow">Scopes</a>, <a href="#control-flow">Loops</a>.</p>
-<h3>Branches</h3>
-<pre><code><span class="t-decl">LABEL</span> <span class="t-structure">likely</span> <span class="t-structure">goes</span>              <span class="t-comment">-- the common case, inline</span>
-  <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span><span class="t-member">set</span> <span class="t-plain">values</span><span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>
-<span class="t-structure">end</span>
-
-<span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span><span class="t-member">shared</span> <span class="t-plain">steps</span><span class="t-operator">,</span> <span class="t-plain">written</span> <span class="t-plain">once</span><span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>
-
-<span class="t-decl">LABEL</span> <span class="t-structure">when</span> <span class="t-plain">GUARD</span> <span class="t-structure">goes</span>          <span class="t-comment">-- the exceptions, past the exit</span>
-  <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span><span class="t-member">set</span> <span class="t-plain">the</span> <span class="t-plain">same</span> <span class="t-plain">values</span><span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>
+<h3>If, else if, else</h3>
+<pre><code><span class="t-decl">pick</span> <span class="t-structure">goes</span>
+  <span class="t-decl">GUARD</span> <span class="t-structure">goes</span>                   <span class="t-comment">-- if</span>
+    <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>
+    <span class="t-structure">leave</span> <span class="t-decl">pick</span>
+  <span class="t-structure">end</span>
+  <span class="t-decl">GUARD</span> <span class="t-structure">likely</span> <span class="t-structure">goes</span>            <span class="t-comment">-- else if, predicted TAKEN</span>
+    <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>
+    <span class="t-structure">leave</span> <span class="t-decl">pick</span>
+  <span class="t-structure">end</span>
+  <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>                          <span class="t-comment">-- else: what the guards jumped over</span>
 <span class="t-structure">end</span></code></pre>
-<p>Roads only <em>select</em>; the spine acts once. <code>leave LABEL</code> inside a road rejoins the merge early. See <a href="#control-flow">Choosing a path</a>.</p>
+<p>There is no <code>else</code> keyword. A guard is predicted <strong>not taken</strong> unless it says <code>likely</code>, so the fall-through — the <code>else</code> — is the hot path by default. <code>likely</code> means what it means in C. See <a href="#control-flow">Choosing a path</a>.</p>
 <h3>Conditions</h3>
 <p>Written in <strong>operators, never words</strong> — so a condition can never be mistaken for an assignment:</p>
 <pre><code>  ==  !=  &lt;  &gt;  &lt;=  &gt;=          &amp;&amp;  ||          ( )</code></pre>
@@ -1159,7 +1172,7 @@ port -&gt; 8080</code></pre>
 <p>The record on stderr names the program, the stage and the failing step. See <a href="#errors"><code>ensure</code></a>.</p>
 <h3>Naming rules</h3>
 <p>A name is <code>\w+</code>, and may not:</p>
-<ul><li>be a mereo reserved word (<code>is</code>, <code>goes</code>, <code>end</code>, <code>when</code>, <code>leave</code>, …)</li><li>start with a digit or an underscore</li><li>be a <strong>C keyword</strong> (<code>int</code>, <code>while</code>, <code>return</code>, …) — a name becomes a C identifier as written</li><li>for a <strong>scope, crossroad or template</strong>, look like a label the emitter makes: <code>NAME_done</code>, <code>release_NAME</code>, <code>past_N</code>, <code>error_*</code>, <code>LABEL_road_N</code></li></ul>
+<ul><li>be a mereo reserved word (<code>is</code>, <code>goes</code>, <code>end</code>, <code>when</code>, <code>leave</code>, …)</li><li>start with a digit or an underscore</li><li>be a <strong>C keyword</strong> (<code>int</code>, <code>while</code>, <code>return</code>, …) — a name becomes a C identifier as written</li><li>for a <strong>scope or template</strong>, look like a label the emitter makes: <code>NAME_done</code>, <code>release_NAME</code>, <code>past_N</code>, <code>error_*</code>, <code>LABEL_road_N</code></li></ul>
 <p>Slots are exempt from the last rule: C keeps labels and variables in separate namespaces, so a <em>scalar</em> called <code>release_doc</code> is fine.</p>
 <h3>Building</h3>
 <pre><code>./build.sh                          # every program, hot/cold layout verified

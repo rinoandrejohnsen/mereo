@@ -141,7 +141,7 @@ it is also a list of work.
 
 **Three things about writing mereo that only writing 357 lines of it shows.**
 There are no top-level constants and no top-level buffers, so a size used in two
-places is a literal in two places. A `likely` road cannot hold a template call.
+places is a literal in two places. A `likely` road could not hold a template call (roads are gone now).
 And `compare` answers **1 for equal**, which reads backwards next to C's
 `memcmp`
 and cost the first hour of debugging — the table never found an entry and every

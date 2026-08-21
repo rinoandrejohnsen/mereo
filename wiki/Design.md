@@ -15,7 +15,7 @@ wholes.
 Little of that formal apparatus survives in the language as it now stands, but
 the idea it was named for does: the **scope** is mereo's part, a named region
 that owns what it holds and releases it on the way out, and every other
-construct — a loop, a branch road, a template, the program itself — is one.
+construct — a loop, a guarded scope, a template, the program itself — is one.
 
 ## Everything is a scope
 
@@ -24,7 +24,7 @@ every other form of control flow is made from it:
 
 - a **loop** is a scope whose body ends by repeating itself;
 - an **`if`** is a scope with an entry condition;
-- a **branch road** is a scope selected by a guard;
+- a **conditional scope** is a scope entered only if its guard holds;
 - a **template** is a scope spliced into its use site;
 - the **program** is a scope.
 
@@ -80,10 +80,10 @@ already exist. Nothing is coerced silently, because there is nothing to coerce.
 
 ## Optimisation claims are checked, not hinted
 
-`LABEL likely goes` keeps the common case inline and moves the rest past the
-program's exit. The build then disassembles the binary it produced and fails if
-that layout was not achieved, so the construct is a claim the toolchain verifies
-rather than a hint the compiler may ignore.
+A cold block — the record an `ensure` writes when it fails — is emitted past the
+program's exit, out of the path that runs. The build then disassembles the
+binary it produced and fails if that layout was not achieved, so the placement is
+a claim the toolchain verifies rather than a hint the compiler may ignore.
 
 The same principle covers safety. A bounds check is not something to switch off
 for speed; it is something to state once so the compiler can prove it redundant.

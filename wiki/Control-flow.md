@@ -146,11 +146,9 @@ nothing relates them:
   end
 ```
 
-For a chain of alternatives where one arm is the common case, the construct is
-the **crossroad** described in the next section, which has the others dispatched
-rather than tested in turn. It is written inside out compared with C: the
-`likely` road is the **`else`**, the default that runs inline, and each `when`
-road is a condition moved out of the way.
+For a chain of alternatives, each arm is a conditional scope that `leave`s the
+one around it — described in the next section. There is no `else` keyword,
+because there is nothing for one to do.
 
 Where the arms only choose a *value*, neither form is needed.
 
@@ -175,33 +173,53 @@ machine could not honour it. Reach for it only when the condition is genuinely
 unpredictable: on a well-predicted branch a conditional move is pure overhead,
 and a plain cascade lets the compiler choose.
 
-## Branches and roads
+## If, else if, else
 
-Where one case is common and the rest are exceptions, a **crossroad** keeps the
-common road inline and moves the others past the program's exit, rejoining at
-the label:
+An arm is a conditional scope that takes its path and leaves. Whatever follows
+it in the enclosing scope is the other path, so the **`else` is not a keyword**
+— it is the code the guards did not jump over:
 
 ```ada
-  name likely goes                -- the common case, inline
-    out_ptr is comp_at
+  pick goes
+    path.length == 0 goes           -- if
+      out_ptr is arg
+      out_len is 0
+      leave pick
+    end
+    comp_len == 0 goes              -- else if
+      out_ptr is root
+      out_len is 1
+      leave pick
+    end
+    out_ptr is comp_at              -- else
     out_len is comp_len
   end
 
   output.write (buffer is out_ptr, count is out_len)
+```
 
-  name when path.length == 0 goes -- an exception, past the merge
-    out_ptr is arg
-    out_len is 0
+Each arm only *selects*; the work after is written once. Arms are scopes, so an
+arm that acquires something releases it before the flow rejoins — which is what
+`tests/scopes` checks against the equivalent C++ block, arm for arm.
+
+### `likely`
+
+A guard is predicted **not taken** unless it says otherwise, which makes the
+fall-through the hot path — and the fall-through is the `else`. That is what a
+guard written to step over an exceptional case wants, and it needs no annotation
+to get it.
+
+`likely` on a guard predicts it the other way, and means exactly what it means
+in C:
+
+```ada
+  ready likely goes        -- if (__builtin_expect(ready, 1))
+    ...
   end
 ```
 
-Each road only *selects*; the work after the merge is written once. Roads are
-scopes, so a road that acquires something releases it before rejoining.
-
-"Inline" and "moved away" are claims about the emitted machine code, so the
-build disassembles the binary and fails if the layout was not achieved. A
-crossroad may be nested inside a cold road, and the guarantee still holds: the
-inner dispatch sits where its enclosing road does, and its own roads go past it.
+It rides on a condition and nowhere else: `likely` on a named scope is refused,
+because there is no branch to predict.
 
 ## Ending the program
 

@@ -86,22 +86,25 @@ Both jumps release everything the scope holds, innermost first. A **loop** is a
 scope whose body ends by repeating. See [Scopes](Control-flow),
 [Loops](Control-flow).
 
-## Branches
+## If, else if, else
 
 ```ada
-LABEL likely goes              -- the common case, inline
-  ...set values...
-end
-
-...shared steps, written once...
-
-LABEL when GUARD goes          -- the exceptions, past the exit
-  ...set the same values...
+pick goes
+  GUARD goes                   -- if
+    ...
+    leave pick
+  end
+  GUARD likely goes            -- else if, predicted TAKEN
+    ...
+    leave pick
+  end
+  ...                          -- else: what the guards jumped over
 end
 ```
 
-Roads only *select*; the spine acts once. `leave LABEL` inside a road rejoins
-the merge early. See [Choosing a path](Control-flow).
+There is no `else` keyword. A guard is predicted **not taken** unless it says
+`likely`, so the fall-through — the `else` — is the hot path by default.
+`likely` means what it means in C. See [Choosing a path](Control-flow).
 
 ## Conditions
 
@@ -264,7 +267,7 @@ A name is `\w+`, and may not:
 - start with a digit or an underscore
 - be a **C keyword** (`int`, `while`, `return`, …) — a name becomes a C
   identifier as written
-- for a **scope, crossroad or template**, look like a label the emitter makes:
+- for a **scope or template**, look like a label the emitter makes:
   `NAME_done`, `release_NAME`, `past_N`, `error_*`, `LABEL_road_N`
 
 Slots are exempt from the last rule: C keeps labels and variables in separate
