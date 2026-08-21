@@ -1088,3 +1088,52 @@ and nothing else. Facts that pay nothing: every bound the analysis proves,
 only), the copy-base hoist. The pattern has held through every measurement --
 what buys anything is either a fact from outside the translation unit, or a
 shape that suits a particular optimiser's weakness.
+
+## PGO buys nothing, and the reason is the binary size
+
+Asked 2026-08-21. Profile data is the most promising lever on paper: branch
+frequencies are genuinely absent from the program's text, which is the one
+category that has ever paid here. It buys nothing, and unlike the other empty
+levers this one has a clean mechanical explanation.
+
+Instrumented PGO does not link at all -- `libgcov` wants `mmap` and `calloc`,
+and these binaries are freestanding. Sampling PGO does work: `perf record -b`
+plus `llvm-profgen` plus `clang -fprofile-sample-use`, no instrumentation and
+no libc.
+
+| `exam/mereo/loglyze`, against clang -O2 | median | min |
+| --- | ---: | ---: |
+| sample PGO, 224 KB of perf data | 1.066 | 1.044 |
+| sample PGO, 11 MB of perf data | 1.016 | 0.977 |
+| all 31 `__builtin_expect` hints STRIPPED | 1.000 | 1.008 |
+| hints stripped, then PGO | 1.015 | 1.029 |
+
+A thin profile makes it 4-6% slower; a 50x denser one gets back to noise. Never
+better.
+
+### Why, in three numbers
+
+**`.text` is 5014 bytes.** L1i on this Alder Lake P-core is 32 KB, so the entire
+program sits in instruction cache six times over. Code layout and hot/cold
+splitting are PGO's principal lever and there is nothing here for them to do.
+
+**The branch miss rate is 1.6%** -- 3.84 M misses in 235 M branches. The
+hardware predictor is already at 98.4% on this workload, so knowing a branch's
+direction at compile time adds nothing it does not already learn in the first
+few iterations.
+
+**There are no calls.** Every template is spliced, so PGO's third lever,
+inlining decisions, has no decision to make.
+
+### The uncomfortable row
+
+Stripping all 31 `__builtin_expect` hints changes nothing measurable: 1.000
+median, 1.008 min. The `likely` machinery and the not-taken default are not
+paying for themselves on this program, for the same reason PGO is not -- the
+predictor gets there without help. They are not therefore pointless: they place
+the error blocks out of line, which is a layout and readability property of the
+generated C rather than a speed one.
+
+`docs/control-flow.md` was checked and needs no change -- it describes `likely`
+as a prediction and never claims a speed benefit, which is exactly right and is
+now measured rather than assumed. What would be wrong is to start claiming one.
