@@ -721,13 +721,20 @@ TLS parser, all indices parsed off the wire; 20 in the third; the rest small.
    branch value is also tightened by any assumption whose left side IS that
    value.
 
-   Corpus now: **3315 of 3354 proved (98.8%), 39 unproved** -- 32 wanting a
-   run-time guard, 4 guarded-but-untied, 3 internal-unresolved.
+   Two more things `trim` forced, both wider than spans. A LOAD inside a larger
+   expression is not Python and would not parse, so `[t + 8 : 8] - n` returned
+   nothing at all; each load is replaced by a stand-in carrying its interval
+   before the expression is evaluated. And a bound on a NAME is a bound on what
+   it was DEFINED as: `total is length + 5` with `ensure total <= capacity` says
+   `length <= capacity - 5`, and without carrying that back a length taken off
+   the wire stays as wide as its sixteen bits.
 
-   What still resists, and both are honest rather than missing: `skip` moves the
-   pointer, so its span keeps no fact by design; and `trim` computes
-   `length - n`, which needs a LOWER bound on `n` where the machinery only
-   tightens one end of a branch.
+   Corpus now: **3320 of 3354 proved (99.0%), 34 unproved** -- 28 wanting a
+   run-time guard, 4 guarded-but-untied, 2 internal, 1 opaque base.
+
+   What still resists is honest rather than missing: `skip` moves the pointer,
+   so its span keeps no fact by design -- `.size` stops naming the room that is
+   left.
 
 #### Decided
 

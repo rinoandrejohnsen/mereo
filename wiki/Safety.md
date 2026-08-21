@@ -128,9 +128,8 @@ measurement, not part of the compiler.
 
 | | | |
 | --- | ---: | --- |
-| **proved** | **3315** | **98.8%** |
-| bound-unresolved | 35 | 1.0% |
-| data-dependent | 4 | 0.1% |
+| **proved** | **3320** | **99.0%** |
+| bound-unresolved | 34 | 1.0% |
 
 The one out-of-range access is `access_past_end.mereo`, which mereoc already
 refuses. Six violations planted outside the corpus — a loop wider than its
@@ -142,16 +141,19 @@ Nothing is reported wrong unless it is **proven** wrong. A non-relational
 interval domain loses the correlation between two variables and will call a safe
 access out of range; anything merely unproved is reported as unproved.
 
-**The 44 remaining are all in the TLS parser**, and sort by cause:
+**The 34 remaining are all in the TLS parser**, and the compiler sorts them by
+cause, which is what makes the list a work item rather than a number:
 
 | cause | | |
 | --- | ---: | --- |
-| the program never states the fact | 20 | `tlen >= 36` is true and written nowhere |
-| an invariant the compiler could enforce | 7 | a span's `length` against its backing |
-| genuinely dependent on hostile input | 16 | an index parsed out of a ServerHello |
+| comes from input, nothing bounds it | 28 | **wants a run-time guard** |
+| comes from input, guarded, not tied to this access | 4 | a limit of the analysis, not a hole |
+| internal, a bound that did not resolve | 2 | |
 | an unresolved base | 1 | |
 
-The first is one line per site, in the program:
+The first row is where a skilled C programmer writes a check, so mereo may too,
+at the same cost and still at parity. Some of the rest want one line stated in
+the program:
 
 ```ada
   ensure tlen + inner_len <= tr.size     -- stated

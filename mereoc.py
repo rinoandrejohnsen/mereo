@@ -5792,7 +5792,7 @@ def classify_accesses(definitions, slots, steps):
     def names_in(e):
         return set(re.findall(r"[A-Za-z_][\w.]*", str(e)))
 
-    facts, live = {}, {}          # live: expr -> (rhs, strict, siblings)
+    facts, live, lastdef = {}, {}, {}   # live: expr -> [(op, rhs, siblings)]
     for i, st in enumerate(steps):
         t = st.get("type")
         if t == "assign":
@@ -5802,6 +5802,7 @@ def classify_accesses(definitions, slots, steps):
                       if tgt in names_in(k) or any(tgt in names_in(f[1]) for f in v)]:
                 live.pop(k, None)
             if inherit: live[tgt] = list(inherit)
+            lastdef[tgt] = ex if isinstance(st.get("expr"), str) else None
         elif t in ("call", "bare"):
             outs = set()
             for c in st.get("conns", []):
@@ -5815,6 +5816,14 @@ def classify_accesses(definitions, slots, steps):
                 lhs, op, rhs = m.group(1).strip(), m.group(2), m.group(3).strip()
                 terms = [x.strip() for x in lhs.split("+")] if "-" not in lhs else []
                 live.setdefault(lhs, []).append((op, rhs, []))
+                # A bound on a NAME is a bound on what it was defined as.
+                # `total is length + 5` then `ensure total <= capacity` says
+                # `length <= capacity - 5`; without carrying it back, a length
+                # taken off the wire stays as wide as its sixteen bits.
+                if lastdef.get(lhs) and "-" not in str(lastdef[lhs]):
+                    back = [x.strip() for x in str(lastdef[lhs]).split("+")]
+                    if len(back) > 1:
+                        terms = back
                 if len(terms) > 1 and op in ("<=", "<"):
                     for x in terms:
                         live.setdefault(x, []).append((op, rhs, [y for y in terms if y != x]))
@@ -6106,7 +6115,33 @@ def classify_accesses(definitions, slots, steps):
                         (a[1] if best[1] is None else min(best[1], a[1])))
             return best
         try:
-            node = ast.parse(e.replace("^", "|"), mode="eval").body
+            # A LOAD inside a larger expression is not Python -- `[t + 8 : 8]
+            # - n` will not parse. Each one is replaced by a stand-in name
+            # carrying the interval the load has, innermost first, so
+            # `length - n` over a field read becomes ordinary arithmetic.
+            src, stand, k = e.replace("^", "|"), {}, 0
+            while True:
+                m2 = _ACC.search(src)
+                if not m2:
+                    break
+                nm = f"_ld{k}"
+                k += 1
+                stand[nm] = iv(m2.group(0), at, seen)
+                src = src[:m2.start()] + nm + src[m2.end():]
+            saved_ld = {}
+            for nm, rng in stand.items():
+                saved_ld[nm] = ASSUME.get(nm)
+                ASSUME[nm] = rng
+            try:
+                node = ast.parse(src, mode="eval").body
+            finally:
+                for nm, v in saved_ld.items():
+                    if v is None:
+                        ASSUME.pop(nm, None)
+                    else:
+                        ASSUME[nm] = v
+            for nm, rng in stand.items():
+                ASSUME[nm] = rng
         except SyntaxError:
             return UNK
         def walk(nd):
@@ -6165,7 +6200,11 @@ def classify_accesses(definitions, slots, steps):
                     top = a[1] | b[1]
                     return (0, (1 << top.bit_length()) - 1)
             return UNK
-        return tighten(e, walk(node), at, seen)
+        try:
+            return tighten(e, walk(node), at, seen)
+        finally:
+            for nm in stand:
+                ASSUME.pop(nm, None)
 
     def base_of(e, depth=0):
         e = e.strip()
