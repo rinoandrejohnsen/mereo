@@ -668,7 +668,30 @@ TLS parser, all indices parsed off the wire; 20 in the third; the rest small.
    aside for it. Without that it preempted the older check and the only
    suite failure was a message mismatch, not a wrong verdict.
 
-5. **The report** (item 8). The taxonomy above.
+5. **The report** (item 8). **DONE** -- `report_unproved`, one `note()` per
+   unproved access on stderr, a clean program silent. Corpus-wide:
+
+   | | |
+   | ---: | --- |
+   | **32** | comes from input, nothing bounds it -- **wants a run-time guard** |
+   | 4 | comes from input, a guard is in scope but could not be tied to it |
+   | 7 | internal, a bound exists but did not resolve |
+   | 1 | the backing did not resolve |
+
+   More land in the input rows than this plan guessed (it said 16), because an
+   index is attacker-reachable when its LOOP BOUND came from outside even if the
+   counter itself is local -- `copy`'s `i` stepping to a length off the wire is
+   controlled by that length.
+
+   Three things the taint needed that were not obvious. A resource METHOD
+   reaches its primitive through `prim` + `bind`, so `stream.receive` had to be
+   resolved to `linux.read` before its buffer could be seen. The in-ports have
+   to exclude the out port, because `read`'s result is called `count` and
+   folding it in made every read look like a `write`. And the buffer handed to
+   a syscall is often a SCALAR HOLDING AN ADDRESS -- `read_record` receives into
+   `at`, which is `sh_rec + got` -- so taint needs an offset-agnostic
+   `backing_of`, where `resolve_base` correctly gives up because bounds need a
+   number and taint does not.
 
 6. **The span invariant as a FACT** (item 2, second half). This is what unblocks
    the 7. It cannot come earlier: assuming `length <= data.size` is only sound

@@ -449,6 +449,13 @@ def fail(msg):
     raise SystemExit(f"mereoc: error: {where}{msg}")
 
 
+def note(msg):
+    """A diagnostic that does not stop the compile. Goes to stderr, because the
+    C the compiler produces goes to stdout."""
+    where = f"{CURRENT_FILE}: " if CURRENT_FILE else ""
+    sys.stderr.write(f"mereoc: {where}{msg}\n")
+
+
 # asm operand constraints: prose register names / definitions -> GCC letters
 # (the transpiler owns this the way it owns syscall numbers). Specific
 # registers with dedicated letters only in v1; r8-r15/rbp work as
@@ -5535,6 +5542,41 @@ def _acc_strings(st):
 ACCESS_VERDICTS = []
 
 
+def report_unproved(verdicts):
+    """Say, once per access, what could not be decided and what to do about it.
+
+    An unproved access is not one thing. The index either came from OUTSIDE the
+    program or it did not, and if it did, something either bounds it here or
+    nothing does -- and only the last of those is a mistake waiting to happen.
+
+      input, unguarded   an index off the wire with nothing checking it. This
+                         is where a skilled C programmer writes a run-time
+                         guard, so mereo should too: the barrier forbids a check
+                         the expert's C would not carry, not checks as such.
+      input, guarded     a guard IS there and the compiler cannot tie it to this
+                         access. Not a hole; a limit of the analysis.
+      internal           every value is the program's own. Nothing to guard
+                         against -- state the bound the code already relies on.
+
+    A clean program prints nothing."""
+    for kind, base, expr, ln, _hi, _size, _w, _lit, origin in verdicts:
+        if kind in ("proved", "OUT"):
+            continue
+        if origin == "input-unguarded":
+            why = ("the index comes from input and nothing bounds it here -- "
+                   "this wants a run-time guard")
+        elif origin == "input-guarded":
+            why = ("the index comes from input and a guard is in scope, but it "
+                   "could not be tied to this access")
+        else:
+            why = {"data-dependent": "no bound on the index is in scope",
+                   "bound-unresolved": "a bound is in scope but could not be "
+                                       "resolved to a number",
+                   "opaque-base": "the backing did not resolve"}.get(
+                       kind, "not decided")
+        note(f"line {ln}: `[{expr}]` not proved in range -- {why}.")
+
+
 def refuse_proven_wrong(verdicts):
     """Refuse an access the analysis PROVED runs past its backing.
 
@@ -5548,7 +5590,7 @@ def refuse_proven_wrong(verdicts):
     message. This covers the derived ones: a loop bound wider than the backing,
     an affine index that overflows, an off-by-one in a branchless guard."""
     for row in verdicts:
-        kind, base, expr, ln, hi, size, width, lit = row
+        kind, base, expr, ln, hi, size, width, lit, _origin = row
         if kind != "OUT" or lit:
             continue
         reach = hi + width
@@ -6066,6 +6108,89 @@ def classify_accesses(definitions, slots, steps):
             return bn2, sz2, (off2[0] + add[0], off2[1] + add[1])
         return None, None, None
 
+    # ---------- which values carry data from OUTSIDE the program
+    # A scalar bound to a primitive's out port, and a buffer a primitive wrote
+    # into. The second is what matters for a parser: `inner_len is [rec + 3 : 2]`
+    # is an index taken off the wire, however many copies later it is used.
+    #
+    # A primitive with a `buffer` port writes into it UNLESS it also takes a
+    # `count` in-port -- that is `write`, which reads from the buffer instead.
+    def backing_of(e, at, seen=()):
+        """which BUFFER does this address point into, offset be damned.
+        `resolve_base` gives up when the offset will not resolve to a number,
+        because bounds need one; taint only needs the name."""
+        e = str(e).strip()
+        bn, size = base_of(e)
+        if size is not None:
+            return bn
+        if not re.fullmatch(r"[A-Za-z_][\w.]*", e) or (e, at) in seen or len(seen) > 8:
+            return None
+        for d, ex in reaching(e, at):
+            got = backing_of(str(ex).partition("+")[0], d, seen + ((e, at),))
+            if got:
+                return got
+        return None
+
+    tainted, tainted_buf = set(), set()
+    for _si, st in enumerate(steps):
+        if st.get("type") not in ("call", "bare"):
+            continue
+        conns = {p: a for p, a, _ln in st.get("conns", [])}
+        if st["type"] == "bare":
+            prim, bind = PRIMITIVES.get(st.get("op")), None
+        else:
+            ins = next((x for x in slots if x["kind"] == "instance"
+                        and x["name"] == st.get("inst")), None)
+            d = definitions.get(ins["definition"]) if ins else None
+            meth = ((d or {}).get("methods") or {}).get(st.get("method")) or {}
+            prim, bind = PRIMITIVES.get(meth.get("prim")), meth.get("bind") or {}
+        if not prim:
+            continue
+        def _wired(port):
+            if bind is not None:
+                b = bind.get(port)
+                port = b[0] if isinstance(b, (list, tuple)) else (b or port)
+            return conns.get(port)
+        # the IN ports only: `read`'s result is called `count`, and folding it
+        # in here made every read look like a write
+        inports = {p for _k, p in prim.get("args", [])} - {prim.get("out")}
+        if prim.get("out") and _wired(prim["out"]):
+            tainted.add(_wired(prim["out"]))
+        if "buffer" in inports and "count" not in inports:
+            b = _wired("buffer")
+            if b:
+                # the argument is often a SCALAR HOLDING AN ADDRESS into the
+                # real backing -- `read_record` receives into `at`, which is
+                # `rec + n`. What the kernel wrote is `rec`, so taint that.
+                tainted_buf.add(backing_of(b, _si) or b)
+
+    def from_input(e, at, seen=()):
+        """does this expression carry anything that came from outside?"""
+        e = str(e).strip()
+        if not e:
+            return False
+        for m in _ACC.findall(e):
+            head = m.partition("+")[0].partition(":")[0].strip()
+            bn, _sz, _off = resolve_base(head, at)
+            if bn in tainted_buf:
+                return True
+        for n in set(re.findall(r"[A-Za-z_][\w.]*", e)):
+            if n in tainted:
+                return True
+            if (n, at) in seen or len(seen) > 24:
+                continue
+            for d, ex in reaching(n, at):
+                if from_input(ex, d, seen + ((n, at),)):
+                    return True
+        return False
+
+    def is_guarded(e, at):
+        """is any name in this index bounded by a live `ensure` here?"""
+        live = facts.get(at, {})
+        if e.strip() in live:
+            return True
+        return any(n in live for n in re.findall(r"[A-Za-z_][\w.]*", e))
+
     out = []
     for i, st in enumerate(steps):
         for s in _acc_strings(st):
@@ -6079,9 +6204,21 @@ def classify_accesses(definitions, slots, steps):
                 # a wholly literal index has its own check, later and with a
                 # better message -- this one stands aside for it
                 lit = not idx.strip() or _acc_const(idx) is not None
+                # an index is attacker-reachable if its VALUE came from
+                # outside, or if the loop bound that governs it did -- a
+                # counter stepping to a length off the wire is controlled by
+                # that length however local the counter looks
+                tainted_idx = (not lit) and (
+                    from_input(idx, i)
+                    or any(from_input(binding[i][n][0], i)
+                           for n in re.findall(r"[A-Za-z_][\w.]*", idx)
+                           if i in binding and n in binding[i]))
+                origin = ("internal" if not tainted_idx
+                          else ("input-guarded" if is_guarded(idx, i)
+                                else "input-unguarded"))
                 if size is None:
                     out.append(["opaque-base", lhs.strip(), inner, ln, None,
-                                None, width, lit]); continue
+                                None, width, lit, origin]); continue
                 bnd = binding.get(i, {})
                 lo, hi = iv(idx.strip(), i) if idx.strip() else (0, 0)
                 if lo is not None and hi is not None:
@@ -6090,10 +6227,10 @@ def classify_accesses(definitions, slots, steps):
                     first = re.split(r"[^\w.]", idx.strip())[0]
                     known = first in bnd or first in copy or first in facts.get(i, {})
                     kind = "bound-unresolved" if known else "data-dependent"
-                    out.append([kind, bname, inner, ln, None, size, width, lit])
+                    out.append([kind, bname, inner, ln, None, size, width, lit, origin])
                     continue
                 out.append([("proved" if hi + width <= size else "OUT"),
-                            bname, inner, ln, hi, size, width, lit])
+                            bname, inner, ln, hi, size, width, lit, origin])
     return out
 
 def check_adoption_fit(definitions, slots):
@@ -6384,6 +6521,7 @@ def plan(definitions, slots, steps, overrides):
     # pass runs here, where the flat step list first exists.
     ACCESS_VERDICTS[:] = classify_accesses(definitions, slots, steps)
     refuse_proven_wrong(ACCESS_VERDICTS)
+    report_unproved(ACCESS_VERDICTS)
     steps = hoist_guard_bounds(steps, slots)
     scalars, buffers, instances = check_slots(definitions, slots)
 
