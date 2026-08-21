@@ -130,8 +130,8 @@ measurement, not part of the compiler.
 
 | | | |
 | --- | ---: | --- |
-| **proved** | **3313** | **98.8%** |
-| bound-unresolved | 37 | 1.1% |
+| **proved** | **3315** | **98.8%** |
+| bound-unresolved | 35 | 1.0% |
 | data-dependent | 4 | 0.1% |
 
 The one out-of-range access is `access_past_end.mereo`, which mereoc already

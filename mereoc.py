@@ -5681,8 +5681,15 @@ def classify_accesses(definitions, slots, steps):
 
     copy = {}
     for i, st in enumerate(steps):
-        if st.get("type") == "assign" and isinstance(st.get("expr"), str):
+        if st.get("type") != "assign":
+            continue
+        if isinstance(st.get("expr"), str):
             copy.setdefault(st["name"], []).append((i, st["expr"].strip()))
+        elif st.get("clauses"):
+            # `X is V when C` is a definition like any other, but which value it
+            # leaves behind depends on the branch. Kept whole; `iv` splits it.
+            copy.setdefault(st["name"], []).append(
+                (i, ("?", st["clauses"], st.get("default"), st["name"])))
 
     # ---------- loops, position-aware
     # pair start/end positionally; a loop's bound may sit at the TOP
@@ -5948,13 +5955,99 @@ def classify_accesses(definitions, slots, steps):
 
     LOAD = re.compile(r"^\[[^\[\]]*?(?::\s*(\d+)\s*)?\]$")
 
+    _NEG = {"<": ">=", "<=": ">", ">": "<=", ">=": "<"}
+
+    def _under(expr, at, seen, asms):
+        """evaluate `expr` with each comparison in `asms` assumed to hold"""
+        saved = {}
+        for a in asms:
+            if not a or not a[1]:
+                continue
+            lhs, op, rhs = a
+            if not re.fullmatch(r"[A-Za-z_][\w.]*", lhs):
+                continue
+            r = iv(rhs, at, seen)
+            lo = hi = None
+            if op in ("<", "<=") and r[1] is not None:
+                hi = r[1] - (1 if op == "<" else 0)
+            elif op in (">", ">=") and r[0] is not None:
+                lo = r[0] + (1 if op == ">" else 0)
+            if lo is None and hi is None:
+                continue
+            saved.setdefault(lhs, ASSUME.get(lhs))
+            cur = ASSUME.get(lhs) or (None, None)
+            ASSUME[lhs] = (cur[0] if lo is None else
+                           (lo if cur[0] is None else max(cur[0], lo)),
+                           cur[1] if hi is None else
+                           (hi if cur[1] is None else min(cur[1], hi)))
+        try:
+            got = iv(expr, at, seen)
+            # ...and when a condition bounds THIS VERY EXPRESSION, use it. The
+            # branch taken because `999 <= length` holds carries the value 999,
+            # and that comparison is the only thing that bounds it -- a literal
+            # on the left constrains nothing as a variable, but it does bound
+            # the value the branch produces.
+            key = str(expr).strip()
+            for a in asms:
+                if not a or not a[1] or a[0] != key:
+                    continue
+                r = iv(a[2], at, seen)
+                if a[1] in ("<", "<=") and r[1] is not None:
+                    cap = r[1] - (1 if a[1] == "<" else 0)
+                    got = (got[0], cap if got[1] is None else min(got[1], cap))
+                elif a[1] in (">", ">=") and r[0] is not None:
+                    flr = r[0] + (1 if a[1] == ">" else 0)
+                    got = (flr if got[0] is None else max(got[0], flr), got[1])
+            return got
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    ASSUME.pop(k, None)
+                else:
+                    ASSUME[k] = v
+
+    def iv_cond(marker, at, seen):
+        """A conditional assign is the JOIN of its branches, each taken under
+        the condition that selects it. `n is old when n > old` is min(n, old),
+        and only the case split sees that -- joining the two sides on their own
+        gives max(n, old), which is the wrong end and proves nothing."""
+        _tag, clauses, default, name = marker
+        parts, negs = [], []
+        for val, cond in clauses:
+            m = _CMPX.match(str(cond))
+            asm = None
+            if m and m.group(2) in _NEG:
+                asm = (m.group(1).strip(), m.group(2), m.group(3).strip())
+                negs.append((asm[0], _NEG[asm[1]], asm[2]))
+            parts.append(_under(str(val), at, seen, [asm]))
+        if default is not None:
+            parts.append(_under(str(default), at, seen, negs))
+        else:
+            prev = [(d, ex) for d, ex in (copy.get(name) or []) if d < at]
+            if not prev:
+                return UNK
+            parts.append(_under(prev[-1][1], prev[-1][0], seen, negs))
+        acc = parts[0]
+        for q in parts[1:]:
+            acc = join(acc, q)
+        return acc
+
     def iv(e, at, seen=()):
+        if isinstance(e, tuple):
+            return iv_cond(e, at, seen)
         e = str(e).strip()
         if not e: return UNK
         # `b is [block + i : 1]` makes b a BYTE. A skilled reader uses that
         # without thinking; the width is right there in the access.
         m = LOAD.match(e)
         if m:
+            _b, _pl, _rest = e[1:-1].partition("+")
+            if _pl and _b.strip() in {k[0] for k in inv_load}:
+                _o, _sep, _wd = _rest.rpartition(":")
+                key = (_b.strip(), _acc_const(_o if _sep else _rest),
+                       _acc_const(_wd) if _sep else 1)
+                if key in inv_load:
+                    return (0, inv_load[key])
             w = int(m.group(1) or 1)          # no `: N` means one byte
             return (0, (1 << (8 * w)) - 1) if w <= 4 else UNK
         # a width/sign modifier is not part of the arithmetic
@@ -6195,12 +6288,16 @@ def classify_accesses(definitions, slots, steps):
 
     # ---------- an adopted invariant, used as a FACT where it survives
     # `ensure length <= data.size` is checked at adoption. Believing it
-    # afterwards needs two things: `data` must still point where it was adopted
-    # -- `skip` moves it, and then `.size` no longer names the room that is left
-    # -- and every store to the field must be provably within the bound. Where
-    # either fails the instance keeps no fact at all; an assumption that is only
-    # usually true is worse than none.
-    inv_fact = {}
+    # afterwards is an INDUCTIVE argument: assume it holds before each store to
+    # the field, then show it still holds after. So candidates go in first,
+    # every store is checked with them assumed, and any that fails is dropped --
+    # repeatedly, since dropping one can undermine another.
+    #
+    # `data` must also still point where it was adopted. `skip` writes
+    # `data is data + n`, and after that `.size` no longer names the room that
+    # is LEFT, so the invariant has stopped being about the same thing. An
+    # instance whose pointer is written keeps no fact at all.
+    inv_fact, inv_load, inv_ptr, inv_off = {}, {}, {}, {}
     for sl in slots:
         if sl["kind"] != "instance":
             continue
@@ -6211,34 +6308,45 @@ def classify_accesses(definitions, slots, steps):
         for field, cmp_, val, _ln in (d.get("invariants") or []):
             if cmp_ not in ("<=", "<") or not val.endswith(".size"):
                 continue
-            other = val[:-5]
-            back = given.get(other)
+            back = given.get(val[:-5])
             if isinstance(back, (list, tuple)):
                 back = back[0]
-            bn, size = base_of(str(back or ""))
-            if size is None:
+            _bn, size = base_of(str(back or ""))
+            ent, oent = lay.get(field), lay.get(val[:-5])
+            if size is None or not ent or not oent:
                 continue
             cap = size - (1 if cmp_ == "<" else 0)
-            off_f = (lay.get(field) or (None,))[0]
-            off_o = (lay.get(other) or (None,))[0]
-            ok = True
+            key = f"{sl['name']}.{field}"
+            inv_fact[key] = cap
+            inv_load[(sl["name"], ent[0], ent[1])] = cap
+            inv_ptr[key] = oent[0]
+            inv_off[key] = ent[0]
+
+    while inv_fact:
+        dropped = []
+        for key, cap in list(inv_fact.items()):
+            iname = key.partition(".")[0]
             for j, st in enumerate(steps):
                 if st.get("type") not in ("store", "fstore", "atomic"):
                     continue
-                addr = str(st.get("addr", ""))
-                head, _p, rest = addr.partition("+")
-                if head.strip() != sl["name"]:
+                head, _pl, rest = str(st.get("addr", "")).partition("+")
+                if head.strip() != iname:
                     continue
                 where = _acc_const(rest) if rest.strip() else 0
-                if where == off_o:            # the pointer itself moved
-                    ok = False; break
-                if where != off_f:
+                if where == inv_ptr[key]:
+                    dropped.append(key); break
+                if where != inv_off[key]:
                     continue
                 hi = iv(str(st.get("value", "")), j)[1]
                 if hi is None or hi > cap:
-                    ok = False; break
-            if ok:
-                inv_fact[f"{sl['name']}.{field}"] = cap
+                    dropped.append(key); break
+        if not dropped:
+            break
+        for k in dropped:
+            inv_fact.pop(k, None)
+            iname = k.partition(".")[0]
+            for lk in [x for x in inv_load if x[0] == iname]:
+                inv_load.pop(lk, None)
 
     out = []
     for i, st in enumerate(steps):

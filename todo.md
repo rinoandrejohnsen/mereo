@@ -707,13 +707,27 @@ TLS parser, all indices parsed off the wire; 20 in the third; the rest small.
      and is invisible. Proving `min(a, b) <= b` needs the same case split the
      branchless idiom already gets for multiplication.
 
-   That second one is the next thing to do if this is worth more: **teach `iv`
-   about conditional assigns**, evaluating each clause under its own condition
-   and joining. It would also make `when` stores generally analysable, which is
-   wider than spans.
+   **The conditional half is now done too.** `iv` splits on a `when`: each
+   clause under the condition that selects it, the fallback under the negation
+   of all of them. `n is old when n > old` is min(n, old), and only the case
+   split sees that -- joining the two sides on their own gives max, which is the
+   wrong end and proves nothing.
 
-   Corpus now: **3313 of 3354 proved (98.8%), 41 unproved** -- 32 wanting a
-   run-time guard, 4 guarded-but-untied, 5 internal-unresolved.
+   One rule was needed beyond the split, and it is the interesting one. A
+   condition can bound the branch's VALUE rather than a variable in it:
+   `take (count is 999)` takes the fallback because `999 <= length` holds, and
+   that comparison is the only thing bounding 999 -- as a variable-range
+   assumption it constrains nothing, since the left side is a literal. So a
+   branch value is also tightened by any assumption whose left side IS that
+   value.
+
+   Corpus now: **3315 of 3354 proved (98.8%), 39 unproved** -- 32 wanting a
+   run-time guard, 4 guarded-but-untied, 3 internal-unresolved.
+
+   What still resists, and both are honest rather than missing: `skip` moves the
+   pointer, so its span keeps no fact by design; and `trim` computes
+   `length - n`, which needs a LOWER bound on `n` where the machinery only
+   tightens one end of a branch.
 
 #### Decided
 
