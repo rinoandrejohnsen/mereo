@@ -640,9 +640,21 @@ TLS parser, all indices parsed off the wire; 20 in the third; the rest small.
 2. **The span adoption check** (item 2, first half). **DONE** --
    `check_adoption_fit`, with the clause now allowed in a resource body.
 
-3. **Port the analysis** (item 6). The foundation for the rest. No behaviour
-   change on its own -- it should produce the same tally the tool does today,
-   which is the test.
+3. **Port the analysis** (item 6). **DONE.** `classify_accesses` in mereoc.py,
+   run from `plan()` after `check_call_fit`, leaving its verdicts in
+   `ACCESS_VERDICTS`. `tools/mereoprove.py` is 87 lines now instead of 655: it
+   compiles each file and tallies what the compiler decided.
+
+   Verified the way the plan asked -- row by row against the old tool across
+   every file both can analyse: **75 files, 0 differing verdicts**. The corpus
+   is byte-identical and the pass costs 1.0s across 89 binaries (15.5s against
+   14.5s), which is compile time and not a constraint.
+
+   One thing the port changes that is worth knowing: the analysis now runs
+   inside a full compile, so a program mereoc REFUSES never reaches it. The 26
+   refusal tests and the 5 TLS library files (no `program is`, so not programs)
+   drop out of the tally, which is why it reads 75 files and 3354 accesses
+   rather than 86 and 3359. The verdicts on real programs did not move.
 
 4. **Refuse what is proved wrong** (item 1). Small once 3 lands. The planted
    violations already exist as scratch cases: a loop to 100 over a 64-byte
