@@ -125,55 +125,6 @@ opt-in in `build.sh` (`STRIP_SECTIONS=1`), not as the default.
 
 ---
 
-## Two road-grammar gaps
-
-**Status:** open, both small, both confirmed still present today.
-
-A road body has its own statement parser (`mereoc.py`, the `likely goes` and
-`when ... goes` blocks). It knows method calls, free-standing template calls,
-`NAME is EXPR`, `NAME is adopted CLASS (...)`, `NAME goes`, `scope`, `leave` and
-`repeat`. It does not know two things the spine knows.
-
-**1. A direct construction.** `NAME is CLASS (...)` in a road is not refused —
-it is misparsed as an assignment, so the diagnostic talks about scalars:
-
-```
-  pick likely goes
-    source is linux.file (path is "lorem_ipsum.txt", flags is 0, mode is 0)
-    ^  mereoc: error: 'source' is not a scalar slot (declare it with
-       `NAME is NUMBER` before assigning)
-  end
-```
-
-That misdirection is most of why this is worth fixing: the diagnostic names a
-rule the line was never trying to use. It belongs above the assignment rule,
-mirroring `NAME is adopted CLASS (...)`, which is already there.
-
-**2. `ensure`.** A road body has no rule for it at all, so it gets the
-grammar-summary refusal:
-
-```
-    ensure n >= 0
-    ^  mereoc: error: a `likely goes` body is method calls, `NAME is EXPR`
-       assignments, `NAME is adopted CLASS (...)` resources, or
-       `NAME goes`/`scope` blocks
-    end
-```
-
-**The planner handles both already** — this is parsing, not lowering. Roads have
-gone through the spine's own `plan_one` since templates were allowed in them, so
-a construct or guard step arriving from a road is planned like any other. Proof
-for each, by routing it through a template (a splice puts the step into the road
-after parsing, so it never meets the road grammar):
-
-- construction — `tests/progs/branch_res.mereo`, whose `peek` opens a file in
-  both roads; it is in the black-box suite and under `mereoraii`.
-- `ensure` — a template whose body is `ensure value >= 0`, spliced into a road,
-  transpiles and emits the guard and its error block in the right places.
-
-So the fix is two rules in each of the two road parsers, and the workaround
-meanwhile is the same for both: put it in a template and splice it.
-
 ## `N bytes` means two different things, silently
 
 **Status:** open. A real miscompile, worked around in
