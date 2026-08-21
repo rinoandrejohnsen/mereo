@@ -811,3 +811,60 @@ hand-written C twin (min ratio 0.997, and 6 vector instructions against C's 10
 with no time difference, because the hot path is the SWAR scan). There is no
 deficit to recover. Restoring aliasing information could only make mereo BEAT
 hand-written C, which is not the bar.
+
+## The 9 sites the analysis has been pointing at, unread
+
+Found 2026-08-21, while answering "have we exhausted what we know". No -- we had
+not read the output. The count is 9 DISTINCT sites, not the 30 the raw total
+says: seven are the TLS stack counted once per program that includes it, exactly
+the caution recorded further up this file.
+
+**`crypto.server_hello` walks off the end of the record.** `programs/tls/
+crypto.mereo`. The template takes `(rec, pub)` and NO length, so the
+`ensure total <= capacity` that bounds `sh_rec` to 512 bytes -- the fix for the
+earlier overflow -- never enters it. Inside:
+
+    sidlen is [rec + 38 : 1]        -- 1 wire byte, 0..255
+    c is 39 + sidlen ; c is c + 3   -- c now 42..297
+    endx is [rec + c : 2] as big    -- 2 wire bytes, 0..65535
+    endx is endx + c                -- absolute, up to ~65832
+    walk goes
+      et is [rec + c : 2] as big
+      el is [rec + v : 2] as big    -- 2 more wire bytes
+      c is c + 4 ; c is c + el
+      repeat walk when c < endx
+    end
+    text.copy (source is rec + ks_off, target is pub, length is 32)
+
+A server sends a well-formed 512-byte record whose ServerHello declares a large
+extensions length. The walk reads up to ~65 KB past `sh_rec`, then copies 32
+bytes from an attacker-chosen offset into `spub`. Pre-authentication, remotely
+triggerable, and read from the source -- NOT executed against a hostile server,
+so treat the exact reach as unconfirmed and the shape as confirmed.
+
+The fix is the same shape as `read_record`'s: give the template the length it is
+missing, and bound `endx` and `ks_off` by it.
+
+    server_hello (rec, reclen, pub) goes
+      ...
+      ensure endx <= reclen
+      ensure ks_off + 32 <= reclen
+
+The other two are `exam/mereo/loglyze.mereo` and want the same treatment.
+
+### What this says about the analysis
+
+It works, and it was ignored. Every one of the nine says "the index comes from
+input and nothing bounds it here -- this wants a run-time guard", which is
+precise, correct, and was printed on every build. The failure was downstream of
+the compiler.
+
+It also settles what the analysis is FOR. It changes no binary (see the survey
+above), so its entire value is these nine lines -- and the barrier positively
+WANTS the guards they ask for: where the expert cannot deduce it, the expert
+writes a check, so mereo may too and still be at parity. At these nine sites we
+are not at the bar, we are BELOW it: an expert's C would carry a bound here and
+ours does not.
+
+Worth a gate. A build that prints "wants a run-time guard" and passes anyway is
+a build whose warnings are furniture.
