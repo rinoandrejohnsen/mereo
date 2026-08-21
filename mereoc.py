@@ -6373,6 +6373,31 @@ def classify_accesses(definitions, slots, steps):
                     continue
                 where = _acc_const(rest) if rest.strip() else 0
                 if where == inv_ptr[key]:
+                    # `skip` moves the pointer FORWARD and shortens the length by
+                    # the same amount, so `offset + length` is unchanged and the
+                    # span still ends inside its backing. That pairing is the
+                    # whole of what makes it safe, so it is what gets checked.
+                    mv = re.match(r"^\s*\[[^\]]*\]\s*\+\s*(.+?)\s*$",
+                                  str(st.get("value", "")))
+                    paired = False
+                    if mv:
+                        step = mv.group(1).strip()
+                        for k2 in range(max(0, j - 3), min(len(steps), j + 4)):
+                            s2 = steps[k2]
+                            if s2.get("type") != "store":
+                                continue
+                            h2, _p2, r2 = str(s2.get("addr", "")).partition("+")
+                            if h2.strip() != iname:
+                                continue
+                            if (_acc_const(r2) if r2.strip() else 0) != inv_off[key]:
+                                continue
+                            m2 = re.match(r"^\s*\[[^\]]*\]\s*-\s*(.+?)\s*$",
+                                          str(s2.get("value", "")))
+                            if m2 and m2.group(1).strip() == step:
+                                paired = True
+                                break
+                    if paired:
+                        continue
                     dropped.append(key); break
                 if where != inv_off[key]:
                     continue
@@ -6387,6 +6412,27 @@ def classify_accesses(definitions, slots, steps):
             for lk in [x for x in inv_load if x[0] == iname]:
                 inv_load.pop(lk, None)
 
+    def bound_is_length(idx, at, iname, lof, depth=0):
+        """is this index bounded by `iname`'s own length field?"""
+        if depth > 6 or not re.fullmatch(r"[A-Za-z_][\w.]*", idx):
+            return False
+        b = binding.get(at, {}).get(idx)
+        cands = [b[0]] if b else []
+        cands += [ex for _d, ex in (copy.get(idx) or []) if isinstance(ex, str)]
+        for c in cands:
+            c = str(c).strip()
+            if c == f"{iname}.length":
+                return True
+            if lof is not None:
+                m = _ACC.fullmatch(c)
+                if m:
+                    h, _pl, r = m.group(1).partition("+")
+                    if h.strip() == iname and _acc_const(r.rpartition(":")[0]) == lof:
+                        return True
+            if bound_is_length(c, at, iname, lof, depth + 1):
+                return True
+        return False
+
     out = []
     for i, st in enumerate(steps):
         for s in _acc_strings(st):
@@ -6400,6 +6446,20 @@ def classify_accesses(definitions, slots, steps):
                 # a wholly literal index has its own check, later and with a
                 # better message -- this one stands aside for it
                 lit = not idx.strip() or _acc_const(idx) is not None
+                # A span's own length bounds the room in front of its pointer,
+                # wherever that pointer has moved to: `offset + length <= size`
+                # is the invariant, so `i < length` puts `data + i` inside the
+                # backing without any of the three numbers being known. This is
+                # relational rather than arithmetic, which is why it holds after
+                # a `skip` that the interval domain cannot follow.
+                if lhs.strip().endswith(".data"):
+                    iname = lhs.strip()[:-5]
+                    if f"{iname}.length" in inv_fact:
+                        lof = next((k[1] for k in inv_load if k[0] == iname), None)
+                        if bound_is_length(idx.strip(), i, iname, lof):
+                            out.append(["proved", bname, inner, ln, None,
+                                        size, width, lit, "internal"])
+                            continue
                 # an index is attacker-reachable if its VALUE came from
                 # outside, or if the loop bound that governs it did -- a
                 # counter stepping to a length off the wire is controlled by

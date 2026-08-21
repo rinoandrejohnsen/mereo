@@ -732,9 +732,21 @@ TLS parser, all indices parsed off the wire; 20 in the third; the rest small.
    Corpus now: **3320 of 3354 proved (99.0%), 34 unproved** -- 28 wanting a
    run-time guard, 4 guarded-but-untied, 2 internal, 1 opaque base.
 
-   What still resists is honest rather than missing: `skip` moves the pointer,
-   so its span keeps no fact by design -- `.size` stops naming the room that is
-   left.
+   **`skip` is handled too.** The invariant that survives it is not
+   `length <= size` but **`offset + length <= size`**, and `skip` preserves it
+   exactly: the pointer moves forward and the length shortens BY THE SAME
+   AMOUNT. So the check is the pairing -- a store of `ptr + X` is allowed when a
+   store of `len - X` sits beside it -- and the access rule is relational rather
+   than arithmetic: `i < INST.length` puts `data + i` inside the backing without
+   any of the three numbers being known, which is why it still holds after a
+   pointer move the interval domain cannot follow.
+
+   That also closed a latent hole. Resolving `v.data` to the adopted backing and
+   checking `i + w <= size` is TOO WEAK once the pointer has moved -- it ignores
+   the offset. It was harmless only because such a span kept no fact at all.
+
+   Corpus now: **3328 of 3361 proved (99.0%), 33 unproved** -- 28 wanting a
+   run-time guard, 4 guarded-but-untied, 1 opaque base.
 
 #### Decided
 

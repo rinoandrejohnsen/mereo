@@ -1,0 +1,41 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- COMPILES, and is REPORTED: a resource that moves its pointer without
+-- shortening its length, so the fact it declared stops being true.
+--
+-- `ensure length <= data.size` is checked where an instance is adopted, and
+-- believing it afterwards is an inductive argument. The step that makes `skip`
+-- safe is that it moves the pointer forward and shortens the length BY THE SAME
+-- AMOUNT, so `offset + length` never grows and the span still ends inside its
+-- backing. `slide` below moves the pointer only.
+--
+-- So the fact is dropped, and every `[w.data + i]` after it is reported rather
+-- than proved. That is the point of the test: the pairing is what makes `skip`
+-- keep its fact, and without it the compiler must NOT go on believing the
+-- invariant. Adding `length is length - count` to `slide` makes the reports go
+-- away -- which is how this was checked.
+--
+-- It is a report, not a refusal. Nothing here is provably wrong; the compiler
+-- simply cannot show it right, and saying so is the honest answer.
+
+window is
+  data is 8 bytes
+  length is 8 bytes
+  ensure length <= data.size
+
+  slide (count) goes
+    data is data + count
+  end
+end
+
+program goes
+  line is "hello world hello"
+  page is 64 bytes
+  sink is already builder (data is page, count is 0, limit is page.size)
+  w is already window (data is line, length is 17)
+  w.slide (count is 10)
+  sink.add (source is w.data, length is w.length)
+  terminal is already linux.file (descriptor is 1)
+  terminal.write (buffer is sink.data, count is sink.count)
+end

@@ -350,6 +350,27 @@ bb   linux/calls      linux_calls "" 0 "linux ok"
 mkdir -p /tmp/mereo_linux_calls && : > /tmp/mereo_linux_calls/sample
 bb   linux/calls-again linux_calls "" 0 "linux ok"
 
+silent() {   # silent LABEL PROG -- PROG must compile with NOTHING on stderr
+    local label=$1 prog=$2 msg
+    msg=$(python3 "$DIR/mereoc.py" "$DIR/tests/progs/$prog.mereo" 2>&1 >/dev/null)
+    if [ -z "$msg" ]; then
+        printf '  %-24s ok\n' "$label"; pass=$((pass+1))
+    else
+        printf '  %-24s FAIL  %q\n' "$label" "$msg"; fail=$((fail+1))
+    fi
+}
+
+reports() {  # reports LABEL PROG SUBSTRING -- PROG must COMPILE and say SUBSTRING
+    local label=$1 prog=$2 want=$3 msg
+    msg=$(python3 "$DIR/mereoc.py" "$DIR/tests/progs/$prog.mereo" 2>&1 >/dev/null)
+    if python3 "$DIR/mereoc.py" "$DIR/tests/progs/$prog.mereo" >/dev/null 2>&1 \
+       && [ "${msg#*"$want"}" != "$msg" ]; then
+        printf '  %-24s ok\n' "$label"; pass=$((pass+1))
+    else
+        printf '  %-24s FAIL  %q\n' "$label" "$msg"; fail=$((fail+1))
+    fi
+}
+
 rejects() {  # rejects LABEL PROG SUBSTRING -- transpiling PROG must fail, saying SUBSTRING
     local label=$1 prog=$2 want=$3 msg
     msg=$(python3 "$DIR/mereoc.py" "$DIR/tests/progs/$prog.mereo" 2>&1 >/dev/null)
@@ -423,6 +444,16 @@ rejects access/past-end   access_past_end   "reads 101 bytes into"
 # reports neither, even at -Warray-bounds=2 -Wstringop-overflow=4 -fanalyzer.
 rejects access/loop-past-end loop_past_end "reaches 100 bytes into 'block', which is 64 bytes"
 rejects access/branchless-past-end branchless_past_end "reaches 136 bytes into 'o', which is 128 bytes"
+# A pointer that moves without its length stepping back: the invariant stops
+# being true, the fact is dropped, and the access is REPORTED rather than
+# proved. The pairing is what makes `skip` keep its fact.
+reports access/slide-unpaired span_slide_unpaired "\`[w.data + copy_3_i : 1]\` not proved in range"
+# ...and the other direction, which is the one that regresses quietly. Every
+# access in `views` is provable -- through `skip`, which moves the pointer and
+# shortens the length together, and through `take` and `trim`, which narrow via
+# a conditional store. If any of that machinery breaks, this goes noisy rather
+# than wrong, and nothing else would catch it.
+silent  access/views-silent  views
 rejects access/store-past-end store_past_end "writes 101 bytes into"
 # A syscall cannot be caught downstream: the kernel never sees where the buffer
 # ends, and inline asm with a "memory" clobber tells GCC nothing about which

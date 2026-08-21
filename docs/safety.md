@@ -130,8 +130,8 @@ measurement, not part of the compiler.
 
 | | | |
 | --- | ---: | --- |
-| **proved** | **3320** | **99.0%** |
-| bound-unresolved | 34 | 1.0% |
+| **proved** | **3328** | **99.0%** |
+| bound-unresolved | 33 | 1.0% |
 
 The one out-of-range access is `access_past_end.mereo`, which mereoc already
 refuses. Six violations planted outside the corpus — a loop wider than its
@@ -143,14 +143,13 @@ Nothing is reported wrong unless it is **proven** wrong. A non-relational
 interval domain loses the correlation between two variables and will call a safe
 access out of range; anything merely unproved is reported as unproved.
 
-**The 34 remaining are all in the TLS parser**, and the compiler sorts them by
+**The 33 remaining are all in the TLS parser**, and the compiler sorts them by
 cause, which is what makes the list a work item rather than a number:
 
 | cause | | |
 | --- | ---: | --- |
 | comes from input, nothing bounds it | 28 | **wants a run-time guard** |
 | comes from input, guarded, not tied to this access | 4 | a limit of the analysis, not a hole |
-| internal, a bound that did not resolve | 2 | |
 | an unresolved base | 1 | |
 
 The first row is where a skilled C programmer writes a check, so mereo may too,
