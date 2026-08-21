@@ -5218,6 +5218,43 @@ def check_port_needs(definitions, slots, steps):
 # ---------------------------------------------------------------------------
 
 _ACC = re.compile(r"\[([^\[\]]*)\]")
+
+
+def _accesses(text):
+    """Every `[...]` in `text`, NESTED ONES INCLUDED, innermost first.
+
+    A regex cannot do this. `[[v : 8] + i]` is a load whose base is itself a
+    load -- which is what `span.at` lowers to -- and the pattern above matches
+    only the inner one. The OUTER access, the one that actually indexes the
+    span's bytes, went unseen: never classified, never proved, never reported.
+    Scanning for balanced brackets finds both."""
+    out, stack = [], []
+    for i, c in enumerate(text):
+        if c == "[":
+            stack.append(i)
+        elif c == "]" and stack:
+            out.append(text[stack.pop() + 1:i])
+    return out
+
+
+def _split_width(inner):
+    """`BODY : W` -> (body, width), splitting at the colon that belongs to THIS
+
+    access. `rpartition` takes the last colon in the string, which for
+    `[v : 8] + i` is the one inside the nested load -- leaving `[v ` as the
+    base and nothing that resolves. Depth zero is the only colon that is ours."""
+    depth = 0
+    cut = -1
+    for k, c in enumerate(inner):
+        if c == "[":
+            depth += 1
+        elif c == "]":
+            depth -= 1
+        elif c == ":" and depth == 0:
+            cut = k
+    if cut < 0:
+        return inner, "1"
+    return inner[:cut], inner[cut + 1:]
 _CMPX = re.compile(r"^\s*(.+?)\s*(<=|>=|==|!=|<|>)\s*(.+?)\s*$")
 _STR = re.compile(r'^"(.*)"$', re.S)
 _TOK = re.compile(r"[A-Za-z_][\w.]*|\d+|<<|>>|[-+*/%&|^()]")
@@ -5244,6 +5281,56 @@ def _acc_strings(st):
                 elif isinstance(it, (list, tuple)):
                     out += [x for x in it if isinstance(x, str)]
     return out
+
+def drop_proved_checks(definitions, slots, steps):
+    """Delete a bounds check the analysis proved cannot fire.
+
+    `.at` means "check this", and the check stays whenever the compiler cannot
+    show it is unnecessary -- an unproved access keeps whatever the programmer
+    wrote. But where the access IS proved, the check can never fail, and a
+    branch that never goes anywhere is not a safety net; it is dead code with a
+    label attached.
+
+    The proof must not LEAN on the guard being removed, or the argument is
+    circular: `ensure i < length` makes `[data + i]` provable by itself. So each
+    candidate is re-checked with its own fact suppressed, and only survives if
+    the access is still proved without it.
+
+    A raw `[base + i]` is untouched either way. The programmer said they had the
+    proof; the compiler reports whether it agrees and changes nothing."""
+    dropped = set()
+    for i, st in enumerate(steps):
+        if st.get("type") != "guard" or not st.get("cond"):
+            continue
+        m = _CMPX.match(str(st["cond"]))
+        if not m or m.group(2) not in ("<", "<="):
+            continue
+        idx = m.group(1).strip()
+        if not re.fullmatch(r"[A-Za-z_][\w.]*", idx):
+            continue
+        # the access this guard stands in front of, indexed by the name it bounds
+        prot = None
+        for k in range(i + 1, min(i + 4, len(steps))):
+            for txt in _acc_strings(steps[k]):
+                for inner in _accesses(txt):
+                    if re.search(r"(?<![\w.])" + re.escape(idx) + r"(?![\w.])",
+                                 inner):
+                        prot = inner
+                        break
+                if prot:
+                    break
+            if prot:
+                break
+        if prot is None:
+            continue
+        without = classify_accesses(definitions, slots, steps, skip_guard=i)
+        rows = [r for r in without if r[2] == prot]
+        if rows and all(r[0] == "proved" for r in rows):
+            dropped.add(i)
+    if not dropped:
+        return steps, 0
+    return [st for i, st in enumerate(steps) if i not in dropped], len(dropped)
+
 
 ACCESS_VERDICTS = []
 
@@ -5402,7 +5489,7 @@ def refuse_proven_wrong(verdicts):
              f"pass, not merely unproved.")
 
 
-def classify_accesses(definitions, slots, steps):
+def classify_accesses(definitions, slots, steps, skip_guard=None):
     # `buffer is capacity bytes` gives the size as a NAME. The emitter resolves
     # it through the scalar's init (see `buffer_size` in mereoc.py); so does a
     # reader, without noticing. Do the same.
@@ -5612,7 +5699,7 @@ def classify_accesses(definitions, slots, steps):
             for k in [k for k, v in live.items()
                       if outs & (names_in(k) | set().union(*(names_in(f[1]) for f in v)))]:
                 live.pop(k, None)
-        elif t == "guard" and st.get("cond"):
+        elif t == "guard" and st.get("cond") and i != skip_guard:
             m = _CMPX.match(str(st["cond"]))
             if m and m.group(2) in ("<=", "<", ">=", ">"):
                 lhs, op, rhs = m.group(1).strip(), m.group(2), m.group(3).strip()
@@ -6022,6 +6109,23 @@ def classify_accesses(definitions, slots, steps):
             a, _, f = e.partition(".")
             p = (inst.get(a, {}).get("pending") or {}).get(f)
             if p: return base_of(p[0], depth + 1)
+        # A base that is itself a LOAD out of an instance's own bytes: `span.at`
+        # lowers to `[[v : 8] + i]`, where `[v : 8]` is the pointer field read at
+        # run time. Same backing as `v.data`, reached the other way.
+        mb = _ACC.fullmatch(e.strip())
+        if mb:
+            body, sep, _w = mb.group(1).rpartition(":")
+            if not sep:
+                body = mb.group(1)
+            head, _pl, rest = body.partition("+")
+            head = head.strip()
+            if head in inst:
+                off = _acc_const(rest) if rest.strip() else 0
+                d = definitions.get(inst[head]["definition"]) or {}
+                for fld, ent in (d.get("playout") or {}).items():
+                    if ent[0] == off:
+                        p = (inst[head].get("pending") or {}).get(fld)
+                        if p: return base_of(p[0], depth + 1)
         return None, None
 
     def resolve_base(expr, at, depth=0):
@@ -6105,7 +6209,7 @@ def classify_accesses(definitions, slots, steps):
         e = str(e).strip()
         if not e:
             return False
-        for m in _ACC.findall(e):
+        for m in _accesses(e):
             head = m.partition("+")[0].partition(":")[0].strip()
             bn, _sz, _off = resolve_base(head, at)
             if bn in tainted_buf:
@@ -6238,9 +6342,8 @@ def classify_accesses(definitions, slots, steps):
     out = []
     for i, st in enumerate(steps):
         for s in _acc_strings(st):
-            for inner in _ACC.findall(s):
-                body, sep, w = inner.rpartition(":")
-                if not sep: body, w = inner, "1"
+            for inner in _accesses(s):
+                body, w = _split_width(inner)
                 width = _acc_const(w) or 1
                 lhs, _, idx = body.partition("+")
                 bname, size, off = resolve_base(lhs, i)
@@ -6577,6 +6680,7 @@ def plan(definitions, slots, steps, overrides):
     # Classify every access. Nothing acts on the verdicts yet -- refusing the
     # proven-wrong and reporting the unproved are the next two steps -- but the
     # pass runs here, where the flat step list first exists.
+    steps, _dropped = drop_proved_checks(definitions, slots, steps)
     ACCESS_VERDICTS[:] = classify_accesses(definitions, slots, steps)
     check_shadowed_counters(steps)
     refuse_proven_wrong(ACCESS_VERDICTS)
