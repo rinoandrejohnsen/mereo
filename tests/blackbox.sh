@@ -11,7 +11,7 @@ DIR=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
 B=${OUT:-/tmp/mbuild/bb}; mkdir -p "$B"
 # the shipped build, flag for flag -- this suite tests the binaries as they
 # leave build.sh, layout included (see mereo.lds)
-CFLAGS="-O2 -nostdlib -static -fno-stack-protector -fno-tree-loop-distribute-patterns -fwhole-program -fno-strict-aliasing -fno-asynchronous-unwind-tables -fno-ident"
+CFLAGS="-O2 -fwrapv -nostdlib -static -fno-stack-protector -fno-tree-loop-distribute-patterns -fwhole-program -fno-strict-aliasing -fno-asynchronous-unwind-tables -fno-ident"
 CFLAGS="$CFLAGS -Wl,-T,$DIR/mereo.lds -Wl,-z,noseparate-code -Wl,--build-id=none -s"
 printf 'lorem ipsum\n' > "$B/doc"
 

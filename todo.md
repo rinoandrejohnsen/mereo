@@ -427,7 +427,7 @@ whatever free compile-time analysis yields, and a gap is not automatically work.
 | `ensure capacity <= buffer.size` | compile time | **take it** — 0 corpus sites |
 | a literal-zero divisor | compile time | **take it** — decidable, unbuilt |
 | read-before-write of a raw buffer | compile time | **take it** — flow analysis, unbuilt |
-| `-fwrapv` | nothing, measured | **take it** — see below |
+| `-fwrapv` | nothing, measured | **DONE** — see below |
 | a run-time guard on an unbounded index | every iteration | only where the binary is measured unchanged |
 | zeroing raw buffers | a store per buffer | no |
 | a run-time divisor guard | every division | no |
@@ -625,12 +625,17 @@ TLS parser, all indices parsed off the wire; 20 in the third; the rest small.
 
 #### Order, and what depends on what
 
-1. **`-fwrapv`** (item 5). Independent, one flag, already measured free. It
-   moves every size baseline by -1920 bytes, so `tests/versus` needs re-blessing
-   in the same commit. One interaction to handle: with wrapping defined, an
-   index expression that overflows produces a wrapped value rather than
-   undefined behaviour -- so the analysis must report unproved when an interval
-   leaves the range of a `long`, instead of assuming it cannot happen.
+1. **`-fwrapv`** (item 5). **DONE.** The corpus is 1904 bytes smaller, and on
+   `tests/versus` it moves mereo TOWARD the C it is measured against: the gap
+   closes on `index_fast`, `span_scan` (21 to 15 instructions, 66 bytes) and
+   `layout_view`, which now matches C exactly. `index_safe` widens by one. The
+   baseline is re-blessed and all seven compile sites carry the flag, since a
+   test that measures different flags from `build.sh` measures nothing.
+
+   **Still owed when the analysis lands:** with wrapping defined, an index that
+   overflows produces a wrapped value rather than undefined behaviour, so the
+   analysis must report unproved when an interval leaves the range of a `long`
+   instead of assuming it cannot happen.
 
 2. **The span adoption check** (item 2, first half). Independent of the
    analysis, and the same shape as `check_call_fit`: `ensure length <=
@@ -654,18 +659,17 @@ TLS parser, all indices parsed off the wire; 20 in the third; the rest small.
    needs the analysis in place. `span.take` narrows through a conditional
    minimum, so it should go through; anything that does not, reports unproved.
 
-#### Decisions wanted before starting
+#### Decided
 
-**Noise.** 44 messages on every build of the TLS programs. The alternative is a
-summary line plus a flag to list them. Printing all of them is the honest
-default and creates the right pressure -- a clean program says nothing -- but it
-is a build-log change and worth agreeing on first.
+**Print every message. No summary, no flag.** A clean program says nothing, and
+a program with 44 unproved accesses should say so 44 times. The list is the
+pressure.
 
-**Compile time.** Roughly 50 ms more than code emission costs on the largest
-program in the corpus (349 ms against a 301 ms full compile), though that
-comparison is loose because the tool skips emission. This is compile time, which
-the barrier does not govern, but it should be re-measured once the analysis is a
-pass rather than a separate walk.
+**Compile time is not a constraint.** The barrier governs the run time of the
+program, not the run time of the compiler, and the two are not traded against
+each other here.
+
+#### Standing rule
 
 **Soundness posture.** A false refusal is worse than a missed one, and the
 corpus cannot prove the absence of false refusals -- it can only show that today

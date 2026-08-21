@@ -35,6 +35,17 @@ OUT=${OUT:-$DIR/build}
 # but the guarantee is free: with the flag added every binary in the corpus was
 # byte-identical, so this buys correctness-by-the-standard at zero cost.
 #
+# -fwrapv: a mereo scalar is a C `long`, so `n is n + 1` at LONG_MAX is signed
+# overflow -- undefined, and an optimiser is entitled to assume it cannot happen.
+# This makes it defined two's-complement wrapping instead. It DETECTS nothing;
+# what it buys is that the program still means something at the edge, and the
+# access analysis can reason about an index that wraps rather than having to
+# treat the whole expression as unreachable. The expectation was that it would
+# cost, since assuming an induction variable never wraps is exactly what a loop
+# optimiser wants. Measured the other way: 377248 bytes against 379168 across 89
+# binaries, 75.4 ms against 77.4 ms over 800M byte-loads, and 42 vector
+# instructions either way. Smaller, no slower, identically vectorised.
+#
 # The last two say what a freestanding program does NOT have: no unwind tables
 # (mereo's cleanup is the release tower, which is ordinary jumps -- nothing ever
 # reads a CFI record) and no compiler version string. Measured: -fno-ident
@@ -43,7 +54,7 @@ OUT=${OUT:-$DIR/build}
 # move, all of them the displacement field of a rip-relative reference to a
 # static-storage symbol, because dropping .eh_frame shifted .bss. Normalise the
 # displacements and the two disassemblies are the same file.
-CFLAGS="-nostdlib -static -fno-stack-protector -fno-tree-loop-distribute-patterns -fwhole-program -fno-strict-aliasing -fno-asynchronous-unwind-tables -fno-ident"
+CFLAGS="-fwrapv -nostdlib -static -fno-stack-protector -fno-tree-loop-distribute-patterns -fwhole-program -fno-strict-aliasing -fno-asynchronous-unwind-tables -fno-ident"
 
 # ...and mereo.lds says what it DOES have, which is where the file size goes:
 # the stock script lays out a C program with a loader and pays for it in

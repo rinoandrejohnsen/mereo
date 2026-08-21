@@ -30,7 +30,7 @@ DIR=$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)
 HERE="$DIR/tests/namespaces"
 OUT=${OUT:-/tmp/mbuild/ns}; mkdir -p "$OUT"
 
-CFLAGS="-O2 -nostdlib -static -fno-stack-protector -fwhole-program"
+CFLAGS="-O2 -fwrapv -nostdlib -static -fno-stack-protector -fwhole-program"
 CFLAGS="$CFLAGS -fno-strict-aliasing -fno-asynchronous-unwind-tables -fno-ident"
 CFLAGS="$CFLAGS -Wl,-T,$DIR/mereo.lds -Wl,-z,noseparate-code -Wl,--build-id=none -s"
 

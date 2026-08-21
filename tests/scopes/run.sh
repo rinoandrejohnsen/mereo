@@ -10,8 +10,8 @@
 set -u
 DIR=$(dirname "$(readlink -f "$0")")
 B=${OUT:-/tmp/mbuild/scopes}; mkdir -p "$B"
-MFLAGS="-O2 -nostdlib -static -fno-stack-protector -fno-tree-loop-distribute-patterns -fwhole-program -fno-strict-aliasing"
-XFLAGS="-O2 -nostdlib -ffreestanding -fno-exceptions -fno-rtti -static -fno-stack-protector"
+MFLAGS="-O2 -fwrapv -nostdlib -static -fno-stack-protector -fno-tree-loop-distribute-patterns -fwhole-program -fno-strict-aliasing"
+XFLAGS="-O2 -fwrapv -nostdlib -ffreestanding -fno-exceptions -fno-rtti -static -fno-stack-protector"
 
 closes () { strace -e trace=close "$1" 2>&1 | grep -oE 'close\(10[0-9]\)' | tr '\n' ' '; }
 

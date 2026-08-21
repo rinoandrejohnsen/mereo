@@ -27,7 +27,7 @@ def run(label, decls, init_str, call, check_str):
     if c.returncode:
         print(f"  {label:10} TRANSPILE FAIL: {c.stderr.strip().splitlines()[-1]}"); os.remove(src); return False
     open(f"/tmp/mbuild/_t_{label}.c", "w").write(c.stdout)
-    b = subprocess.run(["gcc","-O2","-nostdlib","-static","-fno-stack-protector",
+    b = subprocess.run(["gcc","-O2","-fwrapv","-nostdlib","-static","-fno-stack-protector",
                         "-fno-tree-loop-distribute-patterns",   # no libc to call
                         "-fwhole-program",                      # one TU, no library
                         "-fno-strict-aliasing",                 # bits are bits

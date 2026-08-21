@@ -93,16 +93,20 @@ own bytes.
 | | |
 | --- | --- |
 | run-time bounds | `[buffer + i : 1]` is as unchecked as C. `.at` checks, and costs 10% |
-| integer overflow | a scalar is a C `long` and the build passes no `-fwrapv` |
+| integer overflow | wraps rather than being undefined; nothing detects it |
 | division by zero | accepted, even for a literal zero divisor |
 | uninitialised reads | a layout is zero-filled; `raw is 8 bytes` is not |
 | a span's `length` larger than its backing | accepted |
 
 Each gap is open because its run-time fix spends what the barrier protects. The
 **compile-time** half of each is admissible, and unbuilt rather than declined —
-the last is decidable from two literals. `-fwrapv` is admissible on
-measurement: 377248 bytes against 379168 across 89 binaries, 75.4 ms against
-77.4 ms over 800M byte-loads, identically vectorised.
+the last is decidable from two literals. Overflow is the one already taken as
+far as it goes for free: the build passes `-fwrapv`, so `n is n + 1` at
+`LONG_MAX` wraps instead of being undefined. That detects nothing, but it costs
+nothing either — 377264 bytes against 379168 across 89 binaries, and on the
+`tests/versus` cases it moves mereo *closer* to the C it is measured against,
+matching it exactly on `layout_view` and closing six instructions of the gap on
+`span_scan`.
 
 ## How far the analysis reaches
 

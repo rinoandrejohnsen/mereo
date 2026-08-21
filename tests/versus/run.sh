@@ -74,7 +74,7 @@ BASE="$HERE/baseline.txt"
 
 # the shipped build, flag for flag -- the same list build.sh uses, because a
 # comparison under different flags is a comparison of the flags
-CFLAGS="-O2 -nostdlib -static -fno-stack-protector -fno-tree-loop-distribute-patterns"
+CFLAGS="-O2 -fwrapv -nostdlib -static -fno-stack-protector -fno-tree-loop-distribute-patterns"
 CFLAGS="$CFLAGS -fwhole-program -fno-strict-aliasing -fno-asynchronous-unwind-tables -fno-ident"
 CFLAGS="$CFLAGS -Wl,-T,$DIR/mereo.lds -Wl,-z,noseparate-code -Wl,--build-id=none -s"
 
