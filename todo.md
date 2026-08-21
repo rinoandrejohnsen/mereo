@@ -819,29 +819,67 @@ blocks that way -- so only a reset is refused. Both false positives it first
 produced (`head`, and the exam program itself) came from treating a plain
 `leave NAME when` scope as a loop; it looks only at loops that repeat.
 
-**Open, and each is small:**
+**Open:**
 
-1. **No top-level constants.** A size used in two places is a literal in two
-   places. `table_slots is 8192` at the left margin is refused, so the exam
-   program has `8191` written four times with a comment explaining it.
-2. **No top-level buffers**, which is what forced the exam's first draft into an
-   18-port template call before it was rewritten as a scope tree. That rewrite
-   was the right answer here, but a program that DOES need reuse over shared
-   storage has no good shape available.
-3. **A `likely` road cannot hold a template call** -- "a `likely goes` body is
+1. **No top-level constants -- but mostly worked around already.** `X.size` on a
+   declared buffer IS a compile-time constant, and a derived one works too:
+   `mask is slots.size - 1` folds and the access analysis still proves through
+   it. What is left is narrow: naming a number costs declaring bytes for it,
+   and `t.field.size` does not parse (`cannot read expression near '.size'`),
+   so a template holding a layout port cannot ask how big a field is.
+
+2. **No top-level buffers -- THIS ENTRY WAS WRONG.** A top-level LAYOUT groups
+   them, the storage is one backing in `program`, and the instance passes to a
+   template as ONE port. Indexing `t.count + idx * 4` inside that template
+   works. The exam's 18-port draft was bad design on my part, not a missing
+   feature, and rewriting it as a scope tree was treating a symptom.
+
+   The real bug the question uncovered is in item 3 below.
+
+3. **A layout field does not resolve as a base in the access analysis**, so the
+   IDIOMATIC form is less provable than the unidiomatic one -- which is
+   backwards. Isolated to one factor:
+
+   | | proved? |
+   | --- | --- |
+   | `b is 32768 bytes` then `[b + idx * 4 : 4]` | yes |
+   | `b is 32768 bytes` then `four is idx * 4`, `[b + four : 4]` | yes |
+   | `t is store as tables` then `[t.count + idx * 4 : 4]` | **no** |
+   | `t is store as tables` then `four is idx * 4`, `[t.count + four : 4]` | **no** |
+
+   `base_of` resolves `INSTANCE.field` through an adopted resource's `pending`
+   map; a LENS -- `store as tables` -- has no such map and falls through. This
+   is what makes the answer to item 2 usable rather than merely available: as it
+   stands, taking the good advice costs you the proof.
+
+4. **A `likely` road cannot hold a template call** -- "a `likely goes` body is
    method calls, `NAME is EXPR` assignments, ... or `NAME goes` blocks". The
    restriction may be deliberate; the message does not say why, and a caller
    hitting it has to guess.
-4. **`compare` answers 1 for EQUAL**, which reads backwards beside C's `memcmp`
+
+5. **`compare` answers 1 for EQUAL**, which reads backwards beside C's `memcmp`
    and cost an hour: the table never matched and every path came out counted
    once. Worth either renaming (`same`?) or saying so in the method's own line
    of documentation rather than only in the group header.
 
-**Also worth keeping:** the analysis reports 14 unproved accesses in the exam
-program -- the 8-byte load in the word-at-a-time scan, the parser's indices into
-a computed line address, and the table probes. All are safe. The table ones look
-closest to provable: `hidx is hidx & 8191` bounds the index, and `four is hidx *
-4` should follow it to 32764 against a 32768-byte run.
+### The fourteen the exam could not prove
+
+All fourteen are SAFE -- verified by 800 adversarial inputs against an
+independent oracle, and by ASAN and UBSAN on the C twin doing the same work.
+None is provable by the analysis as it stands. Grouped by what is missing:
+
+| | | what would close it |
+| ---: | --- | --- |
+| 4 | `[t_hash + four : 4]` and its three siblings | a masked index CARRIED AROUND A LOOP. `hidx is h & 8191` then `hidx is hidx + 1`, `hidx is hidx & 8191` at the back edge -- straight-line, the same shape proves; through the back edge it does not. Mechanism not yet diagnosed |
+| 6 | `[ln + t : 1]`, `[ln + st_s : 1]`, `[ln + by_s + w : 1]` ... | `ln` is a scalar holding EITHER `line` or `rbuf + i`, chosen by a branch. `base_of` chases a scalar to one backing; it has no join, so a pointer that is one of two things resolves to neither |
+| 1 | `[rbuf + j : 8]` | the 8-byte load in the word-at-a-time scan. `j + 8 > n` guards it and `n <= 65536`, so the bound is stated -- it is the WIDTH being 8 against a guard written about `j + 8` that is not connected |
+| 1 | `[rbuf + i + copy_N_i : 1]` | genuinely input-derived: the copy length comes off the wire. This one wants a run-time guard, and the compiler says so |
+| 2 | the rest | small |
+
+The second row is the interesting one, and it generalises past this program: a
+scalar holding an address that two branches set differently is the shape any
+"parse from here, or from the carry-over buffer" loop has. A join over the
+branches -- both backings, the smaller room -- would close six at once.
 
 ## The language server is gone, and nothing replaced it
 
