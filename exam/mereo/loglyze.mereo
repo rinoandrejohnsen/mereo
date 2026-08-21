@@ -308,7 +308,7 @@ program goes
               leave hit when [t_len + two : 2] != plen
               qp is arena + [t_off + four : 4]
               same is 0
-              text.compare (data is ln + ps, length is plen,
+              text.equals (data is ln + ps, length is plen,
                             other is qp, other_length is plen, result is same)
               leave hit when same == 0        -- compare answers 1 for EQUAL
               [t_count + four : 4] is cnt + 1

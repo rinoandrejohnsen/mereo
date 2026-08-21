@@ -1203,7 +1203,7 @@ _NUMLIT = r"-?(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|\d[\d_]*)"
 # including the one place that refused it: the values an adopted instance is
 # built from. `length is 41` written beside the string it counts is a number
 # that drifts the moment the string is edited.
-_SIZEOF = r'(?:\w+|"[^"]*")\.size'
+_SIZEOF = r'(?:\w+(?:\.\w+)?|"[^"]*")\.size'
 
 
 def is_str(tok):
@@ -4146,6 +4146,13 @@ def flag_field_c(actual, buffers, ln):
     return (read, cell, ut, lo, mask, "")
 
 
+# `INSTANCE.FIELD.size` -> that field's declared width. Filled in by `plan`
+# once slots and definitions are both known, because `size_of_c` is reached
+# from expression rendering and has neither in scope. A template holding a
+# layout port could not ask how big a field is without this.
+FIELD_SIZES = {}
+
+
 def size_of_c(actual, scalars, buffers, ln):
     """`X.size` -> X's byte size as a compile-time integer constant: a
     string/`bytes` literal's length, a buffer or container's size, or a view
@@ -4162,6 +4169,8 @@ def size_of_c(actual, scalars, buffers, ln):
     target = m.group(1).strip()
     if is_str(target):
         return str(len(parse_bytes_literal(target, ln)))
+    if target in FIELD_SIZES:
+        return str(FIELD_SIZES[target])
     if re.fullmatch(r"\w+", target) and target in buffers:
         # Whatever `buffer_size` puts in the array's brackets IS the size, and
         # it answers for a scalar-sized buffer too: the dimension is fixed at the
@@ -6109,6 +6118,16 @@ def classify_accesses(definitions, slots, steps, skip_guard=None):
             a, _, f = e.partition(".")
             p = (inst.get(a, {}).get("pending") or {}).get(f)
             if p: return base_of(p[0], depth + 1)
+            # A LENS -- `t is store as tables` -- has no `pending`: its fields
+            # are laid over a backing rather than bound to one. The field's own
+            # size is the room in front of it, which is what an index into it
+            # must stay inside. Without this the IDIOMATIC grouping is less
+            # provable than the parallel buffers it replaces.
+            if a in inst and inst[a].get("lens"):
+                d = definitions.get(inst[a]["definition"]) or {}
+                ent = (d.get("playout") or {}).get(f)
+                if ent and len(ent) >= 2:
+                    return f"{a}.{f}", ent[1]
         # A base that is itself a LOAD out of an instance's own bytes: `span.at`
         # lowers to `[[v : 8] + i]`, where `[v : 8]` is the pointer field read at
         # run time. Same backing as `v.data`, reached the other way.
@@ -6668,6 +6687,14 @@ def hoist_guard_bounds(steps, slots):
 
 def plan(definitions, slots, steps, overrides):
     elaborate_classes(definitions)
+    FIELD_SIZES.clear()
+    for _sl in slots:
+        if _sl.get("kind") != "instance":
+            continue
+        _d = definitions.get(_sl.get("definition")) or {}
+        for _f, _ent in (_d.get("playout") or {}).items():
+            if len(_ent) >= 2:
+                FIELD_SIZES[f"{_sl['name']}.{_f}"] = _ent[1]
     resolve_lenses(definitions, slots)
     # what each port needs, read off the bodies BEFORE anything is spliced --
     # so a wrong connection is refused where it is written rather than inside

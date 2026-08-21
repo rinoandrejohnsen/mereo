@@ -74,11 +74,11 @@ end
 --
 --   find     offset of the first BYTE in DATA[0..LENGTH), or LENGTH if absent
 --   search   where NEEDLE[0..NEEDLE_LENGTH) starts in DATA[0..LENGTH), or LENGTH
---   compare  1 if DATA[0..LENGTH) equals OTHER[0..OTHER_LENGTH), else 0
+--   equals   1 if DATA[0..LENGTH) equals OTHER[0..OTHER_LENGTH), else 0
 --   number   read DATA[0..LENGTH) as a signed decimal integer (leading spaces ok)
 --   format   write VALUE as decimal digits into BUFFER, yielding its LENGTH
 --
--- `find`, `compare` and `format` are the irreducible byte primitives -- memchr,
+-- `find`, `equals` and `format` are the irreducible byte primitives -- memchr,
 -- memcmp and itoa, one machine loop each -- kept as always_inline C helpers.
 -- `search` and `number` are COMPOSED from them in mereo (loops + byte-loads),
 -- not C, so the logic stays in the language. Each says where it stops with a
@@ -110,7 +110,10 @@ text is
     scan (data is data, length is length, byte is byte, offset is offset)
   end
 
-  compare (data, length, other, other_length, result) goes
+  -- ANSWERS 1 FOR EQUAL, not 0. It is named for what it reports, because
+  -- `compare` next to C's `memcmp` reads backwards and the mistake is silent:
+  -- a table that never finds an entry, every key counted once.
+  equals (data, length, other, other_length, result) goes
     same (data is data,
           length is length,
           other is other,
@@ -307,7 +310,7 @@ text is
       text.find (data is at, length is rem, byte is first, offset is rel)
       i is i + rel
       at is data + i
-      text.compare (data is at,
+      text.equals (data is at,
                     length is needle_length,
                     other is needle,
                     other_length is needle_length,
@@ -516,7 +519,7 @@ span is
   -- make the compare read past the end.
   equals (other, other_length, result) goes
     r is 0
-    text.compare (data is data,
+    text.equals (data is data,
                   length is length,
                   other is other,
                   other_length is other_length,
@@ -526,7 +529,7 @@ span is
 
   starts (other, other_length, result) goes
     r is 0
-    text.compare (data is data,
+    text.equals (data is data,
                   length is other_length,
                   other is other,
                   other_length is other_length,
@@ -542,7 +545,7 @@ span is
     r is 0
     tail is data
     tail is data + length - other_length when length >= other_length
-    text.compare (data is tail,
+    text.equals (data is tail,
                   length is other_length,
                   other is other,
                   other_length is other_length,

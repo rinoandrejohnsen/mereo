@@ -602,48 +602,39 @@ blocks that way -- so only a reset is refused. Both false positives it first
 produced (`head`, and the exam program itself) came from treating a plain
 `leave NAME when` scope as a loop; it looks only at loops that repeat.
 
-**Open:**
+**Also fixed:**
 
-1. **No top-level constants -- but mostly worked around already.** `X.size` on a
-   declared buffer IS a compile-time constant, and a derived one works too:
-   `mask is slots.size - 1` folds and the access analysis still proves through
-   it. What is left is narrow: naming a number costs declaring bytes for it,
-   and `t.field.size` does not parse (`cannot read expression near '.size'`),
-   so a template holding a layout port cannot ask how big a field is.
+* **A layout field resolves as a base now.** `t is store as tables` then
+  `[t.count + idx * 4 : 4]` proves, where before the idiomatic grouping was
+  LESS provable than the parallel buffers it replaces -- taking the good advice
+  cost you the proof. A lens has no `pending` map, because its fields are laid
+  OVER a backing rather than bound to one; the field's own declared width is
+  the room in front of it. An index past that end is still caught precisely:
+  `reaches 65536 bytes into 't.count', which is 32768 bytes`.
+* **`t.field.size` parses.** `size_of_c` is reached from expression rendering
+  and has neither slots nor definitions in scope, so `plan` fills a
+  `FIELD_SIZES` registry once both are known. A template holding a layout port
+  can ask how big a field is.
+* **`compare` is `equals`.** It answers 1 for EQUAL, and the old name reads
+  backwards beside C's `memcmp` -- a doc line was the other option and would
+  not have helped, since the group header already said so and I still got it
+  wrong. Named for what it reports now, with the sense stated on the method
+  itself rather than only in the header.
 
-2. **No top-level buffers -- THIS ENTRY WAS WRONG.** A top-level LAYOUT groups
-   them, the storage is one backing in `program`, and the instance passes to a
-   template as ONE port. Indexing `t.count + idx * 4` inside that template
-   works. The exam's 18-port draft was bad design on my part, not a missing
-   feature, and rewriting it as a scope tree was treating a symptom.
+**Open, and now only one thing:**
 
-   The real bug the question uncovered is in item 3 below.
+**Naming a number costs declaring bytes for it.** `X.size` is a compile-time
+constant and a derived one works -- `mask is slots.size - 1` folds, and the
+access analysis proves through it -- and `t.field.size` parses now. What is
+still missing is a plain `NAME is 8192` at the left margin, so a size used in
+two places is a literal in two places. The exam program has `8191` written four
+times with a comment explaining it.
 
-3. **A layout field does not resolve as a base in the access analysis**, so the
-   IDIOMATIC form is less provable than the unidiomatic one -- which is
-   backwards. Isolated to one factor:
-
-   | | proved? |
-   | --- | --- |
-   | `b is 32768 bytes` then `[b + idx * 4 : 4]` | yes |
-   | `b is 32768 bytes` then `four is idx * 4`, `[b + four : 4]` | yes |
-   | `t is store as tables` then `[t.count + idx * 4 : 4]` | **no** |
-   | `t is store as tables` then `four is idx * 4`, `[t.count + four : 4]` | **no** |
-
-   `base_of` resolves `INSTANCE.field` through an adopted resource's `pending`
-   map; a LENS -- `store as tables` -- has no such map and falls through. This
-   is what makes the answer to item 2 usable rather than merely available: as it
-   stands, taking the good advice costs you the proof.
-
-4. **A `likely` road cannot hold a template call** -- "a `likely goes` body is
-   method calls, `NAME is EXPR` assignments, ... or `NAME goes` blocks". The
-   restriction may be deliberate; the message does not say why, and a caller
-   hitting it has to guess.
-
-5. **`compare` answers 1 for EQUAL**, which reads backwards beside C's `memcmp`
-   and cost an hour: the table never matched and every path came out counted
-   once. Worth either renaming (`same`?) or saying so in the method's own line
-   of documentation rather than only in the group header.
+That is the whole of what "no top-level constants" turned out to mean. The
+companion entry, "no top-level buffers", WAS WRONG: a top-level layout groups
+them, the storage is one backing in `program`, and the instance passes to a
+template as one port. The exam's 18-port draft was bad design on my part, not a
+missing feature, and rewriting it as a scope tree treated a symptom.
 
 ### The fourteen the exam could not prove
 

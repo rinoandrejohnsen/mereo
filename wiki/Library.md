@@ -12,13 +12,13 @@ About 700 lines, in four parts.
 CPU instruction each, with their operand constraints written out.
 
 **The byte layer**, gathered on a stateless `text` group. `find` and `last`
-locate a byte; `search` locates a run; `compare` tests two regions; `measure` is
+locate a byte; `search` locates a run; `equals` tests two regions; `measure` is
 a bounded `strlen`; `copy` and `fill` are `memcpy` and `memset`; `upper` and
 `lower` change ASCII case in place; `digit`, `space` and `alpha` are the three
 `ctype` questions the corpus has asked; `format` and `number` convert decimal
 both ways, and `hex`, `hexbytes` and `unhex` do the same for base 16.
 
-Three of these — `find`, `compare` and `format` — are irreducible machine loops
+Three of these — `find`, `equals` and `format` — are irreducible machine loops
 kept as always-inline C helpers. `search` and `number` are composed from them in
 mereo rather than in C, so the logic stays in the language.
 

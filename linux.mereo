@@ -1246,7 +1246,7 @@ linux is
         left is left - 1
 
         text.find (data is cur, length is left, byte is 58, offset is uid_len)
-        text.compare (data is cur,
+        text.equals (data is cur,
                       length is uid_len,
                       other is key_ptr,
                       other_length is keylen,
