@@ -493,8 +493,9 @@ LOWER bound, but only six promise a result bounded by an argument -- `read`,
 `write`, `getrandom`, `getdents64`, `readlinkat`, `ppoll`. The rest answer with a
 descriptor, a position or zero, and have no argument to be bounded by.
 
-1. **Refuse what the analysis proves WRONG -- not what it cannot prove.** This
-   is the step that costs nothing, and it was missed for a while because the
+1. **Refuse what the analysis proves WRONG -- not what it cannot prove.**
+   **DONE** (`refuse_proven_wrong`). This
+   is the step that cost nothing, and it was missed for a while because the
    decision below looked like the only one available. There are three postures,
    and only the third narrows the language:
 
@@ -557,8 +558,11 @@ descriptor, a position or zero, and have no argument to be bounded by.
    Note `size of X` does NOT exist; the member is `X.size`.
 
 2. **The loop analysis**, in the `leave`-at-top shape first, then do-while with
-   the initial value.
-3. **What is left is no longer an open question.** It used to read "refuse it,
+   the initial value. **DONE** -- all three shapes are in `classify_accesses`,
+   including the counting-down loop that takes its ceiling from the value it
+   entered with.
+3. **What is left is no longer an open question -- and the remaining half is
+   the only thing still OPEN in this entry.** It used to read "refuse it,
    or leave it unchecked by name". The bar above answers it: where a skilled C
    programmer cannot deduce the access safe, THE EXPERT WRITES A CHECK -- so
    mereo may write one too, at the same cost, and still be at parity. Refusal
