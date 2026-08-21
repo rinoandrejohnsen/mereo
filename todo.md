@@ -1137,3 +1137,48 @@ generated C rather than a speed one.
 `docs/control-flow.md` was checked and needs no change -- it describes `likely`
 as a prediction and never claims a speed benefit, which is exactly right and is
 now measured rather than assumed. What would be wrong is to start claiming one.
+
+## Emitting C++ instead of C would change nothing
+
+Asked 2026-08-22, as the last of the "could we tell the compiler more" line.
+The answer is unusually clean: the generated C **already compiles as C++,
+unmodified**, and produces the same binary.
+
+| | |
+| --- | --- |
+| clang vs clang++ on `exam/mereo/loglyze` | **byte-identical**, 15040 both |
+| gcc vs g++ | 5920 both; ratio 0.983 median, 1.000 min |
+| g++ with and without `-fno-exceptions -fno-rtti` | 5920 both, no extra sections |
+
+Not one C++ feature is used, so nothing distinguishes the two compilations. The
+opt-outs are not even needed -- with exceptions and RTTI left on, the binary is
+the same size and gains no `.eh_frame`, `.gcc_except_table` or static-init
+machinery, because there is nothing in the output that could throw, no virtual
+call and no object with a constructor.
+
+### The one lever C genuinely lacks, and why it is still empty
+
+A C++ reference carries `nonnull` and `dereferenceable(N)` to the optimiser, and
+C has no way to state either. Measured on a struct-and-loop shaped like a view
+walk:
+
+| | `View *` | `View &` | `View &__restrict` |
+| --- | ---: | ---: | ---: |
+| g++ | 38 | 38 | 38 |
+| clang++ | 0 | 0 | 0 |
+
+Identical. And it would be moot regardless: a reference is a PARAMETER, and
+mereo splices every template into one function, so the output has no parameters
+for it to qualify.
+
+### The pattern, one last time
+
+Every optimiser-facing advantage C++ has over C -- references implying
+dereferenceability, templates, `constexpr`, type-based aliasing -- needs
+structure that mereo deliberately does not emit. Functions, types,
+abstractions. One function of byte arrays, gotos and raw stores uses none of it,
+which is exactly why the two languages produce the same binary from it.
+
+Worth keeping for a different reason than speed: that the output is valid C++
+unchanged means `tests/scopes` can go on comparing against C++ twins, and any
+future interop is free. That is a property to preserve, not a lever to pull.
