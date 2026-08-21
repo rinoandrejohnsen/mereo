@@ -463,6 +463,11 @@ rejects access/syscall-fit syscall_fit "is given capacity 4096, but 'small' is 1
 # its own fields, checked where an instance is adopted rather than declared.
 rejects access/span-fit   span_fit    "adopted with length 17, but 'line' is 5 bytes"
 
+# A flat namespace is what lets a scope see its surroundings without ports. The
+# cost is that a fresh counter inside a nested loop takes the enclosing loop's.
+# Narrow on purpose: sharing a name is fine (an accumulator), RESETTING it is not.
+rejects scope/shadowed-counter shadowed_counter "are both counted by 'i'"
+
 rejects scope/use-after   use_after_scope   "was released when the scope that acquired"
 # ...and the same mistake spelled as a VALUE rather than a receiver. Two checks,
 # two spellings: disabling either leaves the other program passing.

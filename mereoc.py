@@ -5592,6 +5592,102 @@ def report_unproved(verdicts):
         note(f"line {ln}: `[{expr}]` not proved in range -- {why}.")
 
 
+def check_shadowed_counters(steps):
+    """Refuse two nested loops whose bounds test the same scalar.
+
+    mereo has a flat namespace: a scalar declared anywhere is visible
+    everywhere, which is what lets a scope see its surroundings without ports.
+    The cost is that reaching for a fresh counter inside a nested scope silently
+    takes the enclosing loop's:
+
+        outer goes
+          leave outer when i >= 4
+          inner goes
+            i is 0                 -- meant as a fresh counter
+            count goes
+              leave count when i >= 3
+              ...
+
+    which does not terminate. C's block scoping makes this a different variable;
+    `-Wshadow` catches the same shape in one warning. Here nothing did.
+
+    The rule is narrow on purpose. Assigning an enclosing loop's variable from
+    inside is a real technique -- restarting a scan is spelled exactly that way
+    -- so that alone is not the mistake. Two loops, one inside the other, BOUND
+    BY THE SAME NAME is, because the inner one can only end by moving a counter
+    the outer one is also counting on."""
+    stack, loops = [], []
+    for i, st in enumerate(steps):
+        t = st.get("type")
+        if t == "loop_start":
+            stack.append(i)
+        elif t == "loop_end" and stack:
+            loops.append((stack.pop(), i, st))
+
+    bound_by = {}
+    for s_, e_, endst in loops:
+        # only a loop that REPEATS is counted by anything. A plain scope uses
+        # the same `leave NAME when` spelling as a one-shot guard, and testing
+        # a name there says nothing about who owns it.
+        if not endst.get("back"):
+            continue
+        names = set()
+        if endst.get("back") and endst.get("cond"):
+            m = _CMPX.match(str(endst["cond"]))
+            if m:
+                names.add(m.group(1).strip())
+        depth = 0
+        for k in range(s_ + 1, e_):
+            tk = steps[k].get("type")
+            if tk == "loop_start":
+                depth += 1
+            elif tk == "loop_end":
+                depth -= 1
+            elif tk == "loop_exit" and depth == 0 and steps[k].get("cond"):
+                m = _CMPX.match(str(steps[k]["cond"]))
+                if m:
+                    names.add(m.group(1).strip())
+        bound_by[(s_, e_)] = {n for n in names
+                              if re.fullmatch(r"[A-Za-z_]\w*", n or "")}
+
+    for (a_s, a_e), an in bound_by.items():
+        for (b_s, b_e), bn in bound_by.items():
+            if not (a_s < b_s and b_e < a_e):
+                continue                      # b must be nested inside a
+            both = an & bn
+            if not both:
+                continue
+            # Sharing a name between nested loops is not by itself wrong: an
+            # ACCUMULATOR that the inner loop advances and both stop on is a
+            # real pattern -- `head` counts newlines across blocks exactly that
+            # way. What breaks is a RESET, where the inner loop puts the name
+            # back to a starting value and the outer one is still counting on
+            # it. So the test is not "shared" but "reset while shared".
+            reset = None
+            for k in range(a_s + 1, b_e):
+                st = steps[k]
+                if st.get("type") != "assign" or st.get("name") not in both:
+                    continue
+                ex = st.get("expr")
+                if not isinstance(ex, str):
+                    continue
+                if re.search(r"(?<![\w.])" + re.escape(st["name"]) + r"(?![\w.])", ex):
+                    continue                  # advances itself: an accumulator
+                reset = (k, st["name"])
+                break
+            if reset is None:
+                continue
+            name = reset[1]
+            outer = steps[a_s].get("name") or "the outer loop"
+            inner = steps[b_s].get("name") or "the inner loop"
+            fail(f"line {steps[reset[0]].get('line')}: '{inner}' and '{outer}' "
+                 f"are "
+                 f"both counted by '{name}', and '{inner}' is inside "
+                 f"'{outer}'. Every scalar in mereo is visible everywhere, so a "
+                 f"fresh counter has to be a fresh NAME -- this one moves the "
+                 f"loop around it.")
+
+
 def refuse_proven_wrong(verdicts):
     """Refuse an access the analysis PROVED runs past its backing.
 
@@ -6791,6 +6887,7 @@ def plan(definitions, slots, steps, overrides):
     # proven-wrong and reporting the unproved are the next two steps -- but the
     # pass runs here, where the flat step list first exists.
     ACCESS_VERDICTS[:] = classify_accesses(definitions, slots, steps)
+    check_shadowed_counters(steps)
     refuse_proven_wrong(ACCESS_VERDICTS)
     report_unproved(ACCESS_VERDICTS)
     steps = hoist_guard_bounds(steps, slots)

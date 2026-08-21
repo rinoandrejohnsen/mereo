@@ -65,6 +65,7 @@ requirement as a `concept`, Zig — and compiles all three.
 | a resource named after the scope that released it | refused | refused | refused |
 | a write to a read-only buffer | refused | refused | refused |
 | a syscall handed more room than the buffer has | refused | accepted | accepted |
+| a nested loop resetting the enclosing loop's counter | refused | warned | warned |
 | a span claiming more bytes than its backing has | refused | accepted | accepted |
 
 The pattern: mereo decides what is decidable from the text and declines to guess
@@ -72,7 +73,16 @@ at the rest. A view's fit is two declared sizes compared: `backing 'small' is
 16 bytes, too small to view 4096-byte 'wide' at offset 0`. None of it needs a
 prover.
 
-The last row is the one nothing downstream can catch. `read (buffer is small,
+The loop-counter row is one mereo owes rather than wins. Every scalar is
+visible everywhere — that is what lets a scope see its surroundings without
+plumbing anything through ports — so reaching for a fresh counter inside a
+nested loop silently takes the enclosing one's. C and C++ give each block its
+own and say so at `-Wshadow`; mereo cannot, because the name really is the same
+name, so it checks instead. Sharing a name between nested loops is allowed and
+common — an accumulator the inner advances and both stop on. **Resetting** it is
+what gets refused.
+
+The syscall row is the one nothing downstream can catch. `read (buffer is small,
 capacity is 4096)` with `small is 16 bytes` asks the kernel to write 4096 bytes
 into a 16-byte frame; the kernel has never seen the buffer and cannot find where
 it ends, and in the emitted C a syscall is inline assembly whose `"memory"`

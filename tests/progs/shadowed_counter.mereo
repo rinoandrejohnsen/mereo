@@ -1,0 +1,45 @@
+include "../../linux.mereo"
+
+-- REJECTED on purpose: a nested loop that takes the enclosing loop's counter.
+--
+-- Every scalar in mereo is visible everywhere. That is what lets a scope see
+-- its surroundings without plumbing anything through ports -- and it is why
+-- reaching for a fresh counter inside a nested scope silently takes the one
+-- the outer loop is counting on. `inner` means to count to three; it resets
+-- `i`, which `outer` is using to count to four, and neither ever finishes.
+--
+-- C gives each block its own `i` and warns at `-Wshadow`. mereo cannot: the
+-- name IS the same name. So the mistake has to be caught rather than scoped
+-- away, and the shape that is decidable is narrow -- two loops, one inside the
+-- other, bound by the same name, with that name RESET between them.
+--
+-- Sharing a name is not enough to be wrong. `examples/head.mereo` counts
+-- newlines across blocks with an accumulator that the inner loop advances and
+-- both loops stop on, which is correct and must keep compiling. The difference
+-- is the reset: an advance carries the count forward, a reset throws it away.
+--
+-- Found by writing 357 lines of mereo for `exam/` and hitting it: the read
+-- loop's index was reused as a parse counter, and nothing said so.
+
+program goes
+  word is 8 bytes
+  i is 0
+  t is 0
+  terminal is already linux.file (descriptor is 1)
+  outer goes
+    leave outer when i >= 4
+    inner goes
+      i is 0
+      count goes
+        leave count when i >= 3
+        t is t + 1
+        i is i + 1
+        repeat count
+      end
+    end
+    i is i + 1
+    repeat outer
+  end
+  [word + 0 : 8] is t
+  terminal.write (buffer is word, count is 8)
+end

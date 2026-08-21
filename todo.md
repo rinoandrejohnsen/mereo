@@ -810,6 +810,15 @@ hand-optimised C turned up work that the corpus never would have.
 word-at-a-time: **2.9x on find-heavy code**, 55 ms to 19 ms, for 2848 bytes
 across the corpus. No program in the corpus scanned hard enough to notice.
 
+**Also fixed:** a nested loop that RESETS the enclosing loop's counter is
+refused now (`check_shadowed_counters`). mereo's flat namespace is what makes
+this possible in the first place, and C's block scoping is what makes it a
+`-Wshadow` warning there instead. Narrow on purpose: sharing a name between
+nested loops is a real pattern -- `examples/head.mereo` counts newlines across
+blocks that way -- so only a reset is refused. Both false positives it first
+produced (`head`, and the exam program itself) came from treating a plain
+`leave NAME when` scope as a loop; it looks only at loops that repeat.
+
 **Open, and each is small:**
 
 1. **No top-level constants.** A size used in two places is a literal in two
