@@ -512,17 +512,24 @@ descriptor, a position or zero, and have no argument to be bounded by.
    the initial value. **DONE** -- all three shapes are in `classify_accesses`,
    including the counting-down loop that takes its ceiling from the value it
    entered with.
-3. **What is left is DECIDED, and it asks nothing of the compiler.** An access
-   the analysis cannot prove keeps whatever the programmer wrote: spelled `.at`
-   it keeps its check, spelled `[base + i]` it stays raw. The compiler neither
-   adds a guard nor removes one -- it reports, and the spelling decides.
+3. **DECIDED and done.** An access the analysis cannot prove keeps whatever the
+   programmer wrote -- spelled `.at` it keeps its check, spelled `[base + i]` it
+   stays raw. Where an `.at` IS proved, the check is dropped: it can never fail,
+   and a branch that never goes anywhere is dead code with a label on it, not a
+   safety net. A raw access is never touched either way.
 
-   That is the current behaviour, so this item closes with no code. What it
-   settles is the QUESTION, which had been open since the entry was written:
-   refusing the unproven was never right, and neither is silently inserting a
-   check the author did not ask for. `.at` already means "check this"; a raw
-   access already means "I have the proof". The analysis says which of those
-   claims it could verify, and leaves both alone.
+   `drop_proved_checks` does it. Soundness turns on one thing: the proof must
+   not LEAN on the guard being removed, or the argument is circular --
+   `ensure i < length` makes `[data + i]` provable by itself. Each candidate is
+   re-checked with its own fact suppressed and survives only if still proved
+   without it. A span of 11 indexed by a count the kernel caps at 8 loses its
+   check; a span of 3 indexed by a count capped at 64 keeps it, and still
+   reports `at3: 2: at: 10` at run time.
+
+   MEASURED, and the number is honest: 2 checks dropped corpus-wide, binaries
+   BYTE-IDENTICAL. GCC was already deleting the same ones. The mechanism earns
+   its keep only where GCC cannot see what mereo can -- the
+   `-fno-strict-aliasing` cases the hoist exists for -- and not here.
 
 #### Decided
 
