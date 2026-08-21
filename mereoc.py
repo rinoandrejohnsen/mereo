@@ -4623,8 +4623,13 @@ def call_parts(meth, valmap):
             # the right-hand side may name another PORT (`count <= capacity`),
             # which is wired at the call site like any other
             rhs = meth["bind"][val][0] if val in meth["bind"] else val
-            ens.append((meth["bind"][port][0], cmp_, rhs, ln, reading))
-    clauses = []
+            # `count <= capacity` is the KERNEL promising something about its
+            # own behaviour: read returns at most what it was given, by design,
+            # so the branch can never be taken. `count >= 0` compares against a
+            # constant and CAN fire. Only the first is an assumption.
+            ens.append((meth["bind"][port][0], cmp_, rhs, ln, reading,
+                        val in meth["bind"]))
+    clauses, assume = [], []
     for e in ens:
         l, c, r, _ = e[0], e[1], e[2], e[3]
         lhs = valmap.get(l, l)
@@ -4632,7 +4637,8 @@ def call_parts(meth, valmap):
         if reading:                       # read the result as the call promises
             lhs = f"({'long' if reading == 'signed' else 'unsigned long'})({lhs})"
         clauses.append(f"{lhs} {c} {valmap.get(r, r)}")
-    return prim, args, out, clauses
+        assume.append(bool(len(e) > 5 and e[5]))
+    return prim, args, out, clauses, assume
 
 
 def procedure_call(st, definitions, slots):
@@ -7297,7 +7303,7 @@ def plan(definitions, slots, steps, overrides):
             # A primitive spliced out of a resource method returns a value and
             # carries the contract, exactly as the same call would through the
             # method path; only `exit` and its kind are noreturn.
-            out, clauses = None, []
+            out, clauses, assume = None, [], []
             if prim["out"] and prim["out"] in conns:
                 actual, ln = conns.pop(prim["out"])
                 out = resolve_value(actual, scalars, buffers, ln)
@@ -7307,13 +7313,18 @@ def plan(definitions, slots, steps, overrides):
                     lhs = (f"({'long' if _read == 'signed' else 'unsigned long'})"
                            f"({out})") if _read else out
                     rhs = _val
-                    if _val in wired:
+                    # the same split as the method path: a right-hand side that
+                    # names another PORT is the kernel promising something about
+                    # its own behaviour, and cannot fail
+                    is_promise = _val in wired
+                    if is_promise:
                         rhs = resolve_value(wired[_val][0], scalars, buffers, ln)
                     clauses.append(f"{lhs} {_cmp} {rhs}")
+                    assume.append(is_promise)
             for port, (_, ln) in conns.items():
                 fail(f"line {ln}: '{st['op']}' has no port '{port}'")
             ps = {"pname": st["op"], "noreturn": prim["noreturn"],
-                  "args": args, "out": out, "clauses": clauses,
+                  "args": args, "out": out, "clauses": clauses, "assume": assume,
                   "label": landmark(st["op"]) if prim["noreturn"] else None,
                   "recover": None, "gtarget": None, "resume": None}
             if clauses:
@@ -7473,7 +7484,7 @@ def plan(definitions, slots, steps, overrides):
                     consumed |= {p for p, _, _ in lconns}
                     vm = wire_call(init, defn, inst, lconns, scalars, buffers,
                                    st["line"])
-                    _, largs, lout, lclauses = call_parts(init, vm)
+                    _, largs, lout, lclauses, _lassume = call_parts(init, vm)
                     ps = {"pname": init["prim"], "noreturn": False,
                           "args": largs, "out": lout, "clauses": lclauses,
                           "label": None, "recover": None, "gtarget": None,
@@ -7544,7 +7555,7 @@ def plan(definitions, slots, steps, overrides):
             constructed.add(inst["name"])
             record_live(inst["name"])
 
-        prim, args, out, clauses = call_parts(meth, valmap)
+        prim, args, out, clauses, assume = call_parts(meth, valmap)
 
         alts = []
         if st["alts"]:
@@ -7562,14 +7573,14 @@ def plan(definitions, slots, steps, overrides):
                         fail(f"line {alt['line']}: an alternative may only "
                              f"vary value inputs -- '{p2}' must stay "
                              f"'{base_binds[p2]}' (got '{abinds[p2]}')")
-                _, aargs, aout, aclauses = call_parts(meth, avm)
+                _, aargs, aout, aclauses, _aassume = call_parts(meth, avm)
                 alts.append({"pname": meth["prim"], "args": aargs,
                              "out": aout, "clauses": aclauses,
                              "strings": [a for _, a, _ in alt["conns"]
                                          if is_str(a)]})
 
         ps = {"pname": meth["prim"], "noreturn": False, "args": args,
-              "out": out, "clauses": clauses, "label": None,
+              "out": out, "clauses": clauses, "assume": assume, "label": None,
               "recover": None, "gtarget": None, "resume": None}
         rec = st["recover"]
         rid = None
@@ -8098,7 +8109,13 @@ def transpile(sources, prog):
         body.append(f"    {stmt}")
         if p["noreturn"]:
             body.append("    __builtin_unreachable();")
-        for pred in p["clauses"]:
+        for k, pred in enumerate(p["clauses"]):
+            if (p.get("assume") or [])[k:k + 1] == [True]:
+                # a promise the kernel makes about itself: state it, do not
+                # test it. The branch could never be taken, and GCC gets the
+                # same range either way.
+                body.append(f"    if (!({pred})) __builtin_unreachable();")
+                continue
             body.append(f"    if (__builtin_expect(!({pred}), 0)) "
                         f"goto {p['gtarget']};")
         if p["resume"]:

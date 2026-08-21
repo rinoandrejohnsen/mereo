@@ -854,8 +854,8 @@ $ echo $?
 <p>It got the same two optimisations as the C, and one the C did not need.</p>
 <h3>The numbers</h3>
 <p>80.5 MB, one million lines, interleaved A/B over 21 runs each so drift hits both:</p>
-<table><thead><tr><th></th><th>min</th><th>median</th><th>sd</th></tr></thead><tbody><tr><td>C, hand-optimised</td><td>53.7 ms</td><td><strong>54.7 ms</strong></td><td>0.62</td></tr><tr><td>mereo</td><td>54.5 ms</td><td><strong>55.4 ms</strong></td><td>0.82</td></tr></tbody></table>
-<p><strong>Ratio 1.012.</strong> mereo is one and a bit percent behind, which is inside the spread of the two measurements. On identical output: the two programs agree byte for byte on the million-line log and on all 800 adversarial inputs.</p>
+<table><thead><tr><th></th><th>min</th><th>median</th><th>sd</th></tr></thead><tbody><tr><td>C, hand-optimised</td><td>53.6 ms</td><td><strong>54.7 ms</strong></td><td>0.86</td></tr><tr><td>mereo</td><td>54.3 ms</td><td><strong>54.8 ms</strong></td><td>0.96</td></tr></tbody></table>
+<p><strong>Ratio 1.000.</strong> The medians are the same. This started at 1.012, and what closed it was not the program but the compiler: <code>read</code> cannot return more than the capacity it was given — that is the kernel's design, not a hope — so mereo states it to GCC rather than testing it. The branch could never have been taken. On identical output: the two programs agree byte for byte on the million-line log and on all 800 adversarial inputs.</p>
 <table><thead><tr><th></th><th>C</th><th>mereo</th></tr></thead><tbody><tr><td>source</td><td>214 lines</td><td>357 lines</td></tr><tr><td>binary, same linker script</td><td>4592 B</td><td>6512 B</td></tr><tr><td>instructions in <code>.text</code></td><td>988</td><td>1402</td></tr></tbody></table>
 <p>mereo is 40% more instructions at the same speed, because the extra sits in cold paths — the report, the error blocks, the release tower — and never runs in the loop that reads 80 MB.</p>
 <h3>What the exam found</h3>

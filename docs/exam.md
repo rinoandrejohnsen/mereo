@@ -88,11 +88,14 @@ both:
 
 | | min | median | sd |
 | --- | ---: | ---: | ---: |
-| C, hand-optimised | 53.7 ms | **54.7 ms** | 0.62 |
-| mereo | 54.5 ms | **55.4 ms** | 0.82 |
+| C, hand-optimised | 53.6 ms | **54.7 ms** | 0.86 |
+| mereo | 54.3 ms | **54.8 ms** | 0.96 |
 
-**Ratio 1.012.** mereo is one and a bit percent behind, which is inside the
-spread of the two measurements. On identical output: the two programs agree byte
+**Ratio 1.000.** The medians are the same. This started at 1.012, and what
+closed it was not the program but the compiler: `read` cannot return more than
+the capacity it was given — that is the kernel's design, not a hope — so mereo
+states it to GCC rather than testing it. The branch could never have been
+taken. On identical output: the two programs agree byte
 for byte on the million-line log and on all 800 adversarial inputs.
 
 | | C | mereo |
