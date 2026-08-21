@@ -568,6 +568,111 @@ descriptor, a position or zero, and have no argument to be bounded by.
    the worked example -- true, known to whoever wrote it, written nowhere, and
    one line proves all four accesses.
 
+### Plan: blessing accesses inside mereoc
+
+Covers items 1, 2, 5, 6 and 8 above. The shape is one pass with three verdicts
+per access, and a fourth thing it does not do.
+
+| verdict | what happens |
+| --- | --- |
+| **proved safe** | blessed. Nothing emitted, nothing said |
+| **proved wrong** | refused, naming the line and both numbers |
+| **unproved** | one line naming the access and WHY it could not be proved |
+| merely suspicious | nothing. A guess is worse than silence |
+
+The fourth row is the discipline the prototype learned by breaking it: one
+missing correlation between two variables reported 406 false alarms out of 3359.
+Nothing is called wrong unless it is PROVEN wrong.
+
+**Why blessing is worth anything.** The report and the refusal are the payoff.
+There may be a third -- `.at` costs 10% today, and an access the compiler has
+proved could compile to the unchecked form, giving the checked spelling at no
+cost. That is NOT promised here: GCC already deletes the checks it can prove, so
+the gain exists only where mereo proves what GCC cannot. Measure it before
+claiming it.
+
+#### One implementation, two front-ends
+
+`tools/mereoprove.py` becomes a thin wrapper that calls the compiler's pass and
+tallies, rather than a second copy of the analysis. Two copies would drift, and
+this file already carries the rule about not doing the optimiser's job twice for
+the same reason -- two answers to keep in agreement.
+
+The pass sits in `plan()`, after `expand_procedures` and `check_call_fit`, where
+the flat step list first exists and `hoist_guard_bounds` already runs.
+
+#### The taxonomy, which is the whole of item 8
+
+An unproved access is not one thing, and the message has to say which:
+
+| | message |
+| --- | --- |
+| the index comes from an INPUT and nothing guards it | **needs a run-time guard** -- the actionable one |
+| it comes from an input and a guard exists | informational: a guard is there, the compiler cannot connect it to this access |
+| it comes from inside the program | **state the bound** -- `ensure tlen >= 36` and the like |
+
+"Comes from an input" is a reachability walk over the reaching-definitions graph
+already built: an index is input-derived if its computation reaches the OUT port
+of a primitive. Those are known -- `prim["out"]` -- so no new machinery.
+
+"A guard exists" reuses the `facts` map: a live `ensure` bounding the index at
+that step. Note that guarded and proved are different -- a guard whose bound the
+compiler cannot resolve leaves the access unproved but not unprotected, and
+saying "needs a guard" there would be wrong.
+
+Expected shape of the report on today's corpus: 16 in the first row, all in the
+TLS parser, all indices parsed off the wire; 20 in the third; the rest small.
+
+#### Order, and what depends on what
+
+1. **`-fwrapv`** (item 5). Independent, one flag, already measured free. It
+   moves every size baseline by -1920 bytes, so `tests/versus` needs re-blessing
+   in the same commit. One interaction to handle: with wrapping defined, an
+   index expression that overflows produces a wrapped value rather than
+   undefined behaviour -- so the analysis must report unproved when an interval
+   leaves the range of a `long`, instead of assuming it cannot happen.
+
+2. **The span adoption check** (item 2, first half). Independent of the
+   analysis, and the same shape as `check_call_fit`: `ensure length <=
+   data.size` on the RESOURCE, checked where it is adopted. Needs the clause to
+   be allowed on a resource, not only in an `assembly` block.
+
+3. **Port the analysis** (item 6). The foundation for the rest. No behaviour
+   change on its own -- it should produce the same tally the tool does today,
+   which is the test.
+
+4. **Refuse what is proved wrong** (item 1). Small once 3 lands. The planted
+   violations already exist as scratch cases: a loop to 100 over a 64-byte
+   backing, an affine index that overflows, an off-by-one in the branchless
+   guard. They move into `tests/progs` and get registered.
+
+5. **The report** (item 8). The taxonomy above.
+
+6. **The span invariant as a FACT** (item 2, second half). This is what unblocks
+   the 7. It cannot come earlier: assuming `length <= data.size` is only sound
+   once every store to a length field is proved to preserve it, and proving that
+   needs the analysis in place. `span.take` narrows through a conditional
+   minimum, so it should go through; anything that does not, reports unproved.
+
+#### Decisions wanted before starting
+
+**Noise.** 44 messages on every build of the TLS programs. The alternative is a
+summary line plus a flag to list them. Printing all of them is the honest
+default and creates the right pressure -- a clean program says nothing -- but it
+is a build-log change and worth agreeing on first.
+
+**Compile time.** Roughly 50 ms more than code emission costs on the largest
+program in the corpus (349 ms against a 301 ms full compile), though that
+comparison is loose because the tool skips emission. This is compile time, which
+the barrier does not govern, but it should be re-measured once the analysis is a
+pass rather than a separate walk.
+
+**Soundness posture.** A false refusal is worse than a missed one, and the
+corpus cannot prove the absence of false refusals -- it can only show that today
+exactly one access is called wrong and it is the planted one. Every new
+inference rule ships with a planted violation and a re-run of the corpus, and
+any rule that cannot be given one does not go in.
+
 ### Measured on the way, and worth keeping
 
 Where GCC can prove the bound, emitting the check costs NOTHING -- removing it
