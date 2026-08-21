@@ -6,13 +6,22 @@ include "../../core.mereo"
 --
 -- `span.at` tests `offset < length`, and after splicing that is a LOAD from the
 -- view's bytes -- so without the hoist the bound is fetched from memory on every
--- pass, and a memory read per iteration stops the loop vectorising. GCC cannot
--- lift it: under `-fno-strict-aliasing`, which mereo ships because byte views
--- type-pun by design, any store might have changed it.
+-- pass, and a memory read in an exit test stops the loop vectorising. Measured
+-- on this program: 4 vector instructions with the load in the loop, 41 with it
+-- hoisted. The check is still here, and `tests/progs/views_at_past_end` pins
+-- that it still fires.
 --
--- Measured on this shape: 4 vector instructions with the load in the loop, 41
--- with it hoisted -- the same 41 as dropping the check altogether. The check is
--- still here, and `tests/progs/views_at_past_end` pins that it still fires.
+-- The hoist does not tell GCC anything it could not work out. Every small
+-- reproduction of this shape -- the punned byte array, the local buffer filled
+-- by a syscall, the early exit into a block with side effects -- lifts the load
+-- and vectorises with no help at all. Something between those and the whole
+-- program stops it, and it is not aliasing: `-fstrict-aliasing` changes neither
+-- column. What the hoist supplies is a form, not a fact.
+--
+-- This program is the only one in the tree the hoist changes -- 89 shipped
+-- binaries and 78 test binaries are byte-identical with it off. Nothing gates
+-- the 41 either; the black-box case below pins the OUTPUT, which is the same
+-- both ways. See `todo.md`.
 --
 -- Note the loop is bounded by `count`, NOT by `v.length`. Where they are the
 -- same name GCC proves the check redundant and deletes it, and the hoist stands

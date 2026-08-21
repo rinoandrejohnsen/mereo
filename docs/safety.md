@@ -191,21 +191,47 @@ parses hostile input. Not a faster binary — a list short enough to read.
 
 ## What is beyond GCC
 
-**The bound hoist.** `span.at` tests a length held in the view's bytes, so after
-splicing the bound is a load per iteration. mereo ships `-fno-strict-aliasing`
-because byte views type-pun by design, so from GCC's side any store might have
-changed that length; mereo knows the store went to the buffer. That fact is
-erased by the translation to C.
+One thing, and it is a category rather than a trick: **a fact that is true of
+the program but is nowhere in the program's text.** GCC works from the
+translation unit. Anything derivable from it, GCC derives.
 
-| | vector instructions |
+**The kernel's half of the syscall contract.** A `read` never returns more than
+the capacity it was given. That is the kernel ABI's promise, not a consequence
+of any code GCC can see — the call site is inline assembly with a `"memory"`
+clobber, and a clobber says *something changed*, not *at most this many bytes*.
+mereo states it rather than testing it, and the failure branch folds away:
+
+| `exam/mereo/loglyze`, 84 MB of log | size | time |
+| --- | ---: | ---: |
+| promise stated | 5920 B | 53.9 ms |
+| promise tested | 6576 B | 54.9 ms |
+
+One line of C between them, identical output, and the whole difference is that
+GCC could delete a branch it had no way to know was dead.
+
+Everything else the analysis knows, it knows **from** the program: branch
+conditions, `ensure` clauses, buffer sizes. All three reach GCC as branches and
+literals, and GCC recovers the same ranges from them. So the interval analysis
+does not make faster binaries. Its product is the **list** — a refusal where a
+mistake is provable, a line where it is not.
+
+There is a third thing that is not knowledge but is not nothing: **form.** The
+bound hoist states a fact GCC already has, in a shape its optimiser acts on.
+`span.at` tests a length held in the view's bytes, so after splicing the bound
+is a load per iteration, and a memory read in an exit test does not vectorise:
+
+| `tests/progs/span_hoist` | vector instructions |
 | --- | ---: |
 | bound hoisted | 41 |
 | bound in the loop | 4 |
 
-**The syscall's shape.** That a `read` writes `capacity` bytes into `buffer`
-appears nowhere in the emitted C — it is inline assembly with a `"memory"`
-clobber, and a clobber says *something changed*, not *this buffer, that many
-bytes*. mereo declares it; GCC cannot recover it.
+Do not read that as GCC being unable. In every small reproduction of the shape
+— the punned byte array, the local buffer filled by a syscall, the early exit
+into a block with side effects — GCC lifts the load itself and vectorises with
+no help. It stops doing so somewhere between those and the whole program, and
+which of the two forms comes out of mereo is worth 37 vector instructions
+either way. Aliasing is not the reason: `-fstrict-aliasing` changes neither
+column.
 
 Everything else mereo reports and GCC does not is a missed diagnostic rather
 than an impossibility. GCC has value-range propagation and object sizes; it

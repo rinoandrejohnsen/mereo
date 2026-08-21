@@ -560,17 +560,47 @@ comparing `index_safe` against `index_fast` by instruction count says nothing,
 they are different programs.)
 
 Where GCC cannot, the cost is the VECTORISATION rather than the size: 4 vector
-instructions against 41. The cause is that the bound is read THROUGH MEMORY --
-`v.length` is a span field, so a store might change it, and `-fno-strict-aliasing`
-(which mereo ships because byte views type-pun by design) makes that worse.
-**Hoisting the length into a scalar once recovers all 41 while KEEPING the
-check** -- same safety, same speed as unchecked. That is a codegen change rather
-than an analysis, and worth doing whatever happens above.
+instructions against 41. The bound is read THROUGH MEMORY -- `v.length` is a
+span field -- and a memory read in an exit test does not vectorise. Hoisting the
+length into a scalar once recovers all 41 while KEEPING the check.
 
 Two things that did not work, so they are not retried: an `ensure count <=
 v.length` before the loop, and a `__builtin_unreachable` assumption of the same
 fact. Both leave it at 4: the equality has to survive every iteration, and
 through memory it does not.
+
+## The bound hoist earns 37 vector instructions in one program and nothing else
+
+`hoist_guard_bounds` in `mereoc.py`, `tests/progs/span_hoist.mereo`. Keep it for
+now. Three things are true of it at once and they pull different ways.
+
+**It works.** 4 vector instructions against 41 on the shape it targets, and the
+check survives -- the point of it.
+
+**It changes one binary in the tree.** 89 shipped and 78 test binaries are
+byte-identical with the hoist off; `span_hoist` is the only difference, and it
+is the program written to exercise it. No real program has the shape, because
+the shape is a loop bounded by something OTHER than the length the check tests,
+which is a slightly odd thing to write.
+
+**Nothing gates the 41.** `bb views/hoisted-bound` pins the program's OUTPUT,
+which is identical with the hoist off. So the optimisation is untested in the
+only sense that matters, and it silently died once already: while
+`drop_proved_checks` retired a check on the wrong fact, `span_hoist` had no
+check left to hoist and the pass was inert -- with the black-box case still
+green. If the hoist is kept, the gate should be the vector-instruction count,
+not the output.
+
+**And it is not knowledge.** Every small reproduction of the shape -- punned
+byte array, local buffer filled by a syscall, early exit into a block with side
+effects -- vectorises with no help from mereo at all. Something between those
+and the whole program stops GCC, and it is not aliasing (`-fstrict-aliasing`
+changes neither column). So this is a form the optimiser happens to act on, not
+a fact mereo has and GCC lacks. See `docs/safety.md`, which used to claim
+otherwise.
+
+The decision is whether a pass that pays off in one synthetic program is worth
+its own maintenance. Deleting it is defensible. Keeping it needs the real gate.
 
 ### On the corpus figures
 
