@@ -18,14 +18,21 @@ printf 'lorem ipsum\n' > "$B/doc"
 build() {
     local src="$DIR/examples/$1.mereo"
     [ -f "$src" ] || src="$DIR/tests/progs/$1.mereo"   # test-only programs
+    [ -f "$src" ] || src="$DIR/programs/tls/$1.mereo"  # a TLS probe, if it runs
     # Reuse a binary only if it is newer than everything that shapes it. A
     # cached binary older than the compiler silently turns a real failure into
-    # a pass -- which it once did, so the check is not hypothetical. core.mereo
-    # was missing from this list until a deliberately broken `span.skip` was
-    # reported as passing: BOTH libraries shape the binary, not just linux.
-    if [ -x "$B/$1" ] && [ "$B/$1" -nt "$src" ] \
-       && [ "$B/$1" -nt "$DIR/mereoc.py" ] && [ "$B/$1" -nt "$DIR/linux.mereo" ] \
-       && [ "$B/$1" -nt "$DIR/core.mereo" ]; then
+    # a pass -- which it once did, TWICE, so the check is not hypothetical.
+    # core.mereo was missing from this list until a deliberately broken
+    # `span.skip` was reported as passing: BOTH libraries shape the binary, not
+    # just linux. Then the TLS probes arrived and crypto.mereo was missing the
+    # same way -- a `server_hello` with its bounds removed passed both new
+    # cases. Anything a listed program INCLUDES belongs here.
+    local dep stale=0
+    for dep in "$DIR/mereoc.py" "$DIR/linux.mereo" "$DIR/core.mereo" \
+               "$DIR"/programs/tls/*.mereo; do
+        [ -e "$dep" ] && [ ! "$B/$1" -nt "$dep" ] && stale=1
+    done
+    if [ -x "$B/$1" ] && [ "$B/$1" -nt "$src" ] && [ "$stale" = 0 ]; then
         return 0
     fi
     python3 "$DIR/mereoc.py" "$src" > "$B/$1.c" 2>/dev/null \
@@ -341,6 +348,15 @@ bb   views/add-past-end  views_add_past_end  "" 1 ""
 # back zero; a flag view emitted a store to an undeclared name and would not
 # compile. Both shapes, both ways, one line.
 bb   adopt/plain-values   adopt_plain "" 0  "1000 70000 1000 71000 1 2 1"
+
+# `crypto.server_hello` builds every offset it uses out of bytes the peer sent,
+# so the checks bounding them against the record's own length are the only thing
+# between a hostile ServerHello and a walk far past a 512-byte record. Both
+# directions from one byte of input: the same 84-byte record, with the
+# extensions block length changed from 40 to 65535 and nothing else. See
+# `programs/tls/probe_server_hello.mereo` for the layout.
+bb   tls/server-hello-ok  probe_server_hello "ok"  0 "$(printf 'A'; printf '\0%.0s' $(seq 31))"
+bb   tls/server-hello-bad probe_server_hello "bad" 1 ""
 
 # `repeat program` goes back to the first step, past the entry views and the
 # signal setup. The output pins the three passes; `raii/` below pins the half

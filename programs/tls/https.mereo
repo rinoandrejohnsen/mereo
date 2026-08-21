@@ -146,7 +146,7 @@ program goes
   link.transmit (buffer is ch, length is chlen)
   read_record (link is link, rec is sh_rec, capacity is sh_rec.size, length is shlen, total is reclen)
   shmsg is sh_rec + 5
-  crypto.server_hello (rec is shmsg, pub is spub)
+  crypto.server_hello (rec is shmsg, reclen is shlen, pub is spub)
   curve.x25519 (secret is cpriv, point is spub, shared is shared)
   text.copy (source is ch + 5, target is tr, length is 166)  -- ClientHello body -> the transcript
   text.copy (source is sh_rec + 5, target is tr + 166, length is shlen)  -- ...then ServerHello after it
@@ -207,6 +207,13 @@ program goes
                  rec is rec,
                  reclen is reclen,
                  sink is plain)
+    -- RECLEN is `length + 5` with LENGTH two bytes off the wire, so a peer can
+    -- send a record shorter than the 22 bytes of nonce and tag that `open`
+    -- strips. The subtraction below is unsigned: 21 - 22 is not -1 here, it is
+    -- 18446744073709551615, and `ensure tlen + inner_len <= tr.size` then
+    -- passes trivially because the sum wraps. The copy that follows would take
+    -- that as its length.
+    ensure reclen >= 22
     inner_len is reclen - 22
     -- TLEN accumulates a length the peer chose, once per record of the
     -- flight, and the copy below writes at `tr + tlen`. Bounding each step
@@ -217,6 +224,10 @@ program goes
     text.copy (source is plain, target is tr + tlen, length is inner_len)
     tlen is tlen + inner_len
     seq is seq + 1
+    -- and the same shape once more: TLEN grows by lengths the peer chose, so
+    -- nothing above it says the flight has yet produced the 36 bytes this
+    -- steps back over. Underflow here indexes TR from near 2^64.
+    ensure tlen >= 36
     foff is tlen - 36
     a is [tr + foff : 1]
     foff is foff + 1

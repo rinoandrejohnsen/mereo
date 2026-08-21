@@ -866,5 +866,77 @@ writes a check, so mereo may too and still be at parity. At these nine sites we
 are not at the bar, we are BELOW it: an expert's C would carry a bound here and
 ours does not.
 
-Worth a gate. A build that prints "wants a run-time guard" and passes anyway is
+### Done 2026-08-21: seven guarded, two were already safe
+
+`crypto.server_hello` now takes `(rec, reclen, pub)` and bounds every offset it
+builds against the record: `39 <= reclen` before the session id length,
+`c + 2 <= reclen` and `v + 2 <= reclen` for the two reads of each extension
+header, `endx <= reclen` for the block, and `ks_off + 32 <= reclen` for the key
+itself. Both callers pass `shlen`, which they already had.
+
+The flight loop in `https.mereo` and `client.mereo` had two UNSIGNED underflows,
+not one. `inner_len is reclen - 22` is 18446744073709551615 for a record of 21,
+and `ensure tlen + inner_len <= tr.size` then passes because the sum wraps --
+so the copy after it would have taken that as a length. `foff is tlen - 36`
+underflows the same way. Both bounded now.
+
+The two in `loglyze` were SAFE and stay unguarded: `j < n <= 65536 = rbuf.size`
+in the narrow scan, and `i + take <= n` for the copy, by `take <= chunk = j - i`.
+An expert's C carries no check at either, so adding one would break the bar.
+What was wrong there was the MESSAGE: `is_guarded` consulted only `ensure`
+facts, so it said "nothing bounds it here" about an index with `leave narrow
+when j >= n` written directly above. It now reads loop exits too, and both say
+"a guard is in scope, but it could not be tied to this access" -- which is the
+truth, and points at the interval gap rather than at the programmer.
+
+Verified: the handshake completes against openssl s_server with all five new
+guards live (it then fails at the kTLS setsockopt, which is the pre-existing
+module-autoload problem and identical on a pre-change build).
+`programs/tls/probe_server_hello.mereo` drives the guards from both sides off
+one byte of stdin, and is gated by `bb tls/server-hello-{ok,bad}`. With only
+`ensure endx <= reclen` commented out, the hostile case exits 0 and prints a key
+byte it read past the end of the record -- so the gate is not vacuous.
+
+Reaching those cases also meant letting `tests/blackbox.sh` build from
+`programs/tls/`, and its freshness check did not list crypto.mereo -- a
+`server_hello` with its bounds removed passed both new cases from a cached
+binary. Fixed the same way core.mereo was: anything a listed program includes
+belongs in the list.
+
+## SUGGESTION: make "wants a run-time guard" fail the build
+
+Not done -- this is a policy change and should be a deliberate one.
+
+The case for it is the section above. The compiler printed those nine lines on
+every build for weeks, and one of them was a remotely triggerable walk off a
+512-byte record. A build that says "wants a run-time guard" and passes anyway is
 a build whose warnings are furniture.
+
+**The cost is currently zero.** All nine are closed, so the corpus emits no
+`wants a run-time guard` at all -- the gate could be turned on today without
+failing anything, which is the cheapest moment it will ever have. That is also
+the argument AGAINST waiting: the next one that appears is a new one, and it
+appears in a build that is otherwise green.
+
+What makes it defensible as an error rather than a warning is that the message
+is precise about its own limits. It fires only when the index is input-derived
+AND nothing in scope bounds it -- not merely when the access is unproved. The
+weaker verdicts stay as notes:
+
+| message | today | proposed |
+| --- | --- | --- |
+| index from input, nothing bounds it | note | **error** |
+| index from input, a guard could not be tied | note | note |
+| the backing did not resolve | note | note |
+| a bound is in scope, not a number | note | note |
+
+Two things to settle before turning it on:
+
+* an escape hatch. There is none today, and a false positive would be
+  unfixable -- the programmer would have to add a check they know is
+  unnecessary, which is exactly the run-time cost the bar forbids. `is_guarded`
+  reading loop exits (done above) removes the false positives we know of, but
+  "we know of" is doing work in that sentence.
+* whether it belongs in `mereoc` or in `mereocheck`. The gates live in the
+  latter; making the transpiler itself refuse is a stronger claim, and the
+  checking suite is where a refusal is normally proven to fire.

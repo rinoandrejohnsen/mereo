@@ -6313,11 +6313,32 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
         return False
 
     def is_guarded(e, at):
-        """is any name in this index bounded by a live `ensure` here?"""
+        """is any name in this index bounded by something in scope here?
+
+        Not only by an `ensure`. `leave narrow when j >= n` bounds `j` for
+        everything after it, and is what a reader points at when asked what
+        makes the access safe -- the interval path already reads these. Judging
+        the MESSAGE by `ensure` alone told the programmer "nothing bounds it
+        here" about an index with a bound written directly above it, which is
+        the wording that gets a true report dismissed."""
         live = facts.get(at, {})
-        if e.strip() in live:
+        names = set(re.findall(r"[A-Za-z_][\w.]*", e))
+        if e.strip() in live or any(n in live for n in names):
             return True
-        return any(n in live for n in re.findall(r"[A-Za-z_][\w.]*", e))
+        depth = 0
+        for k in range(at - 1, -1, -1):
+            t = steps[k].get("type")
+            if t == "loop_end":
+                depth += 1
+            elif t == "loop_start":
+                if depth == 0:
+                    break                 # left the enclosing scope
+                depth -= 1
+            elif depth == 0 and t in ("loop_exit", "guard") and steps[k].get("cond"):
+                m = _CMPX.match(str(steps[k]["cond"]))
+                if m and m.group(1).strip() in names:
+                    return True
+        return False
 
     # ---------- an adopted invariant, used as a FACT where it survives
     # `ensure length <= data.size` is checked at adoption. Believing it

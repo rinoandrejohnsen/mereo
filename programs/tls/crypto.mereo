@@ -465,7 +465,15 @@ crypto is
   -- message (from type byte 02). Walks the extension list to the key_share and
   -- stops there, then copies 32 B. `ks_off` stays 0 if the list has no key_share,
   -- which is what the `ensure` on the caller's shared secret ends up catching.
-  server_hello (rec, pub) goes
+  -- RECLEN is the whole reason this takes three ports rather than two. Every
+  -- offset below is built out of bytes the PEER sent -- the session id's
+  -- length, the extensions block's length, each extension's own length -- and
+  -- none of them is bounded by anything the peer does not control. Without the
+  -- record's length in here to check them against, a server that declares a
+  -- large extensions block walks `c` tens of kilobytes past a 512-byte record
+  -- and hands back 32 bytes from wherever it landed as the peer's public key.
+  -- The caller HAS the length; it just had no way to pass it.
+  server_hello (rec, reclen, pub) goes
     sidlen is 0
     c is 0
     et is 0
@@ -473,15 +481,26 @@ crypto is
     ks_off is 0
     endx is 0
     v is 0
+    ensure 39 <= reclen
     sidlen is [rec + 38 : 1]
     c is 39 + sidlen
     c is c + 3
+    ensure c + 2 <= reclen
     endx is [rec + c : 2] as big
     c is c + 2
     endx is endx + c
+    -- the block may not claim more than the record holds
+    ensure endx <= reclen
     walk goes
+      -- one extension header is four bytes: two of type, two of length, and
+      -- `c < endx` alone does not promise all four are there. Each read states
+      -- its OWN bound rather than leaning on the other's: `v` is `c + 2` and a
+      -- reader can see that, but the compiler carries no relation between two
+      -- scalars, so a single `ensure` on `c` leaves the read at `v` unproved.
+      ensure c + 2 <= reclen
       et is [rec + c : 2] as big
       v is c + 2
+      ensure v + 2 <= reclen
       el is [rec + v : 2] as big
       et == 51 goes            -- key_share: what this walk came for
         ks_off is c + 8
@@ -491,6 +510,8 @@ crypto is
       c is c + el
       repeat walk when c < endx
     end
+    -- and the key itself must be inside the record, not merely pointed at
+    ensure ks_off + 32 <= reclen
     text.copy (source is rec + ks_off, target is pub, length is 32)
   end
 end

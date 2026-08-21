@@ -1,0 +1,68 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+include "crypto.mereo"
+
+-- The guards in `crypto.server_hello`, exercised from both sides. Every offset
+-- that walk builds comes out of bytes the peer sent, so the checks that bound
+-- them against the record's own length are the only thing between a hostile
+-- ServerHello and a walk tens of kilobytes past a 512-byte record. A check
+-- nothing has ever seen fire is a check nobody should trust, so this drives it
+-- both ways from one byte of input:
+--
+--   printf 'ok'   | probe_server_hello   ->  32 key bytes, exit 0
+--   printf 'bad'  | probe_server_hello   ->  nothing, exit 1, `ensure` names it
+--
+-- The record laid out below is the smallest well-formed ServerHello this parser
+-- accepts -- 84 bytes, empty session id, one key_share extension:
+--
+--   0..37   type, length, legacy version, random
+--   38      session id length, zero here
+--   39..41  cipher suite, compression
+--   42..43  extensions block length, 40
+--   44..47  extension type 51 (key_share), extension length 36
+--   48..51  group, key length 32
+--   52..83  the key
+--
+-- The hostile variant changes two bytes -- the extensions block length becomes
+-- 65535 -- and nothing else. That is all it takes: `endx` becomes 65579 against
+-- a record of 84, and every read after it walks off the end.
+
+program goes
+  rec is 128 bytes
+  key is 32 bytes
+  pick is 2 bytes
+  got is 0
+  i is 0
+  reclen is 84
+
+  input is already linux.file (descriptor is 0)
+  terminal is already linux.file (descriptor is 1)
+
+  input.read (buffer is pick, capacity is 2, count is got)
+
+  -- the record: zeros everywhere the parser does not look
+  fill goes
+    leave fill when i >= 128
+    [rec + i : 1] is 0
+    i is i + 1
+    repeat fill
+  end
+
+  [rec + 0 : 1] is 2                 -- ServerHello
+  [rec + 38 : 1] is 0                -- empty session id
+  [rec + 42 : 2] as big is 40        -- extensions block length
+  [rec + 44 : 2] as big is 51        -- key_share
+  [rec + 46 : 2] as big is 36        -- extension length
+  [rec + 50 : 2] as big is 32        -- key length
+  [rec + 52 : 1] is 65               -- first key byte, so the copy is visible
+
+  -- one byte of input decides which record this is
+  hostile goes
+    leave hostile when [pick + 0 : 1] != 98      -- 'b' for bad
+    [rec + 42 : 2] as big is 65535               -- a block bigger than the record
+  end
+
+  crypto.server_hello (rec is rec, reclen is reclen, pub is key)
+
+  terminal.write (buffer is key, count is 32)
+end
