@@ -500,11 +500,13 @@ descriptor, a position or zero, and have no argument to be bounded by.
    checked at run time; one on an IN port is a requirement on the call, decided
    when the program is read.
 
-   **What is NOT done** is using the invariant as a FACT, which is what unblocks
-   the 7. That waits on the analysis being in the compiler: assuming
-   `length <= data.size` is only sound once every store to a length field is
-   proved to preserve it, and `span.take` narrows through a conditional minimum
-   that has to be checked rather than assumed.
+   Using the invariant as a FACT is done too, inductively: assume
+   `length <= data.size` before each store to the field, show it still holds
+   after, drop what fails and repeat. A LOAD of the field carries the fact, so
+   the induction has a base. `skip` is handled by checking the PAIRING that
+   makes it safe -- a store of `ptr + X` beside a store of `len - X` leaves
+   `offset + length` unchanged -- and `take` by splitting on the `when` that
+   selects each branch.
 
    Note `size of X` does NOT exist; the member is `X.size`.
 
