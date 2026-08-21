@@ -656,10 +656,17 @@ TLS parser, all indices parsed off the wire; 20 in the third; the rest small.
    drop out of the tally, which is why it reads 75 files and 3354 accesses
    rather than 86 and 3359. The verdicts on real programs did not move.
 
-4. **Refuse what is proved wrong** (item 1). Small once 3 lands. The planted
-   violations already exist as scratch cases: a loop to 100 over a 64-byte
-   backing, an affine index that overflows, an off-by-one in the branchless
-   guard. They move into `tests/progs` and get registered.
+4. **Refuse what is proved wrong** (item 1). **DONE** -- `refuse_proven_wrong`,
+   on `OUT` only. `tests/progs/loop_past_end.mereo` and
+   `branchless_past_end.mereo` are the planted violations, both verified to
+   fail with the check disabled; black-box is 159. The corpus is byte-identical
+   and nothing correct is refused.
+
+   One thing the implementation turned on: a WHOLLY LITERAL index already has
+   its own check, later and with a better message ("Every part of this is known
+   here -- the offset and the width are literals..."), so the new one stands
+   aside for it. Without that it preempted the older check and the only
+   suite failure was a message mismatch, not a wrong verdict.
 
 5. **The report** (item 8). The taxonomy above.
 

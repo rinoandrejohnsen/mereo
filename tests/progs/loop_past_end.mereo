@@ -1,0 +1,37 @@
+include "../../linux.mereo"
+
+-- REJECTED on purpose: a loop whose bound is wider than the backing it indexes.
+--
+-- `block` is 64 bytes and the loop runs `i` to 100. Nothing about any single
+-- line is wrong -- the access is `[block + i : 1]`, which is what every scan
+-- loop in the corpus looks like -- and the mistake is only visible by putting
+-- the loop's bound next to the array's size.
+--
+-- Which is what the compiler does. The bound is read off the loop, the index is
+-- an induction variable stepping by one, and the backing's size is the number
+-- the array is declared with, so the last pass is decided rather than guessed.
+--
+-- GCC does not report this. It has value-range propagation and object sizes and
+-- could in principle, but stays silent at `-Wall -Wextra -Warray-bounds=2
+-- -Wstringop-overflow=4 -fanalyzer` -- checked, with a live loop and the buffer
+-- written first so an uninitialised-value finding could not stand in for a
+-- bounds one.
+
+program goes
+  block is 64 bytes
+  word is 8 bytes
+  n is 0
+  i is 0
+  t is 0
+  input is already linux.file (descriptor is 0)
+  terminal is already linux.file (descriptor is 1)
+  input.read (buffer is block, capacity is 64, count is n)
+  scan goes
+    leave scan when i >= 100
+    t is t + [block + i : 1]
+    i is i + 1
+    repeat scan
+  end
+  [word + 0 : 8] is t
+  terminal.write (buffer is word, count is 8)
+end

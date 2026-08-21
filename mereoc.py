@@ -5535,6 +5535,29 @@ def _acc_strings(st):
 ACCESS_VERDICTS = []
 
 
+def refuse_proven_wrong(verdicts):
+    """Refuse an access the analysis PROVED runs past its backing.
+
+    Only `OUT` -- an index whose whole range is known and does not fit. An
+    access the analysis merely could not prove is not reported here at all; the
+    interval domain is non-relational and will place a safe access out of range
+    if it loses the correlation between two variables, and a compiler that
+    refuses a correct program is worse than one that stays quiet.
+
+    The constant case is already refused where the access is read, with a better
+    message. This covers the derived ones: a loop bound wider than the backing,
+    an affine index that overflows, an off-by-one in a branchless guard."""
+    for row in verdicts:
+        kind, base, expr, ln, hi, size, width, lit = row
+        if kind != "OUT" or lit:
+            continue
+        reach = hi + width
+        fail(f"line {ln}: `[{expr}]` reaches {reach} bytes into '{base}', "
+             f"which is {size} bytes. The index runs to {hi} here, and every "
+             f"step of that is known: this access is out of range on the last "
+             f"pass, not merely unproved.")
+
+
 def classify_accesses(definitions, slots, steps):
     # `buffer is capacity bytes` gives the size as a NAME. The emitter resolves
     # it through the scalar's init (see `buffer_size` in mereoc.py); so does a
@@ -6052,8 +6075,13 @@ def classify_accesses(definitions, slots, steps):
                 width = _acc_const(w) or 1
                 lhs, _, idx = body.partition("+")
                 bname, size, off = resolve_base(lhs, i)
+                ln = st.get("line")
+                # a wholly literal index has its own check, later and with a
+                # better message -- this one stands aside for it
+                lit = not idx.strip() or _acc_const(idx) is not None
                 if size is None:
-                    out.append(["opaque-base", lhs.strip(), inner]); continue
+                    out.append(["opaque-base", lhs.strip(), inner, ln, None,
+                                None, width, lit]); continue
                 bnd = binding.get(i, {})
                 lo, hi = iv(idx.strip(), i) if idx.strip() else (0, 0)
                 if lo is not None and hi is not None:
@@ -6062,8 +6090,10 @@ def classify_accesses(definitions, slots, steps):
                     first = re.split(r"[^\w.]", idx.strip())[0]
                     known = first in bnd or first in copy or first in facts.get(i, {})
                     kind = "bound-unresolved" if known else "data-dependent"
-                    out.append([kind, bname, inner]); continue
-                out.append([("proved" if hi + width <= size else "OUT"), bname, inner])
+                    out.append([kind, bname, inner, ln, None, size, width, lit])
+                    continue
+                out.append([("proved" if hi + width <= size else "OUT"),
+                            bname, inner, ln, hi, size, width, lit])
     return out
 
 def check_adoption_fit(definitions, slots):
@@ -6353,6 +6383,7 @@ def plan(definitions, slots, steps, overrides):
     # proven-wrong and reporting the unproved are the next two steps -- but the
     # pass runs here, where the flat step list first exists.
     ACCESS_VERDICTS[:] = classify_accesses(definitions, slots, steps)
+    refuse_proven_wrong(ACCESS_VERDICTS)
     steps = hoist_guard_bounds(steps, slots)
     scalars, buffers, instances = check_slots(definitions, slots)
 

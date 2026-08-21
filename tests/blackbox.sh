@@ -418,6 +418,11 @@ rejects port/needs-value  port_needs_value  "reads 'a', so it needs a VALUE"
 rejects port/needs-slot   port_needs_slot   "so it needs a SCALAR SLOT"
 
 rejects access/past-end   access_past_end   "reads 101 bytes into"
+# ...and the DERIVED cases, which no literal gives away. The bound is read off
+# the loop, the index is an induction variable, the size is the array's. GCC
+# reports neither, even at -Warray-bounds=2 -Wstringop-overflow=4 -fanalyzer.
+rejects access/loop-past-end loop_past_end "reaches 100 bytes into 'block', which is 64 bytes"
+rejects access/branchless-past-end branchless_past_end "reaches 136 bytes into 'o', which is 128 bytes"
 rejects access/store-past-end store_past_end "writes 101 bytes into"
 # A syscall cannot be caught downstream: the kernel never sees where the buffer
 # ends, and inline asm with a "memory" clobber tells GCC nothing about which

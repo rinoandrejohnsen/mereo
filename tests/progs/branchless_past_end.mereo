@@ -1,0 +1,42 @@
+include "../../linux.mereo"
+
+-- REJECTED on purpose: an off-by-one in mereo's branchless idiom.
+--
+--   lt is i < 16          -- 0 or 1
+--   idx is i + 1
+--   idx is idx * lt       -- ...so idx is 0 when the guard fails
+--
+-- That is how `field.carry` avoids a branch, and the guard there reads `i < 15`
+-- against a 16-limb array. Written `i < 16` against the same array the last
+-- pass indexes one limb too far, and no line of it looks wrong.
+--
+-- A plain interval domain cannot decide this: it loses the correlation between
+-- `i` and `lt`, concludes `idx` can be 16 whatever the guard says, and reports
+-- every correct carry loop in the corpus as out of range -- 406 false alarms,
+-- when this was first tried. The compiler case-splits on the comparison
+-- instead: the value is zero, or it is the other side under the assumption that
+-- the guard held. That is what makes this one decidable AND the correct ones
+-- quiet.
+
+program goes
+  o is 128 bytes
+  word is 8 bytes
+  i is 0
+  idx is 0
+  lt is 0
+  ioff is 0
+  t is 0
+  terminal is already linux.file (descriptor is 1)
+  step goes
+    leave step when i >= 16
+    lt is i < 16
+    idx is i + 1
+    idx is idx * lt
+    ioff is idx * 8
+    t is t + [o + ioff : 8]
+    i is i + 1
+    repeat step
+  end
+  [word + 0 : 8] is t
+  terminal.write (buffer is word, count is 8)
+end
