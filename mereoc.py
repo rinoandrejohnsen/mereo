@@ -1948,6 +1948,19 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                          f"templates but no FIELDS. '{defn['name']}' has fields, "
                          f"so either move `{m.group(1)} is` out to the left "
                          f"margin, or drop the fields from '{defn['name']}'.")
+                m = re.match(r"^ensure (\w+) (<=|>=|==|!=|<|>) (\w+\.size)$", s)
+                if m:
+                    # An INVARIANT over the resource's own fields, checked where
+                    # an instance is adopted rather than where it is declared --
+                    # `already span (data is line, length is 999)` is where both
+                    # numbers exist. Same keyword and same grammar as a
+                    # primitive's contract, one level out: there a clause on an
+                    # in port constrains the call, here it constrains the
+                    # adoption. `X.size` on the right means the size of the
+                    # backing whose address the field `X` was given.
+                    defn.setdefault("invariants", []).append(
+                        (m.group(1), m.group(2), m.group(3), n))
+                    continue
                 fail(f"line {n}: unrecognized definition line: {s!r}")
             if ind == 4 and method is not None:
                 # a procedure method opens its body with slot decls / a loop --
@@ -5469,6 +5482,74 @@ def check_port_needs(definitions, slots, steps):
     walk(steps)
 
 
+def check_adoption_fit(definitions, slots):
+    """Refuse an instance adopted with a field that does not fit its backing.
+
+    `already span (data is line, length is 999)` over a five-byte `line` is a
+    lie every later `[v.data + i]` inherits, and both numbers are on the line
+    that tells it. The resource states the requirement over its own fields:
+
+        span is
+          data is 8 bytes
+          length is 8 bytes
+          ensure length <= data.size
+
+    Only decided where both sides are known. A length computed at run time is
+    left alone -- see `check_call_fit` for the same rule and the reason."""
+    sizes = {}
+    scal = {s["name"]: s.get("init") for s in slots if s["kind"] == "scalar"}
+    for sl in slots:
+        if sl["kind"] != "buffer":
+            continue
+        v, seen = sl["size"], set()
+        while True:
+            iv = _int_value(v)
+            if iv is not None:
+                sizes[sl["name"]] = iv
+                break
+            if not isinstance(v, str) or v in seen or v not in scal:
+                break
+            seen.add(v)
+            v = scal[v]
+
+    for sl in slots:
+        if sl["kind"] != "instance":
+            continue
+        d = definitions.get(sl.get("definition")) or {}
+        inv = d.get("invariants")
+        if not inv:
+            continue
+        # a literal lands in `init`, an address binding in `pending`; the
+        # invariant needs both sides and does not care which map they came from
+        given = dict(sl.get("init") or {})
+        given.update(sl.get("pending") or {})
+        def value(name):
+            got = given.get(name)
+            if isinstance(got, (list, tuple)):
+                got = got[0]
+            return got
+        for field, cmp_, val, ln in inv:
+            left = _int_value(value(field) or "")
+            if left is None:
+                nm = value(field)
+                left = _int_value(scal.get(nm, "")) if nm in scal else None
+            backing = value(val[:-5])
+            if is_str(backing or ""):
+                right = len(_decode_str_bytes(backing, ln)) + 1
+            else:
+                right = sizes.get(backing)
+            if left is None or right is None:
+                continue
+            ok = {"<=": left <= right, "<": left < right, ">=": left >= right,
+                  ">": left > right, "==": left == right,
+                  "!=": left != right}[cmp_]
+            if not ok:
+                fail(f"line {sl.get('line')}: '{sl['name']}' is adopted with "
+                     f"{field} {left}, but '{backing}' is {right} bytes. "
+                     f"'{d['name']}' states `ensure {field} {cmp_} {val}`, and "
+                     f"every access through it inherits this.")
+
+
 def check_call_fit(definitions, slots, steps):
     """Refuse a call that hands a primitive more room than the buffer has.
 
@@ -5682,6 +5763,7 @@ def plan(definitions, slots, steps, overrides):
     derive_port_needs(definitions)
     check_port_needs(definitions, slots, steps)
     steps = expand_procedures(definitions, slots, steps, PRIMITIVES)
+    check_adoption_fit(definitions, slots)
     check_call_fit(definitions, slots, steps)
     steps = hoist_guard_bounds(steps, slots)
     scalars, buffers, instances = check_slots(definitions, slots)

@@ -419,6 +419,9 @@ rejects access/store-past-end store_past_end "writes 101 bytes into"
 # ends, and inline asm with a "memory" clobber tells GCC nothing about which
 # bytes moved. Both numbers are one line apart in the source.
 rejects access/syscall-fit syscall_fit "is given capacity 4096, but 'small' is 16 bytes"
+# ...and the same question one level out: a resource stating an invariant over
+# its own fields, checked where an instance is adopted rather than declared.
+rejects access/span-fit   span_fit    "adopted with length 17, but 'line' is 5 bytes"
 
 rejects scope/use-after   use_after_scope   "was released when the scope that acquired"
 # ...and the same mistake spelled as a VALUE rather than a receiver. Two checks,

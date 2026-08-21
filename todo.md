@@ -526,35 +526,35 @@ descriptor, a position or zero, and have no argument to be bounded by.
    | --- | --- |
    | `small as wide`, a view over a backing too small | **refused** from the start |
    | `read (buffer is small, capacity is 4096)` | **refused** -- `ensure capacity <= buffer.size` |
-   | `already span (data is line, length is 999)` over a 5-byte `line` | accepted -- every later `[v.data + i]` inherits the lie |
+   | `already span (data is line, length is 999)` over a 5-byte `line` | **refused** -- `ensure length <= data.size` on the resource |
 
-   The syscall half is DONE. Five primitives carry the clause -- `read`,
-   `write`, `getrandom`, `getdents64`, `readlinkat` -- a string literal is sized
-   by its own bytes, the corpus is byte-identical with the clauses added (89
-   binaries, not one instruction), and `tests/progs/syscall_fit.mereo` is the
-   planted violation.
-
-   `ensure` takes `PORT.size` on its right now, and the direction is DERIVED
-   rather than declared: a clause on the OUT port is a promise about the result,
-   checked at run time; one on an IN port is a requirement on the call, decided
-   when the program is read. Nothing downstream could have caught it -- a
-   syscall is inline assembly whose "memory" clobber says SOMETHING changed, not
-   this buffer and that many bytes, so GCC is silent even at `-fanalyzer`.
-
-   **The span half is still open**, and it unblocks 7 of the 44 below: the
-   analysis cannot assume `length <= data.size` while nothing enforces it. It
-   wants the same clause on a RESOURCE, checked where the resource is adopted
-   rather than where it is declared:
+   **All three are done.** The syscall half is five primitives carrying the
+   clause; the span half is a RESOURCE stating an invariant over its own
+   fields, checked where an instance is adopted rather than where the resource
+   is declared, because that is where both numbers exist:
 
        span is
          data is 8 bytes
          length is 8 bytes
          ensure length <= data.size
 
-   That form is new -- a resource stating an invariant over its own fields --
-   but it is the same keyword doing the same job one level out, which beats
-   inventing a spelling. Note `size of X` does NOT exist; the member is
-   `X.size`.
+   `span` and `builder` both declare one (`limit <= data.size` for the latter).
+   The corpus is byte-identical with all of it added -- 89 binaries, not one
+   instruction -- and `tests/progs/syscall_fit.mereo` and `span_fit.mereo` are
+   the planted violations.
+
+   `ensure` takes `PORT.size` on its right now, and the direction is DERIVED
+   rather than declared: a clause on the OUT port is a promise about the result,
+   checked at run time; one on an IN port is a requirement on the call, decided
+   when the program is read.
+
+   **What is NOT done** is using the invariant as a FACT, which is what unblocks
+   the 7. That waits on the analysis being in the compiler: assuming
+   `length <= data.size` is only sound once every store to a length field is
+   proved to preserve it, and `span.take` narrows through a conditional minimum
+   that has to be checked rather than assumed.
+
+   Note `size of X` does NOT exist; the member is `X.size`.
 
 2. **The loop analysis**, in the `leave`-at-top shape first, then do-while with
    the initial value.
@@ -637,10 +637,8 @@ TLS parser, all indices parsed off the wire; 20 in the third; the rest small.
    analysis must report unproved when an interval leaves the range of a `long`
    instead of assuming it cannot happen.
 
-2. **The span adoption check** (item 2, first half). Independent of the
-   analysis, and the same shape as `check_call_fit`: `ensure length <=
-   data.size` on the RESOURCE, checked where it is adopted. Needs the clause to
-   be allowed on a resource, not only in an `assembly` block.
+2. **The span adoption check** (item 2, first half). **DONE** --
+   `check_adoption_fit`, with the clause now allowed in a resource body.
 
 3. **Port the analysis** (item 6). The foundation for the rest. No behaviour
    change on its own -- it should produce the same tally the tool does today,

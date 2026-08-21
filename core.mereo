@@ -401,6 +401,10 @@ span is
   data is 8 bytes             -- where the bytes are
   length is 8 bytes           -- how many there are
 
+  -- A span that claims more bytes than its backing has is a lie every later
+  -- `[v.data + i]` inherits, so it is refused where the span is adopted.
+  ensure length <= data.size
+
   -- find/rfind for one byte: the offset within the view, or `length` if absent.
   find (byte, offset) goes
     n is 0
@@ -560,6 +564,11 @@ builder is
   data is 8 bytes             -- the buffer being filled
   count is 8 bytes            -- how much is in it
   limit is 8 bytes            -- how much it can hold
+
+  -- Every method checks `count` against `limit` before it writes; this is the
+  -- one thing those checks cannot establish, because it is about the backing
+  -- rather than about the builder.
+  ensure limit <= data.size
 
   -- `append(ptr, n)`, and the join between the two views: appending a `span` is
   -- `page.add (source is v.data, length is v.length)`.

@@ -65,6 +65,7 @@ requirement as a `concept`, Zig — and compiles all three.
 | a resource named after the scope that released it | refused | refused | refused |
 | a write to a read-only buffer | refused | refused | refused |
 | a syscall handed more room than the buffer has | refused | accepted | accepted |
+| a span claiming more bytes than its backing has | refused | accepted | accepted |
 
 The pattern: mereo decides what is decidable from the text and declines to guess
 at the rest. A view's fit is two declared sizes compared: `backing 'small' is
@@ -83,10 +84,25 @@ It is declared as an ordinary contract clause on the primitive, `ensure capacity
 <= buffer.size`, and which side it constrains is **derived**: a clause on the
 OUT port is a promise about the result and is checked at run time, while one on
 an IN port is a requirement on the call and is decided when the program is read.
-Same keyword, same grammar, and the corpus is byte-identical with the clauses
-added — 89 binaries, not one instruction. It covers `read`, `write`,
-`getrandom`, `getdents64` and `readlinkat`, and sizes a string literal by its
-own bytes.
+It covers `read`, `write`, `getrandom`, `getdents64` and `readlinkat`.
+
+The row below it is the same keyword one level further out. A resource states an
+invariant over its own fields, and it is checked where an instance is
+**adopted**
+rather than where the resource is declared, because that is where both numbers
+exist:
+
+```
+span is
+  data is 8 bytes
+  length is 8 bytes
+  ensure length <= data.size
+```
+
+A span claiming more bytes than its backing has is a lie every later
+`[v.data + i]` inherits, and `find`, `last` and `search` all walk to `length` by
+definition. Both checks are free: the corpus is byte-identical with every clause
+added — 89 binaries, not one instruction.
 
 ## What is not checked
 
@@ -96,7 +112,6 @@ own bytes.
 | integer overflow | wraps rather than being undefined; nothing detects it |
 | division by zero | accepted, even for a literal zero divisor |
 | uninitialised reads | a layout is zero-filled; `raw is 8 bytes` is not |
-| a span's `length` larger than its backing | accepted |
 
 Each gap is open because its run-time fix spends what the barrier protects. The
 **compile-time** half of each is admissible, and unbuilt rather than declined —

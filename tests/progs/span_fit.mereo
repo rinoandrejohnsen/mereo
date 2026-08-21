@@ -1,0 +1,34 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- REJECTED on purpose: a span that claims more bytes than its backing has.
+--
+-- `line` is five bytes and the span says seventeen. Nothing about the span is
+-- wrong at the moment it is made -- it is two numbers in a struct -- but every
+-- access through it afterwards is bounded by a length that was never true, and
+-- `find`, `last` and `search` all walk to `length` by definition. One lie at
+-- adoption, inherited by every read that follows.
+--
+-- The requirement is declared on the resource itself, over its own fields:
+--
+--     span is
+--       data is 8 bytes
+--       length is 8 bytes
+--       ensure length <= data.size
+--
+-- which is the same keyword and grammar a primitive uses for its contract, one
+-- level out: there a clause on an in port constrains the CALL, here it
+-- constrains the ADOPTION. Checked where the instance is made, because that is
+-- where both numbers exist. Free -- the corpus is byte-identical with the
+-- invariants declared.
+--
+-- It is also what the access analysis needs. It cannot assume
+-- `length <= data.size` while nothing enforces it, and without that assumption
+-- every `[v.data + i]` in a loop bounded by `v.length` stays unproved.
+
+program goes
+  line is "abcde"
+  v is already span (data is line, length is 17)
+  n is 0
+  v.find (byte is 32, offset is n)
+end
