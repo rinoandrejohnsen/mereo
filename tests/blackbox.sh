@@ -325,10 +325,15 @@ abc 3 11
 # reading past the end of a span, and appending past the end of a builder. Both
 # must END the program, not answer wrongly.
 # a CHECKED access in a loop bounded by a scalar rather than by the span's own
-# length -- the shape the bound hoist is for. Reading the bound from memory each
-# pass stops the loop vectorising, and GCC cannot lift it under
-# -fno-strict-aliasing. 4 vector instructions without the hoist, 41 with it.
+# length. See the program for what this shape was for and what became of it.
 bb   views/hoisted-bound span_hoist "abc" 0 "294"
+# The check is the SPAN's, not the backing's. A loop running to 100 over a
+# 4096-byte backing is provably safe memory and says nothing about a span of 3;
+# retiring the check on the first fact turned a reported failure into a silent
+# read of uninitialised backing. Both directions, so neither a check that never
+# fires nor one that always does can pass.
+bb   views/short-span    span_short "abc" 1 ""
+bb   views/short-span-ok span_short "$(printf 'a%.0s' $(seq 100))" 0 "9700"
 bb   views/at-past-end   views_at_past_end   "" 1 ""
 bb   views/add-past-end  views_add_past_end  "" 1 ""
 # `already` must STORE what it is handed, with or without a method on the

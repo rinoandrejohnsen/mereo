@@ -4802,7 +4802,8 @@ STEP_SCHEMA = {
                     "recover": "carry", "line": "carry",
                     "from_method": "carry", "implicit": "carry"},
     # -- checks ------------------------------------------------------------
-    "guard":       {"cond": "cond", "ref": "carry", "line": "carry"},
+    "guard":       {"cond": "cond", "ref": "carry", "line": "carry",
+                    "from_method": "carry"},
     # -- scopes and jumps --------------------------------------------------
     "loop_start":  {"name": "label", "line": "carry"},
     # `loop_end` carries the loop's name for the PARSER (close_scope matches the
@@ -4947,6 +4948,14 @@ def inline_procedure(meth, st, cid, definitions, slots, prims):
         # written inside a resource method, so it HAS a tower to fail into;
         # after splicing nothing else could tell it from a program-level one.
         _bs["from_method"] = meth["name"]
+    # A guard spliced in from a method -- `.at`'s `ensure offset <
+    # length` is the one that matters -- is the method's own check, and
+    # the compiler may retire it where it can show it cannot fire. An
+    # `ensure` written in the PROGRAM is the programmer's stated
+    # contract with its own record in the tower, and is left alone.
+    for _bs in bsteps:
+        if _bs.get("type") == "guard":
+            _bs["from_method"] = meth["name"]
     check_steps(bsteps, f"in template '{meth['name']}': ")
     # A template's locals are PRIVATE to the splice -- they are renamed per call
     # site, so nothing outside can read one. That makes a local nobody reads as
@@ -5298,6 +5307,7 @@ def _split_width(inner):
     if cut < 0:
         return inner, "1"
     return inner[:cut], inner[cut + 1:]
+_LOADX = re.compile(r"^\s*\[\s*([A-Za-z_]\w*)\s*\+\s*([^:\[\]]+?)\s*:\s*([^:\[\]]+?)\s*\]\s*$")
 _CMPX = re.compile(r"^\s*(.+?)\s*(<=|>=|==|!=|<|>)\s*(.+?)\s*$")
 _STR = re.compile(r'^"(.*)"$', re.S)
 _TOK = re.compile(r"[A-Za-z_][\w.]*|\d+|<<|>>|[-+*/%&|^()]")
@@ -5326,49 +5336,40 @@ def _acc_strings(st):
     return out
 
 def drop_proved_checks(definitions, slots, steps):
-    """Delete a bounds check the analysis proved cannot fire.
+    """Delete a check whose CONDITION can never be false.
 
-    `.at` means "check this", and the check stays whenever the compiler cannot
-    show it is unnecessary -- an unproved access keeps whatever the programmer
-    wrote. But where the access IS proved, the check can never fail, and a
-    branch that never goes anywhere is not a safety net; it is dead code with a
-    label attached.
+    `.at` means "check this", and the check stays unless the compiler can show
+    it will not fire. What it must show is that the GUARD holds -- not that the
+    access is inside its backing, which is a different fact and was the bug
+    this started as: `v.at (offset is i)` on a span of length 3, with the loop
+    running `i` to 99, is a memory access well inside a 4096-byte backing AND a
+    read past the span's end. Proving the first says nothing about the second,
+    and dropping the check on that basis let the loop run to 99 in silence.
 
-    The proof must not LEAN on the guard being removed, or the argument is
-    circular: `ensure i < length` makes `[data + i]` provable by itself. So each
-    candidate is re-checked with its own fact suppressed, and only survives if
-    the access is still proved without it.
+    So the test is the condition. `i < [v + 8 : 8]` is droppable when `i`'s
+    upper bound is below the load's lower bound -- for a span adopted with a
+    known length and an index bounded under it, that holds; for a length read
+    off the wire it does not, and the check stays.
 
-    A raw `[base + i]` is untouched either way. The programmer said they had the
-    proof; the compiler reports whether it agrees and changes nothing."""
+    A raw `[base + i]` has no guard and is never touched either way."""
     dropped = set()
     for i, st in enumerate(steps):
         if st.get("type") != "guard" or not st.get("cond"):
             continue
+        if not st.get("from_method"):
+            continue
         m = _CMPX.match(str(st["cond"]))
         if not m or m.group(2) not in ("<", "<="):
             continue
-        idx = m.group(1).strip()
-        if not re.fullmatch(r"[A-Za-z_][\w.]*", idx):
+        probe = {i: None}
+        classify_accesses(definitions, slots, steps, skip_guard=i, probe=probe)
+        got = probe[i]
+        if not got:
             continue
-        # the access this guard stands in front of, indexed by the name it bounds
-        prot = None
-        for k in range(i + 1, min(i + 4, len(steps))):
-            for txt in _acc_strings(steps[k]):
-                for inner in _accesses(txt):
-                    if re.search(r"(?<![\w.])" + re.escape(idx) + r"(?![\w.])",
-                                 inner):
-                        prot = inner
-                        break
-                if prot:
-                    break
-            if prot:
-                break
-        if prot is None:
+        left_hi, right_lo = got
+        if left_hi is None or right_lo is None:
             continue
-        without = classify_accesses(definitions, slots, steps, skip_guard=i)
-        rows = [r for r in without if r[2] == prot]
-        if rows and all(r[0] == "proved" for r in rows):
+        if (left_hi < right_lo) if m.group(2) == "<" else (left_hi <= right_lo):
             dropped.add(i)
     if not dropped:
         return steps, 0
@@ -5532,7 +5533,8 @@ def refuse_proven_wrong(verdicts):
              f"pass, not merely unproved.")
 
 
-def classify_accesses(definitions, slots, steps, skip_guard=None):
+def classify_accesses(definitions, slots, steps, skip_guard=None,
+                      probe=None):
     # `buffer is capacity bytes` gives the size as a NAME. The emitter resolves
     # it through the scalar's init (see `buffer_size` in mereoc.py); so does a
     # reader, without noticing. Do the same.
@@ -5773,12 +5775,36 @@ def classify_accesses(definitions, slots, steps, skip_guard=None):
         for nm in inst:
             if re.match(rf"{re.escape(nm)}\b", head): mutated.add(nm)
 
+    # `v.length` in the source is already `[v + 8 : 8]` by the time a guard
+    # reaches here, so the field has to be recognised in both forms. Offset and
+    # width together name it: the layout maps them back.
+    byoff = {}
+    for nm, sl in inst.items():
+        lay = (definitions.get(sl.get("definition")) or {}).get("playout") or {}
+        for fname, ent in lay.items():
+            if ent and len(ent) >= 2:
+                byoff[(nm, ent[0], ent[1])] = fname
+
     def adopted_field(e):
+        e = e.strip()
+        m = _LOADX.match(e)
+        if m:
+            a = m.group(1)
+            off = _acc_const(m.group(2))
+            w = _acc_const(m.group(3))
+            if off is None or w is None: return None
+            f = byoff.get((a, off, w))
+            if f is None: return None
+            e = f"{a}.{f}"
         if "." not in e: return None
         a, _, f = e.partition(".")
         if a not in inst or a in mutated: return None
         pend = (inst[a].get("pending") or {}).get(f)
-        return pend[0] if pend else None
+        if pend: return pend[0]
+        # A field whose adopted value resolved at compile time is not pending;
+        # it sits in `init` as the source expression it was written as.
+        got = (inst[a].get("init") or {}).get(f)
+        return got if isinstance(got, str) else None
 
     def size_name(e):
         e = e.strip()
@@ -5978,6 +6004,15 @@ def classify_accesses(definitions, slots, steps, skip_guard=None):
             return iv_cond(e, at, seen)
         e = str(e).strip()
         if not e: return UNK
+        # A load that reads an adopted field is worth resolving BEFORE the
+        # generic handling below, which knows only the field's WIDTH and so
+        # reports 0 as the lower bound. `v.length` adopted from `text.size` is
+        # exactly 11, and 11 is what a guard against it needs to be provable.
+        af0 = adopted_field(e)
+        if af0 is not None and (af0, at) not in seen:
+            got = iv(af0, at, seen + ((af0, at),))
+            if got[0] is not None or got[1] is not None:
+                return got
         # `b is [block + i : 1]` makes b a BYTE. A skilled reader uses that
         # without thinking; the width is right there in the access.
         m = LOAD.match(e)
@@ -6454,6 +6489,21 @@ def classify_accesses(definitions, slots, steps, skip_guard=None):
                     verdict = "bound-unresolved"
                 out.append([verdict, bname, inner, ln, hi, size, width, lit,
                             origin])
+    if probe is not None:
+        # Evaluate a guard's own condition, which is a different question from
+        # whether the access behind it is in range. `iv` is a closure over the
+        # facts built above, so this has to happen here.
+        for gi in list(probe):
+            st = steps[gi]
+            m = _CMPX.match(str(st.get("cond") or ""))
+            if not m:
+                continue
+            try:
+                left = iv(m.group(1).strip(), gi)
+                right = iv(m.group(3).strip(), gi)
+            except Exception:
+                continue
+            probe[gi] = (left[1], right[0])
     return out
 
 def check_adoption_fit(definitions, slots):

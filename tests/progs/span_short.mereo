@@ -1,0 +1,54 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- A CHECKED access whose loop runs PAST the span's length, over a backing far
+-- larger than the span. The two bounds are different facts and only one of them
+-- is the check's:
+--
+--   the backing  -- `block`, 4096 bytes -- says the memory access is in range
+--   the span     -- `length is count`, off stdin -- says the READ is in range
+--
+-- `i < 100` over a 4096-byte backing is provably safe memory. It says nothing
+-- about a span of 3, and `v.at` promises the second. A compiler that retires
+-- the check on the strength of the first turns a reported failure into a silent
+-- read of whatever the backing held -- which is what this pins.
+--
+-- The companion below is the same program with enough input that the check
+-- passes on every one of the 100 passes, so the check being kept is not the
+-- same as the program being unable to run.
+--
+--   echo -n abc              | span_short   ->  (nothing), exit 1, `at: 3`
+--   printf 'a%.0s' {1..100}  | span_short   ->  9700, exit 0
+
+program goes
+  block is 4096 bytes
+  count is 0
+  i is 0
+  b is 0
+  total is 0
+  room is 64 bytes
+
+  page is already builder (data is room, count is 0, limit is 64)
+
+  input is already linux.file (descriptor is 0)
+
+  input.read (buffer is block, capacity is 4096, count is count)
+
+  v is already span (data is block, length is count)
+
+  step goes
+    leave step when i >= 100
+    v.at (offset is i, byte is b)
+    total is total + b
+    i is i + 1
+    repeat step
+  end
+
+  page.number (value is total)
+  page.byte (value is 10)
+
+  screen is already linux.file (descriptor is 1)
+
+  screen.write (buffer is page.data, count is page.count)
+
+end
