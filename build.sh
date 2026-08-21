@@ -69,12 +69,11 @@ mkdir -p "$OUT"
 # which the two files it replaced (`ex`, `example_syntax`) never did.
 SHOWCASES=" "
 
-# Every program directory. Everything here is gated the same way -- transpile, compile, and for a crossroad program verify
-# the hot/cold layout on the real assembly. The scope scenarios and tls/ went
-# ungated for a while, which is exactly how scopes/14 kept a `when` road whose guard was a
-# compile-time constant: the branch folded away, so the scenario had not been
-# testing a branch at all. A gate that skips a directory does not protect it.
-SUBDIRS="examples tests/scopes programs/tls"
+# Every program directory. Everything here is gated the same way: transpile and
+# compile. A gate that skips a directory does not protect it -- `exam/mereo`
+# went ungated and a change to the access analysis stopped it compiling, with
+# the whole suite still green, because nothing read it.
+SUBDIRS="examples tests/scopes programs/tls exam/mereo"
 
 # argument list -> the programs to build; default is every `program` .mereo
 if [ $# -gt 0 ]; then

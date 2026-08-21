@@ -406,14 +406,14 @@ reaches without being part of the compiler.
 
 **The metric is not the percentage.** By the rule above the target is a person,
 so the score that means anything is **the count of places a skilled C programmer
-beats the tool** -- now **44**, down from 74, and all 44 in the TLS parser. They
-sort by cause, which is what the metric is for:
+beats the tool** -- now **34**, down from 74. They sort by cause, which is what
+the metric is for:
 
 | cause | | |
 | --- | ---: | --- |
-| the program never states the fact | 20 | `tlen >= 36`, true and written nowhere |
-| an invariant the compiler could enforce and does not | 7 | a span's `length` vs its backing |
-| genuinely dependent on hostile input | 16 | an index off the wire -- the honest floor |
+| comes from input, nothing bounds it | 28 | **wants a run-time guard** -- the honest floor |
+| comes from input, guarded, not tied to the access | 4 | a limit of the analysis |
+| a bound that did not resolve | 1 | |
 | an unresolved base | 1 | |
 
 Only the last two rows are tool work, and the third is not work at all: an index
@@ -534,7 +534,7 @@ descriptor, a position or zero, and have no argument to be bounded by.
 #### Decided
 
 **Print every message. No summary, no flag.** A clean program says nothing, and
-a program with 44 unproved accesses should say so 44 times. The list is the
+a program with 34 unproved accesses should say so 34 times. The list is the
 pressure.
 
 **Compile time is not a constraint.** The barrier governs the run time of the
@@ -636,24 +636,32 @@ them, the storage is one backing in `program`, and the instance passes to a
 template as one port. The exam's 18-port draft was bad design on my part, not a
 missing feature, and rewriting it as a scope tree treated a symptom.
 
-### The fourteen the exam could not prove
+### The exam program: fourteen unproved, now one
 
-All fourteen are SAFE -- verified by 800 adversarial inputs against an
-independent oracle, and by ASAN and UBSAN on the C twin doing the same work.
-None is provable by the analysis as it stands. Grouped by what is missing:
+Thirteen of the fourteen closed themselves when the analysis learned to SEE
+nested accesses, resolve a pointer-field load as a base, and follow a layout
+field. They were never fourteen separate problems; they were three blind spots.
 
-| | | what would close it |
-| ---: | --- | --- |
-| 4 | `[t_hash + four : 4]` and its three siblings | a masked index CARRIED AROUND A LOOP. `hidx is h & 8191` then `hidx is hidx + 1`, `hidx is hidx & 8191` at the back edge -- straight-line, the same shape proves; through the back edge it does not. Mechanism not yet diagnosed |
-| 6 | `[ln + t : 1]`, `[ln + st_s : 1]`, `[ln + by_s + w : 1]` ... | `ln` is a scalar holding EITHER `line` or `rbuf + i`, chosen by a branch. `base_of` chases a scalar to one backing; it has no join, so a pointer that is one of two things resolves to neither |
-| 1 | `[rbuf + j : 8]` | the 8-byte load in the word-at-a-time scan. `j + 8 > n` guards it and `n <= 65536`, so the bound is stated -- it is the WIDTH being 8 against a guard written about `j + 8` that is not connected |
-| 1 | `[rbuf + i + copy_N_i : 1]` | genuinely input-derived: the copy length comes off the wire. This one wants a run-time guard, and the compiler says so |
-| 2 | the rest | small |
+What is left is one, and it is the honest kind:
 
-The second row is the interesting one, and it generalises past this program: a
-scalar holding an address that two branches set differently is the shape any
-"parse from here, or from the carry-over buffer" loop has. A join over the
-branches -- both backings, the smaller room -- would close six at once.
+```
+[arena + [t_off + best * 4 : 4] + copy_41_i : 1]
+```
+
+The offset is read out of the table, and a 4-byte load is bounded by its WIDTH
+-- 0..4294967295 -- whatever it actually holds. The real value is below
+`arena_used`, which is at most 1 MiB, and nothing in the program says so. An
+`ensure` would close it.
+
+That same load is what briefly made the compiler REFUSE this program: a
+width-derived bound was treated as knowledge, and the message even said "every
+step of that is known", which was false. A width is a bound, not a proof, so it
+can no longer support a refusal -- it reports unproved instead. Nine planted
+violations still fire.
+
+The gap that let a broken exam program sit in a green tree is closed too:
+`exam/mereo` was not in `build.sh`'s SUBDIRS, so nothing compiled it. A gate
+that skips a directory does not protect it.
 
 ## The language server is gone, and nothing replaced it
 

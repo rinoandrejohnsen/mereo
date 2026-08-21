@@ -6409,8 +6409,17 @@ def classify_accesses(definitions, slots, steps, skip_guard=None):
                     kind = "bound-unresolved" if known else "data-dependent"
                     out.append([kind, bname, inner, ln, None, size, width, lit, origin])
                     continue
-                out.append([("proved" if hi + width <= size else "OUT"),
-                            bname, inner, ln, hi, size, width, lit, origin])
+                verdict = "proved" if hi + width <= size else "OUT"
+                if verdict == "OUT" and _accesses(idx):
+                    # The index reads memory, and a LOAD is bounded by its own
+                    # WIDTH -- a 4-byte field is 0..4294967295 whatever it
+                    # actually holds. That is an over-approximation, not a
+                    # proof the value is that big, so it cannot support a
+                    # refusal. Report it unproved and let the programmer say
+                    # what bounds it.
+                    verdict = "bound-unresolved"
+                out.append([verdict, bname, inner, ln, hi, size, width, lit,
+                            origin])
     return out
 
 def check_adoption_fit(definitions, slots):
