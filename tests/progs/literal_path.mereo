@@ -1,0 +1,34 @@
+include "../../linux.mereo"
+
+-- A path held in a NAMED literal, which is the case that used to be broken.
+--
+-- The kernel's path arguments carry no length -- `openat`, `statx`, `unlinkat`
+-- and nine more read to the first zero byte -- so a literal without a
+-- terminator walked into whatever the frame held next. `/etc/hostname` became
+-- `/etc/hostnameXXXX...` and the open failed with -ENOENT, and WHICH failure
+-- depended on the neighbouring declaration. Writing the same path inline
+-- worked, because that form lowers to a C string literal and C supplies the
+-- zero. Two spellings of one thing, one of them broken.
+--
+-- Every string literal now allocates one byte more than it counts. `.size` is
+-- unchanged -- the terminator is storage, not value -- so nothing that carries
+-- a length is affected, and the corpus is the same total size as before.
+--
+-- Run from the repo root: prints the first line of lorem_ipsum.txt.
+
+-- `tail` is declared straight after `name` ON PURPOSE. Without a terminator the
+-- path runs into it and becomes `lorem_ipsum.txtXXXX...`, which does not exist.
+-- With a zero-filled neighbour the bug hides, which is what makes it nasty: the
+-- same program works or fails depending on what is declared next to it.
+
+program goes
+  name is "lorem_ipsum.txt"
+  tail is "XXXXXXXXXXXXXXXX"
+  block is 16 bytes
+  n is 0
+  terminal is already linux.file (descriptor is 1)
+  source is linux.file (path is name, flags is 0, mode is 0)
+  source.read (buffer is block, capacity is 16, count is n)
+  terminal.write (buffer is block, count is n)
+  terminal.write (buffer is tail, count is 0)
+end

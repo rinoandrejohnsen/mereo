@@ -2552,6 +2552,7 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     data = parse_bytes_literal(raw, n)
                     slots.append({"kind": "buffer", "name": m.group(1),
                                   "size": str(len(data)), "init": data,
+                                  "strlit": raw.strip().startswith('"'),
                                   "const": bool(m.group(2)), "line": n})
                     laststep = None
                     continue
@@ -5535,7 +5536,7 @@ def check_adoption_fit(definitions, slots):
                 left = _int_value(scal.get(nm, "")) if nm in scal else None
             backing = value(val[:-5])
             if is_str(backing or ""):
-                right = len(_decode_str_bytes(backing, ln)) + 1
+                right = len(_decode_str_bytes(backing, ln))
             else:
                 right = sizes.get(backing)
             if left is None or right is None:
@@ -5622,7 +5623,7 @@ def check_call_fit(definitions, slots, steps):
                 if is_str(backing or ""):
                     # a literal's own bytes, plus the NUL the emitter appends --
                     # so writing the terminator too is not called a mistake
-                    right = len(_decode_str_bytes(backing, ln)) + 1
+                    right = len(_decode_str_bytes(backing, ln))
                     shown = backing
                 else:
                     right = sizes.get(backing)
@@ -7033,12 +7034,19 @@ def transpile(sources, prog):
             al = (f" __attribute__((aligned({slot['align']})))"
                   if slot.get("align") else "")
             if "init" in slot:
-                init = ", ".join(str(b) for b in slot["init"])
+                # A STRING literal gets a terminator; a byte list does not. The
+                # kernel's path arguments -- openat, statx, unlinkat and nine
+                # more -- carry no length, so they read to the first zero byte,
+                # and a named literal without one walks into whatever the frame
+                # holds next. The byte is STORAGE, not value: `.size` is still
+                # the text length, so nothing that counts bytes changes.
+                data = list(slot["init"]) + ([0] if slot.get("strlit") else [])
+                init = ", ".join(str(b) for b in data)
                 # `constant` -> read-only static storage (.rodata): no runtime
                 # copy, and it links where a large stack initializer would not
                 ro = "static const " if slot.get("const") else ""
                 body.append(f"    {ro}unsigned char {slot['name']}"
-                            f"[{len(slot['init'])}]{al} = {{{init}}};")
+                            f"[{len(data)}]{al} = {{{init}}};")
             else:
                 sc = "static " if slot.get("place") == "static" else ""
                 body.append(f"    {sc}char {slot['name']}"

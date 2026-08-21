@@ -77,6 +77,10 @@ bb basename/gcc    basename ""               0  "gcc"    -- /usr/bin/gcc
 bb basename/no-operand basename ""           1  ""
 bb whoami          whoami   ""                0  "$(id -un)"
 bb abc/loremfile   abc      ""                0  "$(cat "$DIR/lorem_ipsum.txt")"
+# A path in a NAMED literal. The kernel reads a path to the first zero byte, so
+# this used to open `lorem_ipsum.txtGARBAGE` and fail with -ENOENT; the same
+# path written inline worked, because C supplies the terminator there.
+bb literal-path    literal_path ""              0  "$(head -c 16 "$DIR/lorem_ipsum.txt")"
 bb argcat/file     argcat   ""                0  "lorem ipsum"  -- "$B/doc"
 bb bits/exit       bits     "AB"              8  ""
 # the byte handed to the kernel must be the one stored BEFORE the syscall: this

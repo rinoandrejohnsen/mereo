@@ -26,10 +26,10 @@ See [`program goes`](Syntax).
 count is 0                     -- a scalar -- one machine word, signed
 buf is 4096 bytes              -- a backing: its name is its ADDRESS
 buf is 4096 bytes in static    -- ...or `in stack`, `in register`
-msg is "hello\n"               -- a literal backing
+msg is "hello\n"               -- a literal backing, NUL-terminated
 msg is constant "hello\n"      -- ...read-only, in .rodata
 raw is constant bytes 0xe3, 0xb0     -- ...given byte by byte
-n is msg.size                  -- a COMPILE-TIME number
+n is msg.size                  -- a COMPILE-TIME number (not counting the NUL)
 ```
 
 Numbers: `42`, `-1`, `0x2f`, `0b1011`. There is no named constant yet.

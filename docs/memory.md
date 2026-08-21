@@ -17,6 +17,23 @@ A **backing** is a run of bytes with a name:
 rather than its frame. A buffer sized by a run-time scalar is a run of memory by
 definition and cannot live in a register.
 
+A backing written as a **string literal** allocates one byte more than it
+counts, and that byte is zero. `message` above is fourteen bytes of text in
+fifteen bytes of storage, and `message.size` is fourteen — the terminator is
+storage, not value, so nothing that carries a length is affected by it.
+
+It is there for the kernel. Linux splits its string arguments in two: a *path*
+carries no length, so `openat`, `statx`, `unlinkat` and nine more read to the
+first zero byte, while a *buffer* always comes with an explicit count and is
+never scanned. A literal handed to the first kind needs a terminator and has
+nowhere to put a length; a literal handed to the second is bounded by the count
+and never reaches the extra byte. One rule covers both. A byte list —
+`raw is bytes 0xe3, 0xb0` — is not text and gets no terminator.
+
+What this does not cover is a path assembled at run time. Those bytes are
+whatever the program put there, and terminating them is the program's job, in
+mereo exactly as in C.
+
 ## Typed accesses
 
 An access states its width, and optionally its signedness and byte order:
