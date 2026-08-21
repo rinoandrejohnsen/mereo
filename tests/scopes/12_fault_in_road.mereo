@@ -1,20 +1,18 @@
 include "markers.mereo"
 
--- The likely road adopts `hot`, then faults (boom). The tower must release the
--- road-local hot, then keep -- not the untaken road's resource.
+-- The fall-through path adopts `hot`, then faults (boom). The tower must release
+-- the scope-local hot, then keep -- not the untaken path's resource.
 -- Expect close(101) close(103).
 program (arguments) goes
   keep is adopted mark_c (descriptor is 103)
   n is arguments.count
-  -- 1 when run bare -- and unknowable at compile time, so the crossroad
-  -- survives into the binary instead of folding away. With a constant
-  -- guard the compiler decides the branch and the road stops being a
-  -- road, which is not what this scenario means to be testing.
-  pick likely goes
+  -- 1 when run bare, and unknowable at compile time, so the branch survives.
+  pick goes
+    n == 5 goes
+      cold is adopted mark_b (descriptor is 102)
+      leave pick
+    end
     hot is adopted mark_a (descriptor is 101)
     hot.boom
-  end
-  pick when n == 5 goes
-    cold is adopted mark_b (descriptor is 102)
   end
 end

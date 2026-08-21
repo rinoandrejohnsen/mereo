@@ -30,19 +30,17 @@ program (arguments) goes
 
   terminal is already linux.file (descriptor is 1)
 
-  pick likely goes
+  pick goes
+    argc == 1 goes
+      peek (path is "lorem_ipsum.txt", area is buf, count is n)
+      leave pick when argc > 0
+      n is 0                         -- never runs
+      leave pick
+    end
     peek (path is "linux.mereo", area is buf, count is n)
     leave pick when argc > 0
     n is 0                           -- never runs: the byte still prints
   end
 
   terminal.write (buffer is buf, count is n)
-
-  linux.exit
-
-  pick when argc == 1 goes
-    peek (path is "lorem_ipsum.txt", area is buf, count is n)
-    leave pick when argc > 0
-    n is 0                           -- never runs
-  end
 end

@@ -1,0 +1,20 @@
+include "../../linux.mereo"
+
+-- REFUSED: `likely` predicts a CONDITION, and a named scope has none.
+--
+-- `likely` means here what it means in C: a hint about which way a branch is
+-- expected to go. It rides on the guard of a conditional scope -- `n == 5
+-- likely goes` -- and there is nothing for it to say about a scope that is
+-- entered unconditionally.
+--
+-- This was `LABEL likely goes`, which used to open a crossroad. That machinery
+-- is gone: an if/else is a conditional scope that leaves early, and what
+-- follows it is the other path.
+program (arguments) goes
+  n is arguments.count
+  buf is 8 bytes
+  pick likely goes
+    n is n + 1
+  end
+  [buf + 0 : 1] is 48 + n
+end

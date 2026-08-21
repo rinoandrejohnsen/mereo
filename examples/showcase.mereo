@@ -95,8 +95,14 @@ program (arguments) goes
   totals.lines is seen
   totals.last is run
 
-  -- a CROSSROAD: the common road inline, the exception moved past the merge
-  verdict likely goes
+  -- if / else: the exception is guarded and leaves, the common case falls
+  -- through. With no `likely` the guard is predicted not taken, so the
+  -- fall-through is the branch the machine expects.
+  verdict goes
+    run == 0 goes
+      flags is 0x01                   -- empty -- the file ended on a newline
+      leave verdict
+    end
     flags is 0b0000_0010              -- partial -- the last line has no newline
   end
 
@@ -115,8 +121,4 @@ program (arguments) goes
   end
 
   screen.write (buffer is "\n", count is 1)
-
-  verdict when run == 0 goes
-    flags is 0x01                     -- empty -- the file ended on a newline
-  end
 end

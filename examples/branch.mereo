@@ -1,19 +1,28 @@
 include "../linux.mereo"
 
--- branch demo: read stdin, then branch on how many bytes arrived. The roads
--- only SELECT -- each sets `message`/`length` -- and the spine after the merge
--- does ONE write, exactly the shape a hand systems programmer lays out.
--- `report likely goes` is the hot default (inline, fall-through); the cold
--- `when` roads live past `exit`, each dispatched by its guard and rejoining
--- at `report` before the shared write.
+-- if / else if / else: read stdin, then choose a message by how many bytes
+-- arrived. Each conditional scope SELECTS -- it sets `message`/`length` and
+-- leaves -- and the one write after the chain is the spine, exactly the shape
+-- a hand systems programmer lays out.
+--
+-- The `else` is not a keyword. A conditional scope that ends in `leave pick`
+-- takes its path and goes; whatever follows in `pick` is the other path. So
+-- the last body here, with no guard above it left to take, IS the else.
+--
+-- A guard with no `likely` is predicted NOT taken, which makes the fall-through
+-- the hot path -- `many bytes` here, without saying so. Write `likely` on a
+-- guard to predict it the other way, and it means what it means in C.
 --
 --   printf ''    | ./branch_bin   -> nothing
 --   printf 'x'   | ./branch_bin   -> one byte
---   printf 'xyz' | ./branch_bin   -> many bytes   (the hot-path default)
+--   printf 'xyz' | ./branch_bin   -> many bytes   (the fall-through, hot)
 
 program goes
   capacity is 4096
   buffer is capacity bytes
+  none is "nothing\n"
+  one is "one byte\n"
+  many is "many bytes\n"
   count is 0
   written is 0
   message is 0
@@ -25,22 +34,20 @@ program goes
 
   input.read (buffer is buffer, capacity is capacity, count is count)
 
-  report likely goes
-    message is "many bytes\n"
-    length is 11
+  pick goes
+    count == 0 goes
+      message is none
+      length is none.size
+      leave pick
+    end
+    count == 1 goes
+      message is one
+      length is one.size
+      leave pick
+    end
+    message is many                   -- the else: nothing above it took the path
+    length is many.size
   end
 
   terminal.write (buffer is message, count is length, written is written)
-
-  linux.exit
-
-  report when count == 0 goes
-    message is "nothing\n"
-    length is 8
-  end
-
-  report when count == 1 goes
-    message is "one byte\n"
-    length is 9
-  end
 end

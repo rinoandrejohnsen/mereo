@@ -478,7 +478,7 @@ rejects scope/use-after-adopt use_after_scope_adopt "was released when the scope
 bb   branch/leave-cold branch_leave ""  0  "L"
 bb   branch/leave-hot  branch_leave ""  0  "-"   -- x
 # ... but a road has no START -- it is entered by the dispatch
-rejects branch/no-repeat  branch_repeat  "a road has no start to go back to"
+rejects likely/named-scope likely_named_scope "'pick' is a scope name with none"
 
 # `acquired when` marks where ownership BEGINS in a multi-call acquire -- the
 # test before which a fault releases nothing and after which it releases the one

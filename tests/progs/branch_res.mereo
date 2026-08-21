@@ -31,15 +31,13 @@ program (arguments) goes
 
   keep is linux.file (path is "lorem_ipsum.txt", flags is 0, mode is 0)  -- held across the crossroad
 
-  pick likely goes
-    peek (path is "linux.mereo", area is buf, count is n)  -- road-local: released at the merge
+  pick goes
+    argc == 1 goes
+      peek (path is "lorem_ipsum.txt", area is buf, count is n)  -- scope-local
+      leave pick
+    end
+    peek (path is "linux.mereo", area is buf, count is n)        -- scope-local
   end
 
   terminal.write (buffer is buf, count is n)
-
-  linux.exit
-
-  pick when argc == 1 goes
-    peek (path is "lorem_ipsum.txt", area is buf, count is n)  -- road-local: released before it rejoins
-  end
 end

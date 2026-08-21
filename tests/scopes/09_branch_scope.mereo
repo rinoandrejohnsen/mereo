@@ -1,20 +1,19 @@
 include "markers.mereo"
 
--- A resource acquired inside a branch road belongs to that road's scope: it
--- must release when the road ends (before the merge), like a C++ block. n=0 so
--- the `when` road is not taken (argc=1, never 5); the likely road runs and
--- merge, then keep at exit. Expect close(101) close(103).
+-- A resource acquired inside a conditional scope belongs to that scope: it must
+-- release when the scope ends, like a C++ block. n=1 so the guarded path is not
+-- taken and the fall-through -- the `else` -- runs. Expect close(101) close(103).
 program (arguments) goes
   keep is adopted mark_c (descriptor is 103)
   n is arguments.count
-  -- 1 when run bare -- and unknowable at compile time, so the crossroad
-  -- survives into the binary instead of folding away. With a constant
-  -- guard the compiler decides the branch and the road stops being a
-  -- road, which is not what this scenario means to be testing.
-  pick likely goes
+  -- 1 when run bare, and unknowable at compile time, so the branch survives
+  -- into the binary instead of folding away. With a constant guard the
+  -- compiler decides it and there is no branch left to test.
+  pick goes
+    n == 5 goes
+      cold is adopted mark_b (descriptor is 102)
+      leave pick
+    end
     hot is adopted mark_a (descriptor is 101)
-  end
-  pick when n == 5 goes
-    cold is adopted mark_b (descriptor is 102)
   end
 end

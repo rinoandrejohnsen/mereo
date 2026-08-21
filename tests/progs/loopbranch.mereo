@@ -6,15 +6,15 @@ program goes
   written is 0
   terminal is already linux.file (descriptor is 1)
 
-  pick likely goes
+  pick goes
+    n == 0 goes
+      terminal.write (buffer is "z", count is 1, written is written)
+      leave pick
+    end
     spin goes
       terminal.write (buffer is "y", count is 1, written is written)
       k is k + 1
       repeat spin when k < 3
     end
-  end
-
-  pick when n == 0 goes
-    terminal.write (buffer is "z", count is 1, written is written)
   end
 end

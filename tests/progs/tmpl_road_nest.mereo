@@ -22,16 +22,14 @@ program (arguments) goes
 
   terminal is already linux.file (descriptor is 1)
 
-  pick likely goes
+  pick goes
+    argc == 1 goes
+      text.number (data is digits, length is 3, value is v)
+      leave pick
+    end
     v is 7
   end
 
   text.format (value is v, buffer is text_out, length is length)
   terminal.write (buffer is text_out, count is length)
-
-  linux.exit
-
-  pick when argc == 1 goes
-    text.number (data is digits, length is 3, value is v)
-  end
 end

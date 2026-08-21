@@ -1,7 +1,8 @@
 include "../../linux.mereo"
 
--- REFUSED: `LABEL when GUARD goes` is a crossroad ROAD, which may only follow
--- its own `LABEL likely goes`. A conditional scope carries no `when`.
+-- REFUSED: a conditional scope is `GUARD goes` and carries no `when`. To take
+-- one path or the other, `leave` the enclosing scope at the end of the body --
+-- what follows is the other path, which is the `else`.
 program (arguments) goes
   n is arguments.count
   buf is 8 bytes

@@ -6,14 +6,14 @@ program goes
   terminal is already linux.file (descriptor is 1)
 
   serve goes
-    report likely goes
+    report goes
+      n == 0 goes
+        terminal.write (buffer is "Z", count is 1, written is written)
+        leave report
+      end
       terminal.write (buffer is "L", count is 1, written is written)
     end
     n is n + 1
     repeat serve when n < 3
-  end
-
-  report when n == 0 goes
-    terminal.write (buffer is "Z", count is 1, written is written)
   end
 end

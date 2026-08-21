@@ -198,13 +198,25 @@ def guarded_scope(s, n):
     if not m or re.fullmatch(r"\w+", m.group(1)):
         return None
     guard = m.group(1).strip()
-    if re.fullmatch(r"\w+ likely", guard):
-        return None              # `LABEL likely goes` -- a crossroad, not a guard
+    # `GUARD likely goes` -- the same prediction `likely` carries in C, and the
+    # only thing it carries here. Without it the branch is predicted NOT taken,
+    # so the code AFTER the scope is the hot path: that is the `else` of the
+    # if/else this spells, and an `if` written to skip the exceptional case
+    # reads the way it runs.
+    likely = False
+    mk = re.fullmatch(r"(.+?)\s+likely", guard)
+    if mk:
+        guard = mk.group(1).strip()
+        likely = True
+        if re.fullmatch(r"\w+", guard):
+            fail(f"line {n}: `{s}` -- `likely` predicts a CONDITION, and "
+                 f"'{guard}' is a scope name with none. Write the condition it "
+                 "should expect, or drop `likely`.")
     if re.search(r"\bwhen\b", guard):
         fail(f"line {n}: `{s}` -- a conditional scope is `GUARD goes`, with no "
-             "`when`. `LABEL when GUARD goes` is a crossroad ROAD, and a road "
-             "may only follow its `LABEL likely goes` crossroad.")
-    return {"type": "scope_start", "cond": guard, "line": n}
+             "`when`. To take one path or the other, `leave` the enclosing "
+             "scope at the end of the body; what follows is the other path.")
+    return {"type": "scope_start", "cond": guard, "likely": likely, "line": n}
 
 
 def split_conjuncts(cond):
@@ -5034,7 +5046,7 @@ STEP_SCHEMA = {
                     "line": "carry"},
     "loop_exit":   {"name": "scope", "cond": "cond", "line": "carry"},
     "loop_again":  {"name": "scope", "cond": "cond", "line": "carry"},
-    "scope_start": {"cond": "cond", "line": "carry"},
+    "scope_start": {"cond": "cond", "likely": "carry", "line": "carry"},
     "scope_end":   {"line": "carry"},
     # -- branching ---------------------------------------------------------
     "branch":      {"label": "label", "default_body": "carry",
@@ -7435,7 +7447,8 @@ def plan(definitions, slots, steps, overrides):
                 block_labels.append(lbl)
                 into.append({"scope_guard": render_cond(st["cond"], scalars,
                                                         buffers, st["line"]),
-                             "skip": lbl, "pname": None})
+                             "skip": lbl, "likely": st.get("likely", False),
+                             "pname": None})
             else:
                 block_labels.append(None)
             return
@@ -8279,7 +8292,13 @@ def transpile(sources, prog):
                         f"{f'({cast})({rhs})' if cast else rhs};")
             return
         if p.get("scope_guard"):                 # `GUARD goes` -- the entry test
-            body.append(f"    if (!({p['scope_guard']})) goto {p['skip']};")
+            # The skip is predicted TAKEN unless the guard said `likely`, so
+            # what follows the scope is the hot path by default. That is the
+            # `else` of the if/else, and it is the branch a guard written to
+            # step over an exceptional case actually wants.
+            want = 0 if p.get("likely") else 1
+            body.append(f"    if (__builtin_expect(!({p['scope_guard']}), "
+                        f"{want})) goto {p['skip']};")
             return
         if p.get("scope_release") is not None:   # a scope's end -- release what
             for c in p["scope_release"]:          # it holds, reverse order

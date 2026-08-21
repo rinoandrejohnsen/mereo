@@ -1,19 +1,16 @@
 include "markers.mereo"
 
--- A fault raised inside a TAKEN `when` road, while that road holds something.
--- 12_fault_in_road faults in the LIKELY road; the cold road's route into the
--- tower is a different path and had no test.
--- Expect 101 103.
+-- A fault inside the TAKEN guarded path: its own resource releases first, then
+-- keep. The fall-through's resource never existed.
 program (arguments) goes
   keep is adopted mark_c (descriptor is 103)
   n is arguments.count
-
-  pick likely goes
+  pick goes
+    n == 1 goes
+      cold is adopted mark_a (descriptor is 101)
+      cold.boom
+      leave pick
+    end
     hot is adopted mark_b (descriptor is 102)
-  end
-
-  pick when n == 1 goes
-    cold is adopted mark_a (descriptor is 101)
-    cold.boom
   end
 end

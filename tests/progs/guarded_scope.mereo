@@ -38,18 +38,16 @@ program (arguments) goes
 
   clamp (value is tally)              -- a guarded scope inside a template
 
-  pick likely goes
-    argc == 1 goes                    -- ...and inside a crossroad road
+  pick goes
+    argc == 9 goes
+      tally is 0
+      leave pick
+    end
+    argc == 1 goes                    -- ...and nested inside the else path
       tally is tally + 6
     end
   end
 
   [buf + 0 : 1] is 48 + tally
   terminal.write (buffer is buf, count is 1)
-
-  linux.exit
-
-  pick when argc == 9 goes
-    tally is 0
-  end
 end

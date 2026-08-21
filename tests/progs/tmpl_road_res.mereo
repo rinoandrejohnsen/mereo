@@ -25,14 +25,13 @@ program (arguments) goes
 
   terminal is already linux.file (descriptor is 1)
 
-  pick likely goes
+  pick goes
+    argc == 1 goes
+      dump (path is "lorem_ipsum.txt", screen is terminal)
+      leave pick
+    end
     n is 1
   end
 
   ensure n >= 0
-  linux.exit
-
-  pick when argc == 1 goes
-    dump (path is "lorem_ipsum.txt", screen is terminal)
-  end
 end

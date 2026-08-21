@@ -1,21 +1,15 @@
 include "markers.mereo"
 
--- A `when` road that ACQUIRES and IS TAKEN. Every other branch scenario has the
--- cold road's resource on a path that never runs -- descriptor 102 appears in no
--- trace in the suite -- so the road-local release before the merge has never
--- been exercised at all.
---
--- argc is 1, so the cold road runs: cold is released before rejoining, keep at
--- exit. Expect 102 103.
+-- The GUARDED path is the one taken this time (n == 1 holds when run bare), so
+-- the fall-through never runs. Expect close(102) close(103).
 program (arguments) goes
   keep is adopted mark_c (descriptor is 103)
   n is arguments.count
-
-  pick likely goes
+  pick goes
+    n == 1 goes
+      cold is adopted mark_b (descriptor is 102)
+      leave pick
+    end
     hot is adopted mark_a (descriptor is 101)
-  end
-
-  pick when n == 1 goes
-    cold is adopted mark_b (descriptor is 102)
   end
 end

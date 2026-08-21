@@ -24,7 +24,14 @@ program (arguments) goes
 
   terminal is already linux.file (descriptor is 1)
 
-  pick likely goes
+  pick goes
+    argc == 1 goes
+      shout (mark is 67,           -- 'C'
+             area is buf,
+             length is 5)
+      n is 5
+      leave pick
+    end
     shout (mark is 72,             -- 'H'
            area is buf,
            length is 3)
@@ -32,13 +39,4 @@ program (arguments) goes
   end
 
   terminal.write (buffer is buf, count is n)
-
-  linux.exit
-
-  pick when argc == 1 goes
-    shout (mark is 67,             -- 'C'
-           area is buf,
-           length is 5)
-    n is 5
-  end
 end

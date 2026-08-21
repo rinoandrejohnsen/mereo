@@ -1,26 +1,23 @@
 include "markers.mereo"
 
--- A when road runs a loop that adopts a resource each iteration; each must be
--- released per iteration (3x), then keep at exit. argc=1 so the when road runs.
+-- A guarded path runs a loop that adopts a resource each iteration; each must be
+-- released per iteration (3x), then keep at exit. argc=1 so the guard holds.
 -- Expect close(101) close(101) close(101) close(103).
 program (arguments) goes
   keep is adopted mark_c (descriptor is 103)
   n is arguments.count
-  -- 1 when run bare -- and unknowable at compile time, so the crossroad
-  -- survives into the binary instead of folding away. With a constant
-  -- guard the compiler decides the branch and the road stops being a
-  -- road, which is not what this scenario means to be testing.
+  -- 1 when run bare, and unknowable at compile time, so the branch survives.
   i is 0
 
-  pick likely goes
-    i is i + 100
-  end
-
-  pick when n == 1 goes
-    loop3 goes
-      tmp is adopted mark_a (descriptor is 101)
-      i is i + 1
-      repeat loop3 when i < 3
+  pick goes
+    n == 1 goes
+      loop3 goes
+        tmp is adopted mark_a (descriptor is 101)
+        i is i + 1
+        repeat loop3 when i < 3
+      end
+      leave pick
     end
+    i is i + 100
   end
 end

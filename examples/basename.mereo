@@ -40,23 +40,27 @@ program (arguments) goes
     repeat walk when rest.length > 0   -- component (which has none) ends it
   end
 
-  name likely goes            -- every road SELECTS; the spine writes once
+  root is "/"
+
+  -- if / else if / else: each guarded scope SELECTS and leaves; the spine
+  -- after them writes once. The last body is the else -- nothing above it
+  -- took the path -- and with no `likely` on either guard it is the branch
+  -- predicted taken, which is what the common case wants.
+  name goes
+    path.length == 0 goes           -- no argument bytes at all: just the newline
+      out_ptr is arg
+      out_len is 0
+      leave name
+    end
+    comp_len == 0 goes              -- nothing but slashes: the root
+      out_ptr is root
+      out_len is 1
+      leave name
+    end
     out_ptr is comp_at
     out_len is comp_len
   end
 
   output.write (buffer is out_ptr, count is out_len)
   output.write (buffer is "\n", count is 1)
-
-  linux.exit
-
-  name when path.length == 0 goes   -- no argument bytes at all: just the newline
-    out_ptr is arg
-    out_len is 0
-  end
-
-  name when comp_len == 0 goes   -- nothing but slashes: the root
-    out_ptr is "/"
-    out_len is 1
-  end
 end
