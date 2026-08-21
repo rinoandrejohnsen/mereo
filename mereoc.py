@@ -380,9 +380,24 @@ HELPER_C = {
     # memchr-as-offset: index of byte _b in _p[0.._len), or _len if absent.
     "_scan":
         'static inline __attribute__((always_inline)) long _scan(long _pp, long _len, long _b) {\n'
-        '    char *_p = (char *)_pp;\n'
+        '    const unsigned char *_p = (const unsigned char *)_pp;\n'
         '    long _i = 0;\n'
-        '    while (_i < _len && (long)(unsigned char)_p[_i] != _b) _i++;\n'
+        # Word at a time: XOR a word against the broadcast byte and the one
+        # that matched becomes zero, which the has-a-zero-byte test finds
+        # without a branch per byte. This is memchr for the whole language --
+        # every `find`, `search`, `measure` and `until` comes through here.
+        '    const unsigned long _o = 0x0101010101010101UL;\n'
+        '    const unsigned long _h = 0x8080808080808080UL;\n'
+        '    const unsigned long _bb = (unsigned long)(_b & 0xff) * _o;\n'
+        '    while (_i + 8 <= _len) {\n'
+        '        unsigned long _w;\n'
+        '        __builtin_memcpy(&_w, _p + _i, 8);\n'
+        '        unsigned long _z = _w ^ _bb;\n'
+        '        unsigned long _t = (_z - _o) & ~_z & _h;\n'
+        '        if (_t) return _i + (long)(__builtin_ctzl(_t) >> 3);\n'
+        '        _i += 8;\n'
+        '    }\n'
+        '    while (_i < _len && (long)_p[_i] != _b) _i++;\n'
         '    return _i;\n'
         '}',
     # equal bytes: 1 if _p[0.._pl) and _q[0.._ql) have the same length AND bytes.

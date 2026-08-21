@@ -800,6 +800,40 @@ after splicing, so a template used ten times contributes ten, and the corpus and
 the tool were written by the same hand. It is a useful number for deciding where
 to look next. It is not a validation result.
 
+## From the exam: four things one real program showed
+
+`docs/exam.md` and `exam/`. Writing 357 lines of mereo against 214 lines of
+hand-optimised C turned up work that the corpus never would have.
+
+**Fixed on the spot:** `_scan` -- the language's memchr, reached by every `find`,
+`search`, `measure` and `until` -- was a byte-at-a-time loop. Widened to
+word-at-a-time: **2.9x on find-heavy code**, 55 ms to 19 ms, for 2848 bytes
+across the corpus. No program in the corpus scanned hard enough to notice.
+
+**Open, and each is small:**
+
+1. **No top-level constants.** A size used in two places is a literal in two
+   places. `table_slots is 8192` at the left margin is refused, so the exam
+   program has `8191` written four times with a comment explaining it.
+2. **No top-level buffers**, which is what forced the exam's first draft into an
+   18-port template call before it was rewritten as a scope tree. That rewrite
+   was the right answer here, but a program that DOES need reuse over shared
+   storage has no good shape available.
+3. **A `likely` road cannot hold a template call** -- "a `likely goes` body is
+   method calls, `NAME is EXPR` assignments, ... or `NAME goes` blocks". The
+   restriction may be deliberate; the message does not say why, and a caller
+   hitting it has to guess.
+4. **`compare` answers 1 for EQUAL**, which reads backwards beside C's `memcmp`
+   and cost an hour: the table never matched and every path came out counted
+   once. Worth either renaming (`same`?) or saying so in the method's own line
+   of documentation rather than only in the group header.
+
+**Also worth keeping:** the analysis reports 14 unproved accesses in the exam
+program -- the 8-byte load in the word-at-a-time scan, the parser's indices into
+a computed line address, and the table probes. All are safe. The table ones look
+closest to provable: `hidx is hidx & 8191` bounds the index, and `four is hidx *
+4` should follow it to 32764 against a 32768-byte run.
+
 ## The language server is gone, and nothing replaced it
 
 **Status:** open, deliberately.

@@ -26,9 +26,32 @@
 
 -- Pure computation: no side effects, so `pure` (non-volatile) lets GCC
 -- fold/hoist/eliminate it. popcnt reads one register, writes another.
+-- Index of the lowest set bit. Undefined for zero, so every caller tests first
+-- -- which they do anyway, since zero is what "not found" looks like. `bsf`
+-- rather than `tzcnt` because it needs no CPU feature check.
+trailing_zeros is pure assembly "bsf %[source], %[result]"
+  source in register
+  result out register
+end
+
 population_count is pure assembly "popcnt %[source], %[result]"
   source in register
   result out register
+end
+
+-- The bit primitives are wrapped so a program can reach them: a bare primitive
+-- has no scope to fail into, and a template group gives it one. Neither of
+-- these can fail, so neither carries an `ensure` -- which also keeps them free
+-- in a loop, where a check on a result that is 0..63 by construction would be
+-- a compare nobody asked for.
+bits is
+  low_bit (source, result) goes
+    trailing_zeros (source is source, result is result)
+  end
+
+  count (source, result) goes
+    population_count (source is source, result is result)
+  end
 end
 
 -- A full memory barrier: no operands, only the memory clobber. Volatile

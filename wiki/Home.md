@@ -69,6 +69,8 @@ How it is built and what it costs:
 - **[Performance](Performance)** — measured against hand-written C.
 - **[Safety](Safety)** — the barrier, what is removed, what is refused, what
   is still unchecked, and how far the analysis reaches.
+- **[The exam](Exam)** — one program written twice, in hand-optimised C and
+  in mereo, measured against each other.
 - **[Limitations](Limitations)** — what is deliberate, and what is unfinished.
 
 Reference:

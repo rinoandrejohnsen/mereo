@@ -1,0 +1,419 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- loglyze -- summarise NCSA Common Log Format. See exam/SPEC.md.
+--
+-- The same program as exam/c/loglyze.c. Every run of bytes is declared with its
+-- size, every loop is bounded by something that leads back to one of those
+-- sizes, and nothing is allocated.
+--
+-- Written as one scope tree rather than a set of templates. A template is for
+-- REUSE, and there is none here -- each phase runs once, in order -- so the
+-- structuring device is the named scope, and nothing has to be plumbed through
+-- ports that a scope can simply see.
+--
+-- The table is five parallel runs rather than one run of records, because mereo
+-- has no array of layouts. An index is scaled by hand: a multiply per probe,
+-- in exchange for stating each run's size exactly.
+
+program goes
+  rbuf is 65536 bytes
+  line is 8192 bytes
+  obuf is 65536 bytes
+  digits is 24 bytes
+  t_hash is 32768 bytes in static
+  t_off is 32768 bytes in static
+  t_len is 16384 bytes in static
+  t_count is 32768 bytes in static
+  t_seq is 16384 bytes in static
+  t_taken is 8192 bytes in static
+  arena is 1048576 bytes in static
+
+  live is 0
+  used is 0
+  requests is 0
+  total_bytes is 0
+  malformed is 0
+  k1 is 0
+  k2 is 0
+  k3 is 0
+  k4 is 0
+  k5 is 0
+
+  got is 0
+  n is 0
+  i is 0
+  j is 0
+  chunk is 0
+  held is 0
+  over is 0
+  room is 0
+  take is 0
+
+  ln is 0                       -- the line being parsed: address and length
+  llen is 0
+  q1 is 0
+  q2 is 0
+  sp is 0
+  ps is 0
+  pe is 0
+  plen is 0
+  t is 0
+  st_s is 0
+  st_n is 0
+  by_s is 0
+  by_n is 0
+  nb is 0
+  b is 0
+  cls is 0
+  bad is 0
+  w is 0
+  ready is 0
+  rel is 0
+  word is 0
+  z is 0
+  zh is 0
+  tt is 0
+  tz is 0
+
+  h is 0
+  hidx is 0
+  hb is 0
+  four is 0
+  two is 0
+  cnt is 0
+  same is 0
+  qp is 0
+
+  input is already linux.file (descriptor is 0)
+  terminal is already linux.file (descriptor is 1)
+
+  -- ------------------------------------------------------------------ read
+  last is 0
+  feed goes
+    input.read (buffer is rbuf, capacity is 65536, count is got)
+    -- A file that does not end in a newline still ends in a line. Rather than
+    -- write the parse a second time to run it, close the held line with a
+    -- newline of our own and let the ordinary path take it.
+    at_end goes
+      leave at_end when got != 0
+      leave feed when held == 0
+      [rbuf + 0 : 1] is 10
+      got is 1
+      last is 1
+    end
+    n is got
+    i is 0
+
+    split goes
+      leave split when i >= n
+      j is i
+      -- The newline scan is the only loop that touches every byte of the
+      -- input, so it is the only one worth widening. XOR a word against a
+      -- broadcast newline and the byte that matched becomes zero, which the
+      -- has-a-zero-byte test finds without a branch per byte. `~z & HIGH` is
+      -- spelled `HIGH ^ (z & HIGH)`, since mereo has no bitwise not and the
+      -- two agree on exactly the bits HIGH selects.
+      seek goes
+        wide goes
+          leave wide when j + 8 > n
+          word is [rbuf + j : 8]
+          z is word ^ 0x0a0a0a0a0a0a0a0a
+          zh is z & 0x8080808080808080
+          tt is z - 0x0101010101010101
+          tt is tt & 0x8080808080808080
+          tt is tt ^ zh
+          tt is tt & (z - 0x0101010101010101)
+          found goes
+            leave found when tt == 0
+            bits.low_bit (source is tt, result is tz)
+            j is j + (tz >> 3)
+            leave seek
+          end
+          j is j + 8
+          repeat wide
+        end
+        narrow goes
+          leave narrow when j >= n
+          leave narrow when [rbuf + j : 1] == 10
+          j is j + 1
+          repeat narrow
+        end
+      end
+      chunk is j - i
+
+      ready is 0
+      -- The common case by far: a whole line inside this read with nothing held
+      -- over. Point at it where it lies. Copying it to `line` first would touch
+      -- every byte of the input a second time.
+      fast goes
+        leave fast when held != 0
+        leave fast when over != 0
+        leave fast when j >= n
+        ln is rbuf + i
+        llen is chunk
+        llen is 8192 when chunk > 8192
+        ready is 1
+      end
+
+      slow goes
+        leave slow when ready != 0
+        gather goes
+          leave gather when over != 0
+          room is 8192 - held
+          take is chunk
+          take is room when chunk > room
+          text.copy (source is rbuf + i, target is line + held, length is take)
+          held is held + take
+          over is 1 when take < chunk
+        end
+        leave slow when j >= n
+        ln is line
+        llen is held
+        held is 0
+        over is 0
+        ready is 1
+      end
+
+      finish goes
+        leave finish when ready == 0
+        parse goes
+          -- ------------------------------------------------ one line
+          bad is 1
+          -- `find` is the library's memchr and answers `length` when the byte
+          -- is absent, which is exactly the "ran off the end" test each of
+          -- these wants -- so no loop has to be written here at all.
+          q1 is 0
+          text.find (data is ln, length is llen, byte is 34, offset is q1)
+          leave parse when q1 >= llen
+
+          rel is 0
+          text.find (data is ln + q1 + 1, length is llen - q1 - 1,
+                     byte is 34, offset is rel)
+          q2 is q1 + 1 + rel
+          leave parse when q2 >= llen
+
+          rel is 0
+          text.find (data is ln + q1 + 1, length is q2 - q1 - 1,
+                     byte is 32, offset is rel)
+          sp is q1 + 1 + rel
+          leave parse when sp >= q2
+
+          ps is sp + 1
+          rel is 0
+          text.find (data is ln + ps, length is q2 - ps, byte is 32, offset is rel)
+          pe is ps + rel
+          plen is pe - ps
+          leave parse when plen == 0
+          leave parse when plen > 255
+
+          t is q2 + 1
+          skip1 goes
+            leave skip1 when t >= llen
+            b is [ln + t : 1]
+            leave skip1 when b != 32 && b != 9 && b != 13 && b != 11 && b != 12
+            t is t + 1
+            repeat skip1
+          end
+          st_s is t
+          word1 goes
+            leave word1 when t >= llen
+            b is [ln + t : 1]
+            leave word1 when b == 32 || b == 9 || b == 13 || b == 11 || b == 12
+            t is t + 1
+            repeat word1
+          end
+          st_n is t - st_s
+          skip2 goes
+            leave skip2 when t >= llen
+            b is [ln + t : 1]
+            leave skip2 when b != 32 && b != 9 && b != 13 && b != 11 && b != 12
+            t is t + 1
+            repeat skip2
+          end
+          by_s is t
+          word2 goes
+            leave word2 when t >= llen
+            b is [ln + t : 1]
+            leave word2 when b == 32 || b == 9 || b == 13 || b == 11 || b == 12
+            t is t + 1
+            repeat word2
+          end
+          by_n is t - by_s
+          leave parse when st_n != 3
+          leave parse when by_n == 0
+
+          w is 0
+          check_status goes
+            leave check_status when w >= 3
+            b is [ln + st_s + w : 1]
+            leave parse when b < 48
+            leave parse when b > 57
+            w is w + 1
+            repeat check_status
+          end
+
+          nb is 0
+          dash goes
+            leave dash when by_n != 1
+            leave dash when [ln + by_s : 1] != 45
+            bad is 0
+          end
+          digits_loop goes
+            leave digits_loop when bad == 0
+            w is 0
+            each goes
+              leave each when w >= by_n
+              b is [ln + by_s + w : 1]
+              leave parse when b < 48
+              leave parse when b > 57
+              nb is nb * 10
+              nb is nb + b - 48
+              w is w + 1
+              repeat each
+            end
+            bad is 0
+          end
+
+          requests is requests + 1
+          total_bytes is total_bytes + nb
+          cls is [ln + st_s : 1] - 48
+          k1 is k1 + 1 when cls == 1
+          k2 is k2 + 1 when cls == 2
+          k3 is k3 + 1 when cls == 3
+          k4 is k4 + 1 when cls == 4
+          k5 is k5 + 1 when cls == 5
+
+          -- ---------------------------------------------- intern the path
+          h is 2166136261
+          w is 0
+          mix goes
+            leave mix when w >= plen
+            hb is [ln + ps + w : 1]
+            h is h ^ hb
+            h is h * 16777619
+            h is h & 4294967295
+            w is w + 1
+            repeat mix
+          end
+          hidx is h & 8191
+
+          walk goes
+            four is hidx * 4
+            two is hidx * 2
+            cnt is [t_count + four : 4]
+            leave walk when cnt == 0
+            hit goes
+              leave hit when [t_hash + four : 4] != h
+              leave hit when [t_len + two : 2] != plen
+              qp is arena + [t_off + four : 4]
+              same is 0
+              text.compare (data is ln + ps, length is plen,
+                            other is qp, other_length is plen, result is same)
+              leave hit when same == 0        -- compare answers 1 for EQUAL
+              [t_count + four : 4] is cnt + 1
+              leave parse
+            end
+            hidx is hidx + 1
+            hidx is hidx & 8191
+            repeat walk
+          end
+
+          leave parse when live >= 4096
+          leave parse when used + plen > 1048576
+          text.copy (source is ln + ps, target is arena + used, length is plen)
+          [t_hash + four : 4] is h
+          [t_off + four : 4] is used
+          [t_len + two : 2] is plen
+          [t_count + four : 4] is 1
+          [t_seq + two : 2] is live
+          used is used + plen
+          live is live + 1
+        end
+        malformed is malformed + 1 when bad != 0
+      end
+
+      i is j + 1
+      repeat split
+    end
+    leave feed when last != 0
+    repeat feed
+  end
+
+  -- ---------------------------------------------------------------- report
+  page is already builder (data is obuf, count is 0, limit is 65536)
+
+  page.add (source is "requests ", length is 9)
+  page.number (value is requests)
+  page.byte (value is 10)
+  page.add (source is "bytes ", length is 6)
+  page.number (value is total_bytes)
+  page.byte (value is 10)
+  page.add (source is "malformed ", length is 10)
+  page.number (value is malformed)
+  page.byte (value is 10)
+  page.add (source is "1xx ", length is 4)
+  page.number (value is k1)
+  page.byte (value is 10)
+  page.add (source is "2xx ", length is 4)
+  page.number (value is k2)
+  page.byte (value is 10)
+  page.add (source is "3xx ", length is 4)
+  page.number (value is k3)
+  page.byte (value is 10)
+  page.add (source is "4xx ", length is 4)
+  page.number (value is k4)
+  page.byte (value is 10)
+  page.add (source is "5xx ", length is 4)
+  page.number (value is k5)
+  page.byte (value is 10)
+  page.add (source is "top\n", length is 4)
+
+  -- Ten winners out of at most 4096. Ten passes beat sorting the table: the
+  -- table is mostly empty, and a taken-flag is one byte.
+  rank is 0
+  best is 0
+  bestc is 0
+  bests is 0
+  scan_i is 0
+  cc is 0
+  ss is 0
+  rounds goes
+    leave rounds when rank >= 10
+    best is 8192
+    bestc is 0
+    bests is 0
+    scan_i is 0
+    pick goes
+      leave pick when scan_i >= 8192
+      four is scan_i * 4
+      two is scan_i * 2
+      cc is [t_count + four : 4]
+      step goes
+        leave step when cc == 0
+        leave step when [t_taken + scan_i : 1] != 0
+        ss is [t_seq + two : 2]
+        take_it goes
+          leave take_it when best != 8192 && cc < bestc
+          leave take_it when best != 8192 && cc == bestc && ss >= bests
+          best is scan_i
+          bestc is cc
+          bests is ss
+        end
+      end
+      scan_i is scan_i + 1
+      repeat pick
+    end
+    leave rounds when best == 8192
+    [t_taken + best : 1] is 1
+    page.number (value is bestc)
+    page.byte (value is 32)
+    page.add (source is arena + [t_off + best * 4 : 4],
+              length is [t_len + best * 2 : 2])
+    page.byte (value is 10)
+    rank is rank + 1
+    repeat rounds
+  end
+
+  terminal.write (buffer is page.data, count is page.count)
+end

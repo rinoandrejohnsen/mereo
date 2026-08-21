@@ -23,3 +23,13 @@ copy_out.txt
 
 # local tool state, not project content
 .claude/
+exam/data/
+exam/c/loglyze
+exam/c/loglyze
+exam/c/loglyze_hosted
+exam/c/loglyze_san
+exam/c/loglyze_lds
+exam/c/loglyze_naive
+exam/c/loglyze_inplace
+exam/mereo/loglyze
+exam/mereo/loglyze.c

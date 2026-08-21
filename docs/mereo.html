@@ -86,6 +86,7 @@ blockquote p:last-child{margin-bottom:0}
 <li><a href="#compile-time">What the compiler decides</a></li>
 <li><a href="#performance">Performance</a></li>
 <li><a href="#safety">Safety</a></li>
+<li><a href="#exam">The exam</a></li>
 <li><a href="#limitations">Limitations</a></li>
 <li><a href="#comparison">Comparison with other languages</a></li>
 <li><a href="#examples">Examples</a></li>
@@ -107,7 +108,7 @@ blockquote p:last-child{margin-bottom:0}
 <ul><li><strong><a href="#syntax">Syntax and semantics</a></strong> — a complete program, and the shape of the surface.</li><li><strong><a href="#control-flow">Control flow</a></strong> — scopes, and the two jumps everything else is made of.</li><li><strong><a href="#memory">Memory and views</a></strong> — backings, typed accesses, layouts, spans.</li><li><strong><a href="#templates">Templates</a></strong> — reuse by splicing, and what that forbids.</li><li><strong><a href="#resources">Resources and lifetimes</a></strong> — the release tower.</li><li><strong><a href="#errors">Error handling</a></strong> — <code>ensure</code>, and where a failure goes.</li><li><strong><a href="#citizen">Being a good Linux citizen</a></strong> — how those three are one path.</li></ul>
 <p><strong><a href="#library">Standard library</a></strong> — the two files, and why the split is where it is.</p>
 <p>How it is built and what it costs:</p>
-<ul><li><strong><a href="#implementation">Implementation</a></strong> — the transpiler, the tools, and the oracles every claim is checked against.</li><li><strong><a href="#compile-time">What the compiler decides</a></strong> — what freestanding, whole-program and no-functions settle before the program runs, and how that compares with Zig's <code>comptime</code> and C++'s <code>concept</code>.</li><li><strong><a href="#performance">Performance</a></strong> — measured against hand-written C.</li><li><strong><a href="#safety">Safety</a></strong> — the barrier, what is removed, what is refused, what is still unchecked, and how far the analysis reaches.</li><li><strong><a href="#limitations">Limitations</a></strong> — what is deliberate, and what is unfinished.</li></ul>
+<ul><li><strong><a href="#implementation">Implementation</a></strong> — the transpiler, the tools, and the oracles every claim is checked against.</li><li><strong><a href="#compile-time">What the compiler decides</a></strong> — what freestanding, whole-program and no-functions settle before the program runs, and how that compares with Zig's <code>comptime</code> and C++'s <code>concept</code>.</li><li><strong><a href="#performance">Performance</a></strong> — measured against hand-written C.</li><li><strong><a href="#safety">Safety</a></strong> — the barrier, what is removed, what is refused, what is still unchecked, and how far the analysis reaches.</li><li><strong><a href="#exam">The exam</a></strong> — one program written twice, in hand-optimised C and in mereo, measured against each other.</li><li><strong><a href="#limitations">Limitations</a></strong> — what is deliberate, and what is unfinished.</li></ul>
 <p>Reference:</p>
 <ul><li><strong><a href="#comparison">Comparison with other languages</a></strong> — C, C++, Rust, Lua.</li><li><strong><a href="#examples">Examples</a></strong> — complete programs, all of them compiled by the documentation build.</li><li><strong><a href="#syntax-summary">Syntax summary</a></strong> — every form on one page.</li></ul>
 </section>
@@ -811,6 +812,55 @@ $ echo $?
 <h3>What none of this is</h3>
 <p>It is not a claim to be safer than Rust or SPARK. On the faults each proves, both are ahead, and SPARK is ahead of everything here.</p>
 <p>The claim is narrower: a language can reach much of memory safety by subtraction rather than proof, and subtraction is cheap and impossible to get wrong because there is no analysis to be wrong. It cannot reach the rest. For the rest the bound has to be written down or deduced — and the measure of the deducing is a skilled C programmer, not a prover.</p>
+</section>
+<section id="exam">
+<h2>The exam</h2>
+<p>Before calling anything a release, one program written twice: once in hand-optimised freestanding C, once in mereo. Same input, same output, byte for byte. Then measured.</p>
+<p>The barrier this project sets itself is <strong>parity with a hand-written, optimised, Linux-correct C program</strong>. This is the test of it.</p>
+<h3>The program</h3>
+<p><code>loglyze</code> reads NCSA Common Log Format on stdin and writes a summary on stdout: total requests, total bytes, malformed lines, a count per status band, and the ten most frequent paths. <code>exam/SPEC.md</code> states it exactly, down to how ties break and what counts as malformed.</p>
+<pre><code>127.0.0.1 - frank [10/Oct/2000:13:55:36 -0700] "GET /apache_pb.gif HTTP/1.0" 200 2326</code></pre>
+<p>It was chosen because it is not a toy. A 64 KiB read buffer that lines straddle; a 1 MiB arena; an open-addressed table of 8192 slots holding at most 4096 paths; and a parser walking bytes that arrive from outside. Every index is derived from input, which is the case that matters. Nothing is allocated in either version.</p>
+<h3>The C</h3>
+<p>214 lines, freestanding — no libc, raw syscalls, the same flags the mereo corpus builds with. Optimised by hand in three steps, each measured on 80.5 MB:</p>
+<table><thead><tr><th></th><th>median</th><th></th></tr></thead><tbody><tr><td>byte-at-a-time scan, every line copied to a line buffer</td><td>91.9 ms</td><td></td></tr><tr><td>...parse in place when the line does not straddle a read</td><td>85.5 ms</td><td>the input stops being touched twice</td></tr><tr><td>...word-at-a-time scanning for newline, quote and space</td><td>54.7 ms</td><td>the only loops that see every byte</td></tr></tbody></table>
+<p>The word-at-a-time step is the classic one: XOR a 64-bit word against a broadcast byte, and the byte that matched becomes zero, which the has-a-zero-byte test finds without a branch per byte.</p>
+<h4>Verifying it</h4>
+<p>SPARK, Frama-C and CBMC were not available on this machine, so the C was held to what was:</p>
+<table><thead><tr><th></th><th></th></tr></thead><tbody><tr><td><code>gcc -fanalyzer</code>, with <code>-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Warray-bounds=2 -Wstringop-overflow=4 -Wshadow -Wcast-qual</code></td><td>0 warnings</td></tr><tr><td>clang static analyzer</td><td>0 warnings</td></tr><tr><td>ASAN + UBSAN over 300 adversarial inputs</td><td>0 reports</td></tr><tr><td>valgrind</td><td>clean</td></tr><tr><td>800 adversarial inputs against an independent Python oracle</td><td>0 mismatches</td></tr></tbody></table>
+<p>The last row is the one that carries the weight. The oracle is written the obvious slow way in <code>exam/tools/reference.py</code>; the fuzzer in <code>exam/tools/fuzz.py</code> produces the shapes a log never has and a hostile peer might — no quotes, one quote, a 300-byte path, a 9000-byte line, a status with a letter in it, and 200 bytes of arbitrage.</p>
+<h3>The mereo</h3>
+<p>357 lines, and structured differently on purpose. The first draft used templates and hit an 18-port call, because mereo has no globals and a template sees only what it is given. The second draft threw that away: <strong>a template is for reuse, and there is none here</strong> — each phase runs once, in order — so the structuring device is the named scope, which sees what encloses it.</p>
+<p>The table is five parallel runs of bytes rather than one run of records, because mereo has no array of layouts. An index is scaled by hand:</p>
+<pre><code>  <span class="t-decl">walk</span> <span class="t-structure">goes</span>
+    <span class="t-plain">four</span> <span class="t-bind">is</span> <span class="t-plain">hidx</span> <span class="t-operator">*</span> <span class="t-number">4</span>
+    <span class="t-plain">two</span> <span class="t-bind">is</span> <span class="t-plain">hidx</span> <span class="t-operator">*</span> <span class="t-number">2</span>
+    <span class="t-plain">cnt</span> <span class="t-bind">is</span> <span class="t-operator">[</span><span class="t-plain">t_count</span> <span class="t-operator">+</span> <span class="t-plain">four</span> <span class="t-operator">:</span> <span class="t-number">4</span><span class="t-operator">]</span>
+    <span class="t-structure">leave</span> <span class="t-decl">walk</span> <span class="t-inside">when</span> <span class="t-plain">cnt</span> <span class="t-operator">==</span> <span class="t-number">0</span>
+    <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span></code></pre>
+<p>That costs a multiply per probe and buys stating each run's size exactly.</p>
+<p>It got the same two optimisations as the C, and one the C did not need.</p>
+<h3>The numbers</h3>
+<p>80.5 MB, one million lines, interleaved A/B over 21 runs each so drift hits both:</p>
+<table><thead><tr><th></th><th>min</th><th>median</th><th>sd</th></tr></thead><tbody><tr><td>C, hand-optimised</td><td>53.7 ms</td><td><strong>54.7 ms</strong></td><td>0.62</td></tr><tr><td>mereo</td><td>54.5 ms</td><td><strong>55.4 ms</strong></td><td>0.82</td></tr></tbody></table>
+<p><strong>Ratio 1.012.</strong> mereo is one and a bit percent behind, which is inside the spread of the two measurements. On identical output: the two programs agree byte for byte on the million-line log and on all 800 adversarial inputs.</p>
+<table><thead><tr><th></th><th>C</th><th>mereo</th></tr></thead><tbody><tr><td>source</td><td>214 lines</td><td>357 lines</td></tr><tr><td>binary, same linker script</td><td>4592 B</td><td>6512 B</td></tr><tr><td>instructions in <code>.text</code></td><td>988</td><td>1402</td></tr></tbody></table>
+<p>mereo is 40% more instructions at the same speed, because the extra sits in cold paths — the report, the error blocks, the release tower — and never runs in the loop that reads 80 MB.</p>
+<h3>What the exam found</h3>
+<p>Parity is the headline, but the findings are the point of running it.</p>
+<p><strong>A library that was below the bar.</strong> mereo's <code>find</code> — its <code>memchr</code>, reached by every <code>search</code>, <code>measure</code> and <code>until</code> in the language — was a byte-at-a-time loop. Hand-optimised C would never leave it that way. Widening it made find-heavy code <strong>2.9× faster</strong> (55 ms to 19 ms on a scanning benchmark) for 2848 bytes across the whole corpus. The exam is what surfaced it; no program in the corpus scanned hard enough to notice.</p>
+<p><strong>mereo needed the same hand-optimising the C did.</strong> The idiomatic first version ran at 99 ms against a C of the same shape at 91.9 ms — 1.06×, near parity for equivalent code. It did not reach 55 ms by being higher-level. It reached it by being told the same three things the C was told, in the same order. That is the honest shape of the result: <strong>the language does not close the gap for you; it declines to open one.</strong></p>
+<p><strong>The access analysis has visible limits in real code.</strong> Compiling the mereo version reports 14 accesses it cannot prove in range — the 8-byte load in the word-at-a-time scan, the parser's indices into a line whose address is computed, and the table probes. All are safe. None is provable by the analysis as it stands, and the report says which is which:</p>
+<pre><code>line 120: `[rbuf + j : 8]` not proved in range -- a bound is in scope but
+          could not be resolved to a number
+line   5: `[rbuf + i + copy_1_i : 1]` not proved in range -- the index comes
+          from input and nothing bounds it here -- this wants a run-time guard</code></pre>
+<p>That is the analysis behaving as designed — reporting rather than guessing — and it is also a list of work.</p>
+<p><strong>Three things about writing mereo that only writing 357 lines of it shows.</strong> There are no top-level constants and no top-level buffers, so a size used in two places is a literal in two places. A <code>likely</code> road cannot hold a template call. And <code>compare</code> answers <strong>1 for equal</strong>, which reads backwards next to C's <code>memcmp</code> and cost the first hour of debugging — the table never found an entry and every path came out counted once.</p>
+<h3>What it does not show</h3>
+<p>One program is one program. It is a byte pipeline over a fixed table, which is the shape mereo is built for; nothing here says anything about the shapes it is not built for, and <a href="#limitations">Limitations</a> lists those.</p>
+<p>The verification is also not proof. It is two analysers, two sanitizers, valgrind, and 800 adversarial inputs against an independent implementation — which is enough to say the two programs agree and neither reaches out of bounds on anything tried, and not enough to say more than that.</p>
+<p>Everything here is in <code>exam/</code>: both programs, the oracle, the fuzzer, the generator and the benchmark harness.</p>
 </section>
 <section id="limitations">
 <h2>Limitations</h2>

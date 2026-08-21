@@ -7,6 +7,6 @@ layout_view        98 391 98 389
 loop_sum           62 241 62 241
 open_close         185 783 169 684
 read_write         115 497 99 388
-span_scan          127 496 112 425
+span_scan          152 627 112 425
 two_resources      241 1007 217 870
 write              65 262 65 262
