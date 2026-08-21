@@ -138,6 +138,10 @@ def analyse(definitions, slots):
                 if not m: continue
                 lhs, op, rhs = (m.group(1).replace(" as signed", "").strip(),
                                 m.group(2), m.group(3).replace(" as signed", "").strip())
+            # only a clause on the OUT port says anything about a VALUE. One
+            # on an in port is a requirement on the call -- mereoc decides it
+            # when the program is read, and it bounds an argument, not a result.
+            if lhs != prim.get("out"): continue
             tgt = arg(lhs)
             if not tgt: continue
             val = arg(rhs)
