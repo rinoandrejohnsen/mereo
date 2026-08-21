@@ -908,6 +908,11 @@ EMITTED_LABEL = re.compile(
 
 
 def name_ok(name, n, what):
+    if what != "constant" and name in CONSTANTS:
+        fail(f"line {n}: {what} name '{name}' is already a constant. A constant "
+             "reads as its NUMBER wherever a number is accepted, so a slot "
+             "sharing the name would be shadowed in every arithmetic and left "
+             "alone everywhere else -- two meanings, chosen by context.")
     if name in RESERVED:
         fail(f"line {n}: '{name}' is a reserved word; pick another {what} name")
     if name[0].isdigit():
@@ -1162,10 +1167,19 @@ def store_condition(value, n, what):
     return val, cond
 
 
+# `NAME is NUMBER` at the left margin: a name for a number, with no storage
+# behind it. Read by `_int_value`, so it is accepted in every place a literal
+# is -- a buffer's size, a comparison, a mask -- rather than in a list of
+# places someone remembered to update.
+CONSTANTS = {}
+
+
 def _int_value(tok):
     """The numeric value of a mereo integer literal -- decimal, `0x` hex, or
     `0b` binary, each with optional `_` digit separators and a leading `-`.
     None if `tok` is not an integer literal."""
+    if tok in CONSTANTS:
+        return CONSTANTS[tok]
     t = tok.replace("_", "")
     neg = t.startswith("-")
     if neg:
@@ -1183,7 +1197,13 @@ def _int_value(tok):
 
 def norm_int_c(tok):
     """A mereo int literal -> a C-valid literal: `_` separators stripped, and
-    binary (a GCC-only `0b` extension) rendered as decimal; hex/decimal kept."""
+    binary (a GCC-only `0b` extension) rendered as decimal; hex/decimal kept.
+
+    A named constant renders as its NUMBER. It has to be caught before the `_`
+    stripping below, which would otherwise turn `table_slots` into the
+    undeclared identifier `tableslots`."""
+    if tok in CONSTANTS:
+        return str(CONSTANTS[tok])
     t = tok.replace("_", "")
     if re.fullmatch(r"-?0[bB][01]+", t):
         return str(_int_value(tok))
@@ -1786,9 +1806,16 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                                                      if m.group(2) else []),
                                            "line": n}
                 continue
+            m = re.match(rf"^(\w+) is ({_NUMLIT})$", s)
+            if m:
+                cname = name_ok(m.group(1), n, "constant")
+                if cname in CONSTANTS:
+                    fail(f"line {n}: constant '{cname}' redefined")
+                CONSTANTS[cname] = _int_value(m.group(2))
+                continue
             fail(f"line {n}: unrecognized top-level line: {s!r} "
-                 "(expected `NAME is`, `NAME extends BASE is`, "
-                 "`NAME (PORTS) is`, `program is`, or `failures is`)")
+                 "(expected `NAME is`, `NAME is NUMBER`, `NAME extends BASE "
+                 "is`, `NAME (PORTS) is`, `program is`, or `failures is`)")
 
         if isinstance(section, dict) and "args" in section:   # a decl
             if section["kind"] == "asm":
@@ -3687,11 +3714,12 @@ def check_slots(definitions, slots):
                          f"property of an ADDRESS, and '{slot['name']}' is `in "
                          "register` -- it has none. Drop one of the two")
                 REGISTER_WORDS[slot["name"]] = int(slot["size"])
-            elif not slot["size"].isdigit():
+            elif not slot["size"].isdigit() and _int_value(slot["size"]) is None:
                 sz = scalars.get(slot["size"])
                 if sz is None or not is_int(sz["init"]):
                     fail(f"line {slot['line']}: buffer size '{slot['size']}' "
-                         "is neither a number nor an earlier scalar")
+                         "is neither a number, a constant, nor an earlier "
+                         "scalar")
             buffers[slot["name"]] = slot
         else:
             scalars[slot["name"]] = slot

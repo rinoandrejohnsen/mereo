@@ -16,18 +16,29 @@ include "../../core.mereo"
 -- has no array of layouts. An index is scaled by hand: a multiply per probe,
 -- in exchange for stating each run's size exactly.
 
+-- The sizes, named once. A constant reads as its number wherever a number is
+-- accepted -- a buffer's size, a mask, a comparison -- so `slot_mask` below is
+-- the same fact as `table_slots`, said once instead of four times.
+read_buf is 65536
+line_max is 8192
+table_slots is 8192
+slot_mask is 8191
+table_max is 4096
+arena_max is 1048576
+path_max is 255
+
 program goes
-  rbuf is 65536 bytes
-  line is 8192 bytes
-  obuf is 65536 bytes
+  rbuf is read_buf bytes
+  line is line_max bytes
+  obuf is read_buf bytes
   digits is 24 bytes
   t_hash is 32768 bytes in static
   t_off is 32768 bytes in static
   t_len is 16384 bytes in static
   t_count is 32768 bytes in static
   t_seq is 16384 bytes in static
-  t_taken is 8192 bytes in static
-  arena is 1048576 bytes in static
+  t_taken is table_slots bytes in static
+  arena is arena_max bytes in static
 
   live is 0
   used is 0
@@ -91,7 +102,7 @@ program goes
   -- ------------------------------------------------------------------ read
   last is 0
   feed goes
-    input.read (buffer is rbuf, capacity is 65536, count is got)
+    input.read (buffer is rbuf, capacity is read_buf, count is got)
     -- A file that does not end in a newline still ends in a line. Rather than
     -- write the parse a second time to run it, close the held line with a
     -- newline of our own and let the ordinary path take it.
@@ -152,7 +163,7 @@ program goes
         leave fast when j >= n
         ln is rbuf + i
         llen is chunk
-        llen is 8192 when chunk > 8192
+        llen is line_max when chunk > line_max
         ready is 1
       end
 
@@ -160,7 +171,7 @@ program goes
         leave slow when ready != 0
         gather goes
           leave gather when over != 0
-          room is 8192 - held
+          room is line_max - held
           take is chunk
           take is room when chunk > room
           text.copy (source is rbuf + i, target is line + held, length is take)
@@ -205,7 +216,7 @@ program goes
           pe is ps + rel
           plen is pe - ps
           leave parse when plen == 0
-          leave parse when plen > 255
+          leave parse when plen > path_max
 
           t is q2 + 1
           skip1 goes
@@ -296,7 +307,7 @@ program goes
             w is w + 1
             repeat mix
           end
-          hidx is h & 8191
+          hidx is h & slot_mask
 
           walk goes
             four is hidx * 4
@@ -315,12 +326,12 @@ program goes
               leave parse
             end
             hidx is hidx + 1
-            hidx is hidx & 8191
+            hidx is hidx & slot_mask
             repeat walk
           end
 
-          leave parse when live >= 4096
-          leave parse when used + plen > 1048576
+          leave parse when live >= table_max
+          leave parse when used + plen > arena_max
           text.copy (source is ln + ps, target is arena + used, length is plen)
           [t_hash + four : 4] is h
           [t_off + four : 4] is used
@@ -380,12 +391,12 @@ program goes
   ss is 0
   rounds goes
     leave rounds when rank >= 10
-    best is 8192
+    best is table_slots
     bestc is 0
     bests is 0
     scan_i is 0
     pick goes
-      leave pick when scan_i >= 8192
+      leave pick when scan_i >= table_slots
       four is scan_i * 4
       two is scan_i * 2
       cc is [t_count + four : 4]
@@ -394,8 +405,8 @@ program goes
         leave step when [t_taken + scan_i : 1] != 0
         ss is [t_seq + two : 2]
         take_it goes
-          leave take_it when best != 8192 && cc < bestc
-          leave take_it when best != 8192 && cc == bestc && ss >= bests
+          leave take_it when best != table_slots && cc < bestc
+          leave take_it when best != table_slots && cc == bestc && ss >= bests
           best is scan_i
           bestc is cc
           bests is ss
@@ -404,7 +415,7 @@ program goes
       scan_i is scan_i + 1
       repeat pick
     end
-    leave rounds when best == 8192
+    leave rounds when best == table_slots
     [t_taken + best : 1] is 1
     page.number (value is bestc)
     page.byte (value is 32)

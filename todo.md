@@ -623,20 +623,23 @@ produced (`head`, and the exam program itself) came from treating a plain
   wrong. Named for what it reports now, with the sense stated on the method
   itself rather than only in the header.
 
-**Open, and now only one thing:**
+**Nothing open.** `NAME is NUMBER` at the left margin works now -- a name for a
+number with no storage behind it, accepted wherever a literal is because
+`_int_value` reads it, rather than in a list of places someone remembered to
+update. The exam program names its seven sizes once instead of spelling `8191`
+four times.
 
-**Naming a number costs declaring bytes for it.** `X.size` is a compile-time
-constant and a derived one works -- `mask is slots.size - 1` folds, and the
-access analysis proves through it -- and `t.field.size` parses now. What is
-still missing is a plain `NAME is 8192` at the left margin, so a size used in
-two places is a literal in two places. The exam program has `8191` written four
-times with a comment explaining it.
+Two things it needed beyond the parse. `norm_int_c` strips `_` as a digit
+separator, so a constant has to be caught before it or `table_slots` becomes the
+undeclared identifier `tableslots` -- which is exactly how it first failed. And
+a slot may not share a name with a constant: the constant reads as its number in
+every arithmetic and the slot would be left alone everywhere else, two meanings
+chosen by context.
 
-That is the whole of what "no top-level constants" turned out to mean. The
-companion entry, "no top-level buffers", WAS WRONG: a top-level layout groups
-them, the storage is one backing in `program`, and the instance passes to a
-template as one port. The exam's 18-port draft was bad design on my part, not a
-missing feature, and rewriting it as a scope tree treated a symptom.
+The companion entry, "no top-level buffers", WAS WRONG: a top-level layout
+groups them, the storage is one backing in `program`, and the instance passes to
+a template as one port. The exam's 18-port draft was bad design on my part, not
+a missing feature.
 
 ### The exam program: fourteen unproved, now one
 
