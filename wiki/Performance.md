@@ -85,6 +85,66 @@ can never be the DEFAULT form — `[buffer + i]` stays unchecked and matches the
 to make the default form safer without spending that 10% is to decide it at
 compile time, which is what [Safety](Safety) measures.
 
+## What is worth telling the compiler
+
+The compiler already knows everything the program says. Stating a bound mereo
+has proved — as an assumption, in front of a proved store in the exam's
+generated C — produces a **byte-identical binary**. That is not surprising once
+said plainly: the proofs are built out of buffer sizes, branch conditions and
+syscall contracts, and all three are already in the emitted C as literals, as
+branches, and as assumptions. GCC re-derives the same ranges.
+
+So the analysis makes no binary faster. Its product is the list of accesses it
+could not prove, which [Safety](Safety) covers. Only a fact **absent from the
+program's text** is worth stating, and there is one:
+
+| `exam/mereo/loglyze`, 84 MB of log | size | time |
+| --- | ---: | ---: |
+| the kernel's promise stated | 5920 B | 53.9 ms |
+| the kernel's promise tested | 6576 B | 54.9 ms |
+
+A `read` never returns more than the capacity it was given. That is the kernel
+ABI's promise rather than a consequence of any code in the translation unit —
+the call site is inline assembly with a `"memory"` clobber, and a clobber says
+*something changed*, not *at most this many bytes*. Stating it lets a branch
+fold away, at 117 sites across the corpus.
+
+### Form, which is not knowledge
+
+Three changes did move binaries, and none of them told the compiler a new fact.
+Widening the byte scan to a word at a time took find-heavy code from 58 ms to
+19 ms. Hoisting a checked loop's bound out of the loop body took it from 4
+vector instructions to 41. Hoisting a copy loop's base address out of the loop
+took 208 bytes off the corpus, at no change in time. Each states something GCC
+already had, in a shape its optimiser acts on — and the first two are cases
+where every small reproduction optimises unaided and the whole program does not.
+
+### Aliasing, measured
+
+mereo gives up every aliasing mechanism a C compiler has. Memory is bytes,
+`unsigned char` aliases everything by the language's own rule, and
+`-fno-strict-aliasing` ships because byte views type-pun by design. Rust, by
+contrast, marks every mutable reference `noalias` automatically.
+
+It costs nothing here. GCC names its own aliasing failures, and the corpus has
+exactly **seven** loops it declined to vectorise because it "would need a
+runtime alias check" — all of them the byte copy inside a builder. Rewriting all
+seven to copy through `restrict`-qualified pointers gives byte-identical
+binaries:
+
+| | span | stat | uname |
+| --- | ---: | ---: | ---: |
+| base hoisted | 2304 | 2512 | 1488 |
+| base hoisted, and `restrict` on top | 2304 | 2512 | 1488 |
+
+The limit on those loops was never disambiguation. It was that the destination
+was recomputed from the builder's own bytes on every iteration — address
+arithmetic, which is the row above. That result is about code shaped like this
+one, though, and two things would change it: emitting real calls rather than
+splicing every template, which is where `restrict` earns its keep, and typed
+numeric work, where the languages that carry type information beat C for exactly
+this reason.
+
 ## Binary size
 
 Hello world links to **784 bytes**, static, with no dynamic loader. A linker
