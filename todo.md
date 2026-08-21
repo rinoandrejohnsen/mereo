@@ -719,3 +719,95 @@ If it comes back, note that `mereoc.py` now imports cleanly as a module
 could use the real parser instead of approximating it -- which is what made the
 old one drift.
 
+
+## Where more analysis could still pay, and where it provably cannot
+
+Searched the literature 2026-08-21 and measured each candidate against the
+corpus rather than against the paper. The filter is the barrier: a technique
+earns its place only if it produces a fact GCC does not already have, or a
+diagnostic we do not already print.
+
+### First, the thing that closes off most of the field
+
+A proved bound is worth nothing to GCC. Injecting `if (!(used + copy_2_i <
+4194304)) __builtin_unreachable();` in front of a PROVED store in the exam's
+generated C gives a **byte-identical binary**. That is not a surprise once
+stated plainly: the analysis derives its 144 proved accesses from buffer-size
+literals, branch conditions, and kernel promises -- and all three are already in
+the emitted C, as literals, as branches, and as assumptions. GCC re-derives the
+same ranges.
+
+So the only facts worth handing GCC are ones **absent from the program's text**.
+Today that is the kernel's half of the syscall contract, stated at 117 sites
+across the corpus, and there is no second example. Anything the program says,
+GCC hears.
+
+The second thing that closes off the rest: `.at` appears in five test programs
+and **nowhere else**. Every real program -- the examples, the TLS stack, the
+exam -- indexes raw. So "prove more, drop more checks" has no prize to collect
+in real code, because real code carries no checks. Proving harder buys the
+LIST, and only the list. Which is fine, as long as nobody claims otherwise.
+
+### The list, then: 66 unproved accesses, by why
+
+| why | count | what would fix it |
+| --- | ---: | --- |
+| index from input, nothing bounds it | 30 | nothing -- these WANT a guard |
+| the backing did not resolve | 22 | resolve the BASE (below) |
+| a bound is in scope, not a number | 10 | Pentagons (below) |
+| a guard is in scope, not tied to this | 4 | Pentagons |
+
+The 30 are diagnosed correctly and should stay. The other 36 are blind spots.
+
+### Resolve the base -- 22 cases, no research required
+
+`exam/mereo/loglyze.mereo` is the whole story. `ln` is a scalar holding either
+`rbuf + i` (line 164) or `line` (line 182), and every `[ln + t : 1]` after the
+join reports "the backing did not resolve" -- because the analysis resolves a
+base only when it NAMES a buffer. It already has reaching definitions with
+kills; they are applied to the index and not to the base.
+
+Applying them to the base and joining the candidates -- the room left is the
+worst of `rbuf.size - i` and `line.size` -- closes all 22. This is the single
+highest-value change to the list and needs nothing from the literature, though
+it is the same shape as the published work: Maalej and Pereira build exactly
+this on LLVM (range plus inequality over pointers-with-offsets, the case they
+name as the common one in C) and report 2.5x to 3.5x more pointer pairs
+disambiguated than LLVM's built-in analyses on SPEC.
+
+### Pentagons -- 14 cases, a known algorithm
+
+Logozzo and Fahndrich, `x in [a, b] AND x < y`. Intervals plus strict symbolic
+inequalities between variables: more precise than intervals, far cheaper than
+octagons, O(n^2) and near-linear in practice, and built for precisely this
+purpose -- validating array accesses in a low-level IL. It was designed as the
+fast tier of an adaptive analysis, proving the easy majority so an expensive
+domain is only needed on a fraction.
+
+Our domain is non-relational, which is exactly the gap it names: `[t_len + best
+* 2 : 2]` reports "a bound is in scope but could not be resolved to a number"
+because `best < tableslots` is known as a RELATION and our intervals cannot
+hold a relation. Ten of the fourteen are that sentence.
+
+### Considered and not taken
+
+**Octagons / polyhedra.** More precise than Pentagons and much costlier;
+polyhedra have known scalability trouble. Nothing in the 66 needs `±x ±y <= c`.
+
+**Refinement types (Flux for Rust, liquid types).** The other architecture:
+declare refinements on types, discharge them with an SMT solver, pay nothing at
+run time -- which fits the barrier exactly. It cuts against the grain here
+though: mereo's contracts are DERIVED from what the code does, not declared, and
+Flux's power comes from the declarations. Worth knowing about; not a fit.
+
+**Astree / Frama-C EVA.** The reference points for sound whole-program analysis
+of real C -- hundreds of thousands of lines in hours. They are what "complete"
+costs, and a useful yardstick for not overclaiming what a transpiler's own pass
+achieves.
+
+**Anything aliasing-shaped.** The lowering does launder pointers through `long`,
+so GCC loses object identity -- but the exam is already at parity with its
+hand-written C twin (min ratio 0.997, and 6 vector instructions against C's 10
+with no time difference, because the hot path is the SWAR scan). There is no
+deficit to recover. Restoring aliasing information could only make mereo BEAT
+hand-written C, which is not the bar.
