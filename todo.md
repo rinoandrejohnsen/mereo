@@ -940,3 +940,52 @@ Two things to settle before turning it on:
 * whether it belongs in `mereoc` or in `mereocheck`. The gates live in the
   latter; making the transpiler itself refuse is a stronger claim, and the
   checking suite is where a refusal is normally proven to fire.
+
+## `restrict` is worth nothing here, measured
+
+Asked 2026-08-21, because Rust emits `noalias` on every `&mut` and mereo emits
+nothing of the kind. The concern is fair on its face: mereo's model is bytes,
+`unsigned char` aliases everything by C's own rule, and `-fno-strict-aliasing`
+ships. Between them that is every aliasing mechanism a C compiler has, given up.
+
+It costs nothing, and the measurement is clean.
+
+GCC names its own aliasing failures. Across the corpus it reports exactly
+**seven** loops it declined to vectorise because it "would need a runtime alias
+check" -- three in `span`, three in `stat`, one in `uname`, all of them the
+`text.copy` inside `builder.add`. Every other vectoriser miss is a syscall's
+`"memory"` clobber, an unvectorisable statement, or an unaddressable base.
+
+Rewriting those seven to copy through `__restrict`-qualified pointers gives a
+**byte-identical binary** in all three programs.
+
+| | span | stat | uname |
+| --- | ---: | ---: | ---: |
+| base hoisted | 2304 | 2512 | 1488 |
+| base hoisted + `__restrict` | 2304 | 2512 | 1488 |
+
+The control is the interesting row. Reaching those loops meant lifting the base
+address out of the loop body, and THAT is what moved the binaries -- 80 bytes on
+`span`, 128 on `loglyze`, 208 across the corpus, on 2 programs of 20. Adding
+`restrict` on top of it changed nothing at all.
+
+So the limit on those loops was never aliasing. It was that the destination is
+recomputed from `[page]` and `[page + 8]` on every iteration -- address
+arithmetic, not disambiguation. Fix the form and the aliasing question stops
+being asked.
+
+### Worth doing, small
+
+Lift a copy loop's two base addresses out of the loop. -208 bytes on the corpus
+and **no time difference** on the exam (median ratio 1.000, min 0.998, output
+identical, still at parity with the C twin). A size change with no speed change
+is worth having and worth not overselling, and it is the same category as the
+bound hoist: FORM, not knowledge. See [the survey above] -- that is now three
+measured wins in a row that are all form, against one fact (the kernel promise)
+and nothing else.
+
+**Do not conclude that aliasing never matters.** It does not matter to code
+SHAPED like this. Two things would change that: emitting real function calls
+instead of splicing every template, which is exactly where `restrict` earns its
+keep; and typed numeric work, where Fortran and Rust beat C for this reason.
+Neither is where mereo is today.
