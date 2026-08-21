@@ -899,12 +899,12 @@ _Decimal64 _Generic _Imaginary _Noreturn _Static_assert _Thread_local
 
 # The labels the EMITTER owns. C keeps labels in their own namespace, so a
 # scalar may safely be called `release_doc`; two LABELS may not, and a scope,
-# crossroad or template name becomes one. `scan_done` beside a scope `scan`,
+# scope or template name becomes one. `scan_done` beside a scope `scan`,
 # `release_doc` beside a resource `doc`, and `past_2` beside a guarded scope
 # each produced `error: duplicate label` from GCC rather than a word from mereo.
-LABEL_KINDS = {"loop", "branch", "template", "method"}
+LABEL_KINDS = {"loop", "template", "method"}
 EMITTED_LABEL = re.compile(
-    r"^(?:past|release|error|resume|attempt|recover)_|_done$|_road_\d+$")
+    r"^(?:past|release|error|resume|attempt|recover)_|_done$")
 
 
 def name_ok(name, n, what):
@@ -924,9 +924,9 @@ def name_ok(name, n, what):
     if what in LABEL_KINDS and EMITTED_LABEL.search(name):
         fail(f"line {n}: {what} name '{name}' collides with a label the emitter "
              "makes -- a scope's end is `NAME_done`, a resource's release floor "
-             "is `release_NAME`, a guarded scope skips to `past_N`, a road is "
-             "`LABEL_road_N`. Two C labels may not share a name (two VARIABLES "
-             "may, which is why this applies to scopes and not to slots).")
+             "is `release_NAME`, and a guarded scope skips to `past_N`. Two C "
+             "labels may not share a name (two VARIABLES may, which is why "
+             "this applies to scopes and not to slots).")
     return name
 
 
@@ -1059,7 +1059,7 @@ def assign_step(name, rhs, n):
     -> `X = C1 ? V1 : C2 ? V2 : (DEFAULT or X)`, a nested select GCC lowers to
     one branchless `cmov` per clause. A bare final part (no `when`) is the
     fallback; otherwise X keeps its current value. COND is the guard grammar (a
-    single comparison or a bare scalar), so nothing spills into the cold road.
+    single comparison or a bare scalar), so nothing spills past the guard.
 
     A trailing `branchless` forces a real `cmov` per clause (inline asm),
     overriding GCC's cost model -- for a cascade whose condition you KNOW is
@@ -1323,7 +1323,7 @@ def _OPENS_BLOCK(s):
 
     Three shapes, and nothing else: a header ending in `is` with nothing after
     it (`program is`, `file is`, `read (buffer, count) is`), anything ending in
-    `goes` (a scope, a guard, a road), and the bare `scope`. A declaration
+    `goes` (a scope or a guard), and the bare `scope`. A declaration
     (`x is 5`, `buf is 64 bytes`) has a value after the `is` and opens
     nothing."""
     return bool(s.endswith(" is") or s.endswith(" goes") or s == "scope"
@@ -1521,15 +1521,6 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                         # 2 + 2*depth; a loop closes on `again`, a block on
                         # dedent; each pushes a frame the planner releases in
                         # reverse at the scope's exit. Loops and blocks nest.
-    in_branch = None    # the `LABEL likely goes` crossroad whose inline default
-                        # body is being filled (pre-exit, on the spine)
-    in_branch_base = 0  # indent of that `likely goes` opener, so its body sits
-                        # at +2 / bindings at +4 -- a branch nests inside a loop
-    road_scopes = []    # loop/block scopes OPEN inside the current road body
-                        # (likely or when), so a road can itself hold a loop
-    branch_map = {}     # LABEL -> branch step, so a post-exit `when` road finds
-                        # its crossroad
-    cur_road = None     # the `LABEL when GUARD goes` cold-road body being filled
     inblock = None      # ("body", method)|("ensure", method)|("step", step)
                         # |("adopt", inst)|("recover", step)
     proc_method = None  # a procedure method whose raw body lines are being
@@ -1539,15 +1530,9 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
     def finish_body(n):
         """Close every scope still open where lines are currently landing.
 
-        Needed because a body can end with no dedent after it: a `when` road is
-        the last thing in a file, and a template body is parsed on its own. Both
-        may end ON their `again`, which now closes nothing by itself."""
-        if cur_road is not None:
-            while road_scopes:
-                close_scope(cur_road["body"], road_scopes, n)
-        elif in_branch is not None:
-            while road_scopes:
-                close_scope(in_branch["default_body"], road_scopes, n)
+        Needed because a body can end with no dedent after it: a template body is
+        parsed on its own, and may end ON its `again`, which closes nothing by
+        itself."""
         while scope_kinds:
             close_scope(steps, scope_kinds, n)
 
@@ -1658,7 +1643,6 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
             finish_body(n)          # the section ends here, `again` and all
             method = inblock = curcall = laststep = None
             scope_kinds = []
-            in_branch = cur_road = None
             if re.match(r'^include "[^"]*"$', s):
                 if flags.get("content"):
                     fail(f"line {n}: `include` must appear before any section")
@@ -2157,250 +2141,6 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
             fail(f"line {n}: unrecognized definition line: {s!r}")
 
         if section == "program":
-            # The inline default road of a `LABEL likely goes` crossroad: its
-            # body sits on the spine (pre-exit), indented one level -- method
-            # calls at +2 from the crossroad, their `PARAM is ACTUAL` bindings a
-            # arguments ride in the call's own parens. A dedent to the spine closes
-            # the road; the flow rejoins the merge (`LABEL`).
-            if in_branch is not None:
-                rbase = in_branch_base + 2       # the likely body's base indent
-                if ind >= rbase:
-                    body = in_branch["default_body"]
-                    # a loop/block may nest inside the road: close blocks on
-                    # dedent (loops close via `again`), then figure the current
-                    # step indent from how deep we are inside the road.
-                    while road_scopes and ind <= rbase + 2 * (len(road_scopes) - 1):
-                        close_scope(body, road_scopes, n)
-                    rstep = rbase + 2 * len(road_scopes)
-                    if ind == rstep:
-                        m = re.match(r"^repeat (\w+)(?: when (.+))?$", s)
-                        if m:                # the road's own loop if it has one,
-                            body.append({"type": "loop_again",   # else the loop
-                                         "name": m.group(1),     # the crossroad
-                                         "cond": m.group(2),     # sits in
-                                         "line": n})
-                            laststep = None
-                            continue
-                        m = re.match(r"^(\w+) goes$", s)
-                        if m:                    # a loop inside the road
-                            name = name_ok(m.group(1), n, "loop")
-                            body.append({"type": "loop_start", "name": name,
-                                         "line": n})
-                            road_scopes.append(("loop", name))
-                            laststep = None
-                            continue
-                        step = guarded_scope(s, n)
-                        if step is not None:     # `GUARD goes` -- an `if`
-                            body.append(step)
-                            road_scopes.append(("block", None))
-                            laststep = None
-                            continue
-                        m = re.match(r"^leave (\w+)(?: when (.+))?$", s)
-                        if m:
-                            body.append({"type": "loop_exit",
-                                         "name": m.group(1),
-                                         "cond": m.group(2), "line": n})
-                            laststep = None
-                            continue
-                        if s == "scope":         # a block inside the road
-                            body.append({"type": "scope_start", "line": n})
-                            road_scopes.append(("block", None))
-                            laststep = None
-                            continue
-                        m = re.match(r"^([\w.]+)\.(\w+)\s*(?:\((.*)\))?$", s)
-                        if m:
-                            step = {"type": "call", "method": m.group(2),
-                                    "inst": receiver(m.group(1), slots, ns_of_line.get(n), n),
-                            "conns": [],
-                                    "recover": None, "alts": [], "line": n}
-                            for _a in _arguments(m.group(3) or "", n):
-                                take_arg(("step", step), _a, n)
-                            body.append(step)
-                            laststep = step
-                            continue
-                        step = free_call(s, definitions, n, free_here, ns_of_line.get(n))
-                        if step is not None:     # a lone template: no group to name
-                            body.append(step)
-                            laststep = step
-                            continue
-                        m = re.match(r"^(\w+) is adopted ([\w.]+)\s*\((.*)\)$", s)
-                        if m:           # a road-local resource: released at the
-                            name_ok(m.group(1), n, "instance")   # merge (its scope)
-                            inst = {"kind": "instance", "name": m.group(1),
-                                    "mode": "owned", "own": True,
-                                    "definition": deref(m.group(2), ns_of_line.get(n), n, "definition"),
-                                    "init": {},
-                                    "aliases": {}, "line": n}
-                            slots.append(inst)
-                            step = {"type": "adopt", "name": m.group(1),
-                                    "inst_ref": inst, "line": n}
-                            for _a in _arguments(m.group(3) or "", n):
-                                take_arg(("adopt", inst), _a, n)
-                            body.append(step)
-                            laststep = step
-                            continue
-                        m = re.match(r"^(\w+) is (.+)$", s)
-                        if m:           # a road may set scalars -- select the
-                            # data, let the merged spine act on it
-                            body.append(assign_step(m.group(1), m.group(2), n))
-                            laststep = None
-                            continue
-                        fail(f"line {n}: a `likely goes` body is method calls, "
-                             "`NAME is EXPR` assignments, `NAME is adopted CLASS "
-                             "where` resources, or `NAME goes`/`scope` blocks")
-                    if ind == rstep + 4 and laststep is not None:
-                        if laststep.get("type") == "adopt":
-                            m = re.match(r'^(\w+(?: \w+)*) is '
-                                         rf'(\w+|-?\d+|"[^"]*"|{_SIZEOF})$', s)
-                            if not m:
-                                fail(f"line {n}: adopted instance takes "
-                                     "`SLOT is VALUE`")
-                            laststep["inst_ref"]["init"][m.group(1)] = m.group(2)
-                            continue
-                        m = re.match(r"^(\w+) is (.+)$", s)
-                        if not m:
-                            fail(f"line {n}: expected `PARAM is ACTUAL`")
-                        laststep["conns"].append((m.group(1), m.group(2), n))
-                        continue
-                    fail(f"line {n}: unexpected line in a `likely goes` "
-                         f"body: {s!r}")
-                while road_scopes:      # the road may end ON its `again`
-                    close_scope(in_branch["default_body"], road_scopes, n)
-                in_branch = None        # dedent to the spine: the road closes;
-                # fall through -- this line is the merge / next spine step
-
-            # past the noreturn tail: the cold `when` roads of a crossroad. Each
-            # `LABEL when GUARD goes` opens a road (steps at +2, bindings a
-            # further +4) and must name
-            # a `LABEL likely goes` crossroad seen above. This engages only at a
-            # real road opener (or once inside a road), so a bare `exit where`
-            # keeps parsing its own bindings first.
-            # The cold roads simply follow their crossroad. They used to be
-            # looked for only after the program's `exit`, which no longer
-            # exists -- and never needed the marker: `LABEL when GUARD goes` is
-            # two names and a `when`, and a guarded scope refuses a `when` in
-            # its guard, so the two shapes cannot be confused. A procedure body
-            # has always been parsed this way.
-            road_open = re.match(r"^(\w+) when (.+) goes$", s)
-            if cur_road is not None or road_open:
-                if ind == 2 and road_open:
-                    label = road_open.group(1)
-                    if label not in branch_map:
-                        # Two ways to arrive here, and the second is far more
-                        # likely: someone wrote a CONDITIONAL SCOPE and put a
-                        # `when` in its guard. Say that first -- it used to be
-                        # the only reading, because cold roads were recognised
-                        # only after the program's `exit`, and there is no
-                        # longer an `exit` to be after.
-                        fail(f"line {n}: `{s}` -- a conditional scope is "
-                             "`GUARD goes`, with no `when`. `LABEL when GUARD "
-                             "goes` is a crossroad ROAD, and there is no "
-                             f"`{label} likely goes` crossroad above this one.")
-                    road = {"guard": road_open.group(2).strip(),
-                            "body": [], "line": n}
-                    while road_scopes:          # the road before it may have
-                        close_scope(cur_road["body"], road_scopes, n)  # ended
-                    branch_map[label]["roads"].append(road)            # on its
-                    cur_road = road                                    # `again`
-                    road_scopes = []            # a fresh road's own scopes
-                    inblock = laststep = None
-                    continue
-                if cur_road is not None and ind >= 4:
-                    body = cur_road["body"]      # a `when` road body: base 4,
-                    while road_scopes and ind <= 4 + 2 * (len(road_scopes) - 1):
-                        close_scope(body, road_scopes, n)
-                    rstep = 4 + 2 * len(road_scopes)
-                    if ind == rstep:
-                        m = re.match(r"^repeat (\w+)(?: when (.+))?$", s)
-                        if m:                # the road's own loop if it has one,
-                            body.append({"type": "loop_again",   # else the loop
-                                         "name": m.group(1),     # the crossroad
-                                         "cond": m.group(2),     # sits in
-                                         "line": n})
-                            laststep = None
-                            continue
-                        m = re.match(r"^(\w+) goes$", s)
-                        if m:
-                            name = name_ok(m.group(1), n, "loop")
-                            body.append({"type": "loop_start", "name": name,
-                                         "line": n})
-                            road_scopes.append(("loop", name))
-                            laststep = None
-                            continue
-                        step = guarded_scope(s, n)
-                        if step is not None:     # `GUARD goes` -- an `if`
-                            body.append(step)
-                            road_scopes.append(("block", None))
-                            laststep = None
-                            continue
-                        m = re.match(r"^leave (\w+)(?: when (.+))?$", s)
-                        if m:
-                            body.append({"type": "loop_exit",
-                                         "name": m.group(1),
-                                         "cond": m.group(2), "line": n})
-                            laststep = None
-                            continue
-                        if s == "scope":
-                            body.append({"type": "scope_start", "line": n})
-                            road_scopes.append(("block", None))
-                            laststep = None
-                            continue
-                        m = re.match(r"^([\w.]+)\.(\w+)\s*(?:\((.*)\))?$", s)
-                        if m:
-                            step = {"type": "call", "method": m.group(2),
-                                    "inst": receiver(m.group(1), slots, ns_of_line.get(n), n),
-                            "conns": [],
-                                    "recover": None, "alts": [], "line": n}
-                            for _a in _arguments(m.group(3) or "", n):
-                                take_arg(("step", step), _a, n)
-                            body.append(step)
-                            laststep = step
-                            continue
-                        step = free_call(s, definitions, n, free_here, ns_of_line.get(n))
-                        if step is not None:     # a lone template: no group to name
-                            body.append(step)
-                            laststep = step
-                            continue
-                        m = re.match(r"^(\w+) is adopted ([\w.]+)\s*\((.*)\)$", s)
-                        if m:           # a road-local resource: released before
-                            name_ok(m.group(1), n, "instance")   # the road rejoins
-                            inst = {"kind": "instance", "name": m.group(1),
-                                    "mode": "owned", "own": True,
-                                    "definition": deref(m.group(2), ns_of_line.get(n), n, "definition"),
-                                    "init": {},
-                                    "aliases": {}, "line": n}
-                            slots.append(inst)
-                            step = {"type": "adopt", "name": m.group(1),
-                                    "inst_ref": inst, "line": n}
-                            for _a in _arguments(m.group(3) or "", n):
-                                take_arg(("adopt", inst), _a, n)
-                            body.append(step)
-                            laststep = step
-                            continue
-                        m = re.match(r"^(\w+) is (.+)$", s)
-                        if m:               # roads may set scalars (see the
-                            body.append(    # likely body above)
-                                assign_step(m.group(1), m.group(2), n))
-                            laststep = None
-                            continue
-                        fail(f"line {n}: a `when` road body is method calls, "
-                             "`NAME is EXPR` assignments, `NAME is adopted CLASS "
-                             "where` resources, or `NAME goes`/`scope` blocks")
-                    if ind == rstep + 4 and laststep is not None:
-                        if laststep.get("type") == "adopt":
-                            m = re.match(r'^(\w+(?: \w+)*) is '
-                                         rf'(\w+|-?\d+|"[^"]*"|{_SIZEOF})$', s)
-                            if not m:
-                                fail(f"line {n}: adopted instance takes "
-                                     "`SLOT is VALUE`")
-                            laststep["inst_ref"]["init"][m.group(1)] = m.group(2)
-                            continue
-                        m = re.match(r"^(\w+) is (.+)$", s)
-                        if not m:
-                            fail(f"line {n}: expected `PARAM is ACTUAL`")
-                        laststep["conns"].append((m.group(1), m.group(2), n))
-                        continue
-                fail(f"line {n}: unexpected line in a `when` road body: {s!r}")
             # close scopes on dedent: a `scope` block closes when we dedent to
             # or past its keyword; a loop must close with its own `again` first
             # (popped in the step handler below, never by a bare dedent). Loops
@@ -2517,23 +2257,6 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                                   "cond": _c, "line": n})                 # field
                     laststep = None
                     continue
-                m = re.match(r"^(\w+) likely goes$", s)
-                if m:
-                    # `LABEL likely goes` -- a branch crossroad. `LABEL` is the
-                    # merge point; this `likely` road is the hot default, inline
-                    # on the spine (its body follows, indented one level). The
-                    # cold `when` roads are defined past exit and rejoin here.
-                    label = name_ok(m.group(1), n, "branch")
-                    if label in branch_map:
-                        fail(f"line {n}: branch '{label}' redefined")
-                    step = {"type": "branch", "label": label,
-                            "default_body": [], "roads": [], "line": n}
-                    steps.append(step)
-                    branch_map[label] = step
-                    in_branch = step
-                    in_branch_base = step_ind    # body one indent deeper
-                    laststep = None
-                    continue
                 m = re.match(r"^or\s*\((.*)\)$", s)
                 if m:
                     if laststep is None:
@@ -2564,7 +2287,7 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     # The name is a PARAMETER of a template being spliced, so
                     # this declares nothing -- it hands the literal's ADDRESS out
                     # through that port, which is what `message is "..."` already
-                    # means in a branch road. Without this the splice declared a
+                    # means in a guarded scope. Without this the splice declared a
                     # buffer under the parameter's name and then renamed it to
                     # the caller's slot, colliding with it. Same reasoning as the
                     # scalar rule below, which has always excluded `bound`.
@@ -2845,7 +2568,7 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     steps.append(step)   # of the bare rule below, which is the same
                     inblock = ("step", step)   # line -- and which would take it for
                     laststep = step            # a noreturn tail and open the cold
-                    continue                   # roads early
+                    continue
                 m = re.match(r"^([\w.]+)\s*(?:\((.*)\))?$", s)
                 _p = bare(m.group(1), ns_of_line.get(n)) if m else None
                 if m and _p is None and OF_NAMESPACE.get(m.group(1)):
@@ -2920,7 +2643,7 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
 
         fail(f"line {n}: line outside any section: {s!r}")
 
-    finish_body(n)             # end of input: a road or a template body may
+    finish_body(n)             # end of input: a template body may
                                # have ended on its `again`, with no dedent after
 
 
@@ -3004,7 +2727,7 @@ def inert_body(meth, defn, definitions):
     neither, so it cannot have an effect whatever it was meant to be.
 
     A line indented DEEPER than the body's own base opens a nested block (a
-    scope, a loop, a guarded road), which is a statement rather than a
+    scope, a loop, a guarded scope), which is a statement rather than a
     declaration -- so the body is not inert and this says nothing about it.
 
     Nor is declaring an INSTANCE inert, though it reads like a declaration: a
@@ -5049,8 +4772,6 @@ STEP_SCHEMA = {
     "scope_start": {"cond": "cond", "likely": "carry", "line": "carry"},
     "scope_end":   {"line": "carry"},
     # -- branching ---------------------------------------------------------
-    "branch":      {"label": "label", "default_body": "carry",
-                    "roads": "carry", "line": "carry"},
 }
 
 # The sets five sites used to spell out by hand, now derived. Each reads as the
@@ -5080,27 +4801,15 @@ def check_steps(steps, where=""):
         if extra:
             fail(f"{where}internal: step {t!r} at line {st.get('line')} carries "
                  f"{sorted(extra)}, which STEP_SCHEMA does not declare")
-        if t == "branch":
-            check_steps(st.get("default_body") or (), where)
-            for road in st.get("roads") or ():
-                check_steps(road.get("body") or (), where)
-
-
 def _walk_steps(steps):
-    """Every step in a body, ROADS INCLUDED. A road holds steps like any other
+    """Every step in a body, nested scopes included. A scope holds steps like
     scope, so a loop opened in one is just as much a local of the template as a
     loop on its spine -- and `_rename_step` already recurses this way. Walking
-    only the spine meant a `NAME goes` inside a road kept its written name, and
+    only the spine meant a nested `NAME goes` kept its written name, and
     a second splice of that template emitted the label twice (a duplicate label,
     caught by the C compiler rather than by us)."""
     for s in steps:
         yield s
-        if s.get("type") == "branch":
-            yield from _walk_steps(s.get("default_body", ()))
-            for road in s.get("roads", ()):
-                yield from _walk_steps(road.get("body", ()))
-
-
 def _rename_step(s, rmap):
     t = s.get("type")
     if t in RENAMED_NAME:
@@ -5139,14 +4848,6 @@ def _rename_step(s, rmap):
             s["capture"] = rmap.get(s["capture"], s["capture"])
     if t in HAS_COND and s.get("cond"):
         s["cond"] = _rexpr(s["cond"], rmap)
-    if t == "branch":                       # the label is a local, and both the
-        s["label"] = rmap.get(s["label"], s["label"])   # inline road and every
-        for sub in s.get("default_body", ()):           # cold road hold steps
-            _rename_step(sub, rmap)
-        for road in s.get("roads", ()):
-            road["guard"] = _rexpr(road["guard"], rmap)
-            for sub in road.get("body", ()):
-                _rename_step(sub, rmap)
 
 
 def inline_procedure(meth, st, cid, definitions, slots, prims):
@@ -5249,8 +4950,6 @@ def inline_procedure(meth, st, cid, definitions, slots, prims):
     # body's own mentions of the template's name are rewritten to match.
     _own_loops = {s["name"] for s in _walk_steps(bsteps)
                   if s.get("type") == "loop_start"}
-    _own_loops |= {s["label"] for s in _walk_steps(bsteps)   # its own crossroads:
-                   if s.get("type") == "branch"}   # a road is a scope too, and
     _scope = f"{meth['name']}_{cid}"                # `leave LABEL` rejoins it
     for _s in _walk_steps(bsteps):
         if _s.get("type") not in JUMPS:
@@ -5273,8 +4972,6 @@ def inline_procedure(meth, st, cid, definitions, slots, prims):
     locals_ = {s["name"] for s in bslots}
     locals_ |= {s["name"] for s in _walk_steps(bsteps)
                 if s.get("type") == "loop_start"}
-    locals_ |= {s["label"] for s in _walk_steps(bsteps)
-                if s.get("type") == "branch"}
     locals_ -= set(meth["params"])
     rmap = {}
     # A method called ON AN INSTANCE sees the instance's fields by name, exactly
@@ -5351,19 +5048,6 @@ def expand_procedures(definitions, slots, steps, prims):
     def one_pass(steps):
         out, changed = [], False
         for st in steps:
-            if st.get("type") == "branch":
-                # A crossroad's roads are step lists like any other, so a call in
-                # one splices exactly as it does on the spine. They were skipped
-                # before -- expansion only ever walked the spine -- which is why
-                # a road could not call a template: the call survived to the
-                # planner, which had no body to plan.
-                st["default_body"], c = one_pass(st["default_body"])
-                changed = changed or c
-                for road in st["roads"]:
-                    road["body"], c = one_pass(road["body"])
-                    changed = changed or c
-                out.append(st)
-                continue
             meth = procedure_call(st, definitions, slots)
             if meth is None:
                 out.append(st)
@@ -5468,11 +5152,6 @@ def check_port_needs(definitions, slots, steps):
 
     def walk(sts):
         for st in sts:
-            if st.get("type") == "branch":
-                walk(st.get("default_body") or [])
-                for road in st.get("roads") or ():
-                    walk(road.get("body") or [])
-                continue
             if st.get("type") != "call":
                 continue
             defn = definitions.get(st.get("inst"))
@@ -6794,14 +6473,14 @@ def hoist_guard_bounds(steps, slots):
     TWO conditions, and both are necessary rather than cautious:
 
       * nothing in the loop may WRITE memory -- a store, a call, a construction,
-        a crossroad -- or the bound could change under the hoisted copy;
+        a guarded scope -- or the bound could change under the hoisted copy;
       * the bound must not mention a name the loop ASSIGNS, or it is not a
         loop-invariant expression at all (`[data + i]` is not).
 
     Both are syntactic, and a bound with no memory access in it is left alone:
     it is already a register."""
     WRITES = {"store", "fstore", "atomic", "call", "bare",
-              "construct", "adopt", "branch"}
+              "construct", "adopt"}
     CMP = re.compile(r"^(.+?)\s*(<=|>=|==|!=|<|>)\s*(.+)$")
 
     opens, span, dirty = [], {}, {}
@@ -6983,7 +6662,7 @@ def plan(definitions, slots, steps, overrides):
 
     def releases_for(names):
         """Cleanup calls to release `names` in reverse acquisition order -- the
-        shared shape of a loop iteration, a block dedent, and a branch road."""
+        shared shape of a loop iteration and a block dedent."""
         out = []
         for name in reversed(names):
             idefn = definitions[instances[name]["definition"]]
@@ -7002,7 +6681,6 @@ def plan(definitions, slots, steps, overrides):
                             # it, so one nothing jumps to is exactly a `scope`
     loop_stack = []         # (live-set size, label) per open loop, innermost last
     constructed = set()
-    branch_colds = []           # cold `when`-road blocks, per branch crossroad
 
     def callee(name, line):
         """Resolve a call target. Normally a declared instance; but a stateless
@@ -7022,8 +6700,8 @@ def plan(definitions, slots, steps, overrides):
                  "borrowmap": {}, "lenders": set()}, defn)
 
     # ONE step, planned into `into`. The spine passes `plan_steps`; a branch
-    # road passes its own list and gets the IDENTICAL treatment -- which is
-    # the point. A road is a mini-spine, so a store, an `ensure`, a
+    # nested scope passes its own list and gets the IDENTICAL treatment --
+    # which is the point. A scope is a mini-spine, so a store, an `ensure`, a
     # construction, an `or continue`, and a spliced template body all mean
     # there exactly what they mean here, because it is the same code.
     def check_released(st):
@@ -7329,7 +7007,7 @@ def plan(definitions, slots, steps, overrides):
             # `repeat NAME` and `leave NAME` are ONE jump with two targets: the
             # loop's top, or past its end. Both release the same thing --
             # everything taken since that loop began, which on the way out of an
-            # inner loop or a road includes what those took.
+            # inner loop or scope includes what those took.
             #
             # The target must be a loop this step SITS IN. That single rule is
             # what keeps the releases derivable: the live set where it lands is
@@ -7364,7 +7042,7 @@ def plan(definitions, slots, steps, overrides):
                 if _what:
                     fail(f"line {st['line']}: `{_word} {_nm}` -- '{_nm}' is "
                          f"{_what}. `{_word}` names a scope: a `NAME goes` "
-                         "block, a loop, a road, or a template body.")
+                         "block, a loop, or a template body.")
                 _have = ", ".join(nm for _e, nm, _t in loop_stack) or "none"
                 fail(f"line {st['line']}: `{_word} {st['name']}` -- "
                      f"'{st['name']}' is not a scope this sits inside (open "
@@ -7375,22 +7053,7 @@ def plan(definitions, slots, steps, overrides):
                      "that scope's entry set, so the difference is exactly "
                      "what to let go of.")
             _entry, _nm, _top = loop_stack[_open[-1]]  # innermost of that name
-            if _top is None:
-                # A ROAD. Its end is its crossroad's MERGE label, which already
-                # exists -- every cold road rejoins through it -- so
-                # `leave LABEL` is "release this road's own and rejoin now",
-                # which is C's `break` in a switch case. It has no start: a road
-                # is entered by the dispatch, so `repeat` would mean re-testing
-                # the guards, and that is a loop.
-                if st["type"] == "loop_again":
-                    fail(f"line {st['line']}: `repeat {st['name']}` -- "
-                         f"'{st['name']}' is a crossroad, and a road has no "
-                         "start to go back to: it is entered by the dispatch, "
-                         "not from its own top. Re-testing the guards is a "
-                         "loop -- put the crossroad inside one and repeat "
-                         "that.")
-                _target = st["name"]              # the merge label
-            elif st["type"] == "loop_exit":
+            if st["type"] == "loop_exit":
                 _target = f"{st['name']}_done"    # past the scope's end
                 loops_left.add(st["name"])
             else:
@@ -7468,77 +7131,6 @@ def plan(definitions, slots, steps, overrides):
             into.append({"scope_release": releases, "pname": None,
                          "exit_label": block_labels.pop()})
             del live[entry:]
-            return
-
-        if st["type"] == "branch":
-            # `LABEL likely goes`: the default road is promoted inline onto the
-            # hot path; each cold `when` road becomes a detour, dispatched by
-            # its guard and rejoining at the merge (the crossroad label). `is`
-            # in a guard means ==.
-            label = st["label"]
-            # A crossroad may NEST INSIDE A COLD ROAD. It used to be refused, on
-            # the reading that a crossroad's guarantee is "the dispatch is hot
-            # and the roads are not" and a cold road has no hot path left to put
-            # one on. But the guarantee is really RELATIVE -- the roads sit
-            # further out than the dispatch -- and that holds perfectly well one
-            # level down: the nested dispatch stays where its enclosing road is,
-            # and its own roads are emitted past it, still in the cold tail.
-            #
-            # The refusal was not free. A template that branches carries its
-            # crossroad into every splice, so `number text` (whose leading `-`
-            # is a road) could not be used inside a road AT ALL -- a library
-            # template's internal layout leaking into its callers' grammar.
-            # Nested roads are marked so mereocheck holds them to the cold-region
-            # rule instead of the spine rule.
-            if not st["roads"]:
-                fail(f"line {st['line']}: branch '{label}' has a `likely` road "
-                     f"but no `when` road -- add a `{label} when GUARD goes` "
-                     "past exit, or drop the branch")
-            gplan = []
-            for k, road in enumerate(st["roads"]):
-                pred = render_choice_cond(road["guard"], scalars, buffers,
-                                          road["line"])
-                gplan.append({"pred": pred, "label": f"{label}_road_{k}"})
-            def plan_road_body(body, out, cold_road):
-                """A road body is a mini-spine, so plan it with the spine's own
-                planner. It used to have a planner of its own that knew four
-                step kinds -- assign, adopt, call, and the loop/block markers --
-                which is why a template could not be spliced into a road: the
-                first store or `ensure` in the body had nowhere to go. They are
-                the same code now, so a road holds whatever the spine holds."""
-                for cs in body:
-                    plan_one(cs, out, cold_road)
-
-            # each road is a lexical scope: resources it adopts release at its
-            # end -- the likely road at the merge, a `when` road before it
-            # rejoins. Floors stay in tower_order for faults inside the road.
-            # It goes on the scope stack under the CROSSROAD's name (with no
-            # start step, which is what marks it a road), so `leave LABEL`
-            # inside a road rejoins the merge early, releasing that road's own.
-            into.append({"branch_dispatch": gplan, "pname": None})
-            likely_entry = len(live)
-            loop_stack.append((likely_entry, label, None))
-            plan_road_body(st["default_body"], into, cold)
-            loop_stack.pop()
-            rel = releases_for(live[likely_entry:])
-            if rel:
-                into.append({"scope_release": rel, "pname": None})
-            del live[likely_entry:]
-            into.append({"branch_merge": label, "pname": None})
-            colds = []
-            for k, road in enumerate(st["roads"]):
-                road_entry = len(live)
-                loop_stack.append((road_entry, label, None))
-                rplan = []
-                plan_road_body(road["body"], rplan, True)
-                loop_stack.pop()
-                rel = releases_for(live[road_entry:])
-                if rel:
-                    rplan.append({"scope_release": rel, "pname": None})
-                del live[road_entry:]
-                colds.append({"label": f"{label}_road_{k}", "back": label,
-                              "plan": rplan, "nested": cold})
-            branch_colds.append(colds)
             return
 
         if st["type"] == "bare":
@@ -7980,7 +7572,7 @@ def plan(definitions, slots, steps, overrides):
     # enters the tower (inner floors above it are for faults only).
     exit_top = live[-1] if live else None
     return (plan_steps, fallible, recovers, attempts, cascade,
-            stage_slot, scalars, branch_colds, exit_top)
+            stage_slot, scalars, exit_top)
 
 
 def buffer_size(tok, scalars):
@@ -8063,7 +7655,7 @@ def transpile(sources, prog):
     PRIMITIVES = prims
     VIEWS = flags.get("views", set())          # entry views this program declared
     (plan_steps, fallible, recovers, attempts, cascade,
-     stage_slot, scalars, branch_colds, exit_top) = plan(definitions, slots, steps,
+     stage_slot, scalars, exit_top) = plan(definitions, slots, steps,
                                                          overrides)
 
     # a program that owns cleanup gets automatic interrupt handling: Ctrl-C /
@@ -8079,19 +7671,13 @@ def transpile(sources, prog):
 
     # every emitted call, across the happy path, alternatives, and the
     # cleanup tower, so the right wrappers are emitted (and no others)
-    # The cold `when` roads count too: a call that appears ONLY in one still
-    # needs its wrapper. It went unnoticed while a road could hold nothing but a
+    # Nested scopes count too: a call that appears ONLY in one still needs its
+    # wrapper. It went unnoticed while a scope could hold nothing but a
     # fallible call (those reach `fallible`, and through it the same scan) --
-    # the moment a road could hold a whole spliced body, an infallible call in
+    # the moment a scope could hold a whole spliced body, an infallible call in
     # one compiled to an undeclared `_assembly_open`.
     emitted = [d for d in (plan_steps + [a for alts in attempts for a in alts]
-                           + [c for f in cascade for c in f["calls"]]
-                           + [ps for cold in branch_colds for road in cold
-                              for ps in road["plan"]]
-                           + [c for cold in branch_colds for road in cold
-                              for ps in road["plan"]
-                              for c in (ps.get("scope_release") or [])
-                              + (ps.get("releases") or [])])
+                           + [c for f in cascade for c in f["calls"]])
                if d.get("pname")]
     used = {d["pname"] for d in emitted}
     # the transpiler's own two syscalls, emitted as raw inline asm (no generic
@@ -8260,10 +7846,10 @@ def transpile(sources, prog):
 
     def emit_step(p, body):
         """Emit ONE planned step. Shared by the spine and by the cold `when`
-        road blocks, because a road holds whatever the spine holds. The road
+        nested scopes, because a scope holds whatever the spine holds. A body
         emitter used to know six of these kinds; the first store or `ensure`
-        spliced into a road fell through to `render_call` with no primitive
-        and crashed. The noreturn/tower case simply never fires in a road."""
+        spliced into one fell through to `render_call` with no primitive and
+        crashed. The noreturn/tower case simply never fires there."""
         if p.get("assign"):                      # `X is EXPR` -- recompute
             body.append(f"    {p['assign']} = {p['expr_c']};")
             return
@@ -8343,17 +7929,6 @@ def transpile(sources, prog):
             for tgt, rhs in p["assigns"]:
                 body.append(f"    {tgt} = {rhs};")
             return
-        if p.get("branch_dispatch") is not None:  # peel cold `when` roads off
-            # `likely` is a statement: every `when` edge is expect-cold, so the
-            # compiler neither lays a road hot NOR speculates its selection
-            # onto the spine (assign-only roads are cheap enough to tempt it)
-            for g in p["branch_dispatch"]:
-                body.append(f"    if (__builtin_expect({g['pred']}, 0)) "
-                            f"goto {g['label']};")
-            return
-        if p.get("branch_merge"):                 # roads rejoin the spine here
-            body.append(f"{p['branch_merge']}:")
-            return
         if p.get("pname") is None and p.get("stage") is not None:
             for pred in p["clauses"]:            # `ensure` guard: check, no call
                 body.append(f"    if (__builtin_expect(!({pred}), 0)) "
@@ -8392,9 +7967,7 @@ def transpile(sources, prog):
     # `repeat program` lands here: past the entry views and the signal
     # dispositions, at the first step. Emitted only when something jumps to it,
     # so a program that does not repeat is unchanged.
-    if any(p.get("loop_exit") == PROGRAM_AGAIN
-           for p in plan_steps + [ps for cold in branch_colds for road in cold
-                                  for ps in road["plan"]]):
+    if any(p.get("loop_exit") == PROGRAM_AGAIN for p in plan_steps):
         body.append("")
         body.append(f"{PROGRAM_AGAIN}:;")
 
@@ -8406,68 +7979,9 @@ def transpile(sources, prog):
         body.append("")
         emit_step(p, body)
 
-    # cold `when` roads FIRST among the cold blocks: they are normal control
+    # cold blocks are normal control
     # flow, only less likely, so they sit closest to the hot path -- ahead of
     # every error-handling block (retries, records, recovery), which trail as
-    # the last thing in the layout. Each road runs its steps and jumps back to
-    # the merge; the `likely` default road already sits inline on the spine.
-    for cold in branch_colds:
-        for road in cold:
-            body.append("")
-            if road.get("nested"):        # read by mereocheck: this crossroad's
-                body.append(              # dispatch is itself in the cold tail
-                    f"    /* nested: {road['label']} */")
-            body.append(f"{road['label']}:")
-            for ps in road["plan"]:
-                if ps.get("adopt") and not ps["assigns"]:
-                    continue                     # empty view -> top-declared
-                if "loop_top" in ps and not ps["loop_top"]:
-                    continue                     # a scope nothing repeats to
-                emit_step(ps, body)
-            # An ASSIGN-ONLY road is pure movs -- cheap enough that the
-            # optimizer would speculate it onto the spine or if-convert it
-            # into cmovs, putting a cold road's work on the hot path. The
-            # pinned asm (zero instructions) anchors the values in the block:
-            # the road stays a road, entered only by its guard.
-            #
-            # Only assign-only, and the wording was always the intent -- the
-            # test was not. A road holding a spliced template holds calls,
-            # stores and loops, which nothing if-converts, so the pin buys
-            # nothing there; and its operand list grew with every local the
-            # splice brought until GCC refused it ("more than 30 operands in
-            # asm"). Each name is pinned once for the same reason.
-            #
-            # A NESTED CROSSROAD is neutral here: its dispatch and merge are
-            # control flow, not work, so a road that only selects -- even when
-            # the selecting is done by a spliced crossroad -- is still pure movs
-            # and still needs the pin. Reading those two markers as "not an
-            # assign" is what let GCC hoist a cold road's constant stores into
-            # the middle of the spine, which the build gate then caught.
-            def _selects(ps):
-                """A plan step that is pure SELECTION or a pure marker: a move,
-                or something that emits no instruction at all. A splice brings
-                its own scope markers (`loop_top` with nothing jumping to it,
-                an empty `scope_release`) and a nested crossroad brings a
-                dispatch and a merge -- all control flow, none of it work."""
-                if ps.get("assign"):
-                    return True
-                if ps.get("adopt") and not ps["assigns"]:
-                    return True
-                if ps.get("branch_dispatch") or ps.get("branch_merge"):
-                    return True
-                if "loop_top" in ps and not ps["loop_top"]:
-                    return True
-                if "scope_release" in ps and not ps["scope_release"]:
-                    return True
-                return False
-            leafy = all(_selects(ps) for ps in road["plan"])
-            pins = list(dict.fromkeys(ps["assign"] for ps in road["plan"]
-                                      if ps.get("assign"))) if leafy else []
-            if pins:
-                ops = ", ".join(f'"+r"({p2})' for p2 in pins)
-                body.append(f'    __asm__("# {road["label"]}" : {ops});')
-            body.append(f"    goto {road['back']};")
-
     # alternative attempts: cold retries of their step with new `in`
     # bindings; each jumps back to the step's resume label on success and
     # chains to the next attempt (finally the error/recover block) on
@@ -8528,7 +8042,7 @@ def transpile(sources, prog):
         # DWARF labels and the `exit` landmark, and neither moves when two tails
         # fuse -- a fused block is still in the cold region, which is the whole
         # of the claim. Removing it was checked against everything that could
-        # have depended on it: 18 crossroads still verify, `mereodis` prints the
+        # have depended on it: everything still verifies, `mereodis` prints the
         # same reconstruction, and all 83 binaries give byte-identical fault
         # records under `mereoraii` -- the record text carries the stage number,
         # so it is the strings that keep the blocks distinct where it matters,
