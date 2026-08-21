@@ -328,7 +328,7 @@ text is
   -- byte BEFORE checking the range and then fixing the index up afterwards.
   --
   -- The leading `-` is an EXCEPTION, so it is a crossroad rather than arithmetic:
-  -- unsigned input runs straight through `sign likely`, and the minus case steps
+  -- unsigned input runs straight past `minus`, and the minus case steps
   -- over the byte in a cold road that rejoins at the digit loop. The road lands
   -- past the exit in the caller's cold region -- this is a template, so it is
   -- spliced into whatever program uses it.
@@ -344,8 +344,10 @@ text is
       i is i + 1
       repeat space
     end
-    sign likely goes
-      neg is 0
+    minus goes
+      leave minus when b != 45
+      neg is 1
+      i is i + 1
     end
     digit goes
       leave digit when i >= length
@@ -359,10 +361,6 @@ text is
     end
     value is v
     value is 0 - v when neg == 1
-    sign when b == 45 goes
-      neg is 1
-      i is i + 1
-    end
   end
 end
 
