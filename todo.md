@@ -519,40 +519,41 @@ descriptor, a position or zero, and have no argument to be bounded by.
    merely unproven is reported as unproven, never as a mistake.
 
    **The does-it-fit family.** Three places ask the same question -- does this
-   thing fit in that backing -- from two sizes both known at compile time.
-   mereo answers one of them:
+   thing fit in that backing -- from two sizes both known when the program is
+   read. mereo now answers two:
 
    | | today |
    | --- | --- |
-   | `small as wide`, a view over a backing too small | **refused**: "backing 'small' is 16 bytes, too small to view 4096-byte 'wide' at offset 0" |
-   | `read (buffer is small, capacity is 4096)` | accepted -- asks the kernel to write 4096 bytes into a 16-byte stack frame |
+   | `small as wide`, a view over a backing too small | **refused** from the start |
+   | `read (buffer is small, capacity is 4096)` | **refused** -- `ensure capacity <= buffer.size` |
    | `already span (data is line, length is 999)` over a 5-byte `line` | accepted -- every later `[v.data + i]` inherits the lie |
 
-   Zero sites in the corpus violate either of the open two, so refusing them
-   breaks nothing, and the span one unblocks 7 of the 44 below: the analysis
-   cannot assume `length <= data.size` while nothing enforces it.
+   The syscall half is DONE. Five primitives carry the clause -- `read`,
+   `write`, `getrandom`, `getdents64`, `readlinkat` -- a string literal is sized
+   by its own bytes, the corpus is byte-identical with the clauses added (89
+   binaries, not one instruction), and `tests/progs/syscall_fit.mereo` is the
+   planted violation.
 
-   Both want one and the same thing, which is why they are filed together:
-   **`ensure` must take `PORT.size` on its right.** The grammar allows
-   `ensure PORT CMP VALUE` and a `.size` member is not a VALUE. With it, the
-   syscall case is a clause on the primitive:
+   `ensure` takes `PORT.size` on its right now, and the direction is DERIVED
+   rather than declared: a clause on the OUT port is a promise about the result,
+   checked at run time; one on an IN port is a requirement on the call, decided
+   when the program is read. Nothing downstream could have caught it -- a
+   syscall is inline assembly whose "memory" clobber says SOMETHING changed, not
+   this buffer and that many bytes, so GCC is silent even at `-fanalyzer`.
 
-       read is assembly "syscall"
-         ...
-         ensure capacity <= buffer.size
-
-   and the span case is the same clause on the resource, checked where it is
-   adopted rather than where it is declared:
+   **The span half is still open**, and it unblocks 7 of the 44 below: the
+   analysis cannot assume `length <= data.size` while nothing enforces it. It
+   wants the same clause on a RESOURCE, checked where the resource is adopted
+   rather than where it is declared:
 
        span is
          data is 8 bytes
          length is 8 bytes
          ensure length <= data.size
 
-   That second form is new -- a resource stating an invariant over its own
-   fields, checked at adoption when both sides are literals. It is the same
-   keyword doing the same job one level out, which is the cheaper move than
-   inventing a spelling for it. Note `size of X` does NOT exist; the member is
+   That form is new -- a resource stating an invariant over its own fields --
+   but it is the same keyword doing the same job one level out, which beats
+   inventing a spelling. Note `size of X` does NOT exist; the member is
    `X.size`.
 
 2. **The loop analysis**, in the `leave`-at-top shape first, then do-while with

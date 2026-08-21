@@ -1799,7 +1799,7 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     # an unsigned field compiles `>= 0` into a comparison that is
                     # always true, and a failed call goes unnoticed.
                     m = re.match(r"^ensure (\w+)(?: as (signed|unsigned))? "
-                                 r"(<=|>=|==|!=|<|>) (-?\w+)$", s)
+                                 r"(<=|>=|==|!=|<|>) (-?\w+(?:\.size)?)$", s)
                     if m:
                         # The syscall's OWN contract -- what "it worked" means
                         # for this call, declared where the call is declared. A
@@ -4836,6 +4836,8 @@ def call_parts(meth, valmap):
         # never gets one: a failed release cannot reroute.
         ens = []
         for port, cmp_, val, ln, reading in prim["contract"]:
+            if port != prim["out"]:
+                continue          # a precondition: `check_call_fit` has it
             if port not in meth["bind"]:
                 continue
             # the right-hand side may name another PORT (`count <= capacity`),
@@ -5467,6 +5469,99 @@ def check_port_needs(definitions, slots, steps):
     walk(steps)
 
 
+def check_call_fit(definitions, slots, steps):
+    """Refuse a call that hands a primitive more room than the buffer has.
+
+    `read (buffer is block, capacity is 4096)` where `block is 16 bytes` asks
+    the kernel to write 4096 bytes into a 16-byte frame. Nothing in the emitted
+    C can catch it -- a syscall is inline assembly with a "memory" clobber, and
+    a clobber says SOMETHING changed, not this buffer and that many bytes. But
+    both numbers are right there where the call is written.
+
+    The requirement is declared as an ordinary contract clause on the primitive,
+    `ensure capacity <= buffer.size`, and the direction is DERIVED rather than
+    stated: a clause on the OUT port is a promise about the result and is
+    checked at run time; a clause on an IN port is a requirement on the call and
+    is checked here. Same keyword, same grammar, no run-time cost.
+
+    Only decided where both sides are known. A capacity computed at run time is
+    left alone rather than guessed at -- the bound the analysis could not prove
+    is not the same as a bound it proved false."""
+    sizes = {}
+    scal = {s["name"]: s.get("init") for s in slots if s["kind"] == "scalar"}
+    for sl in slots:
+        if sl["kind"] != "buffer":
+            continue
+        v, seen = sl["size"], set()
+        while True:
+            iv = _int_value(v)
+            if iv is not None:
+                sizes[sl["name"]] = iv
+                break
+            if not isinstance(v, str) or v in seen or v not in scal:
+                break
+            seen.add(v)
+            v = scal[v]
+
+    for st in steps:
+        if st.get("type") == "bare":
+            prim, bind = PRIMITIVES.get(st.get("op")), None
+            conns = {p: (a, ln) for p, a, ln in st.get("conns", [])}
+        elif st.get("type") == "call":
+            inst = next((x for x in slots if x["kind"] == "instance"
+                         and x["name"] == st.get("inst")), None)
+            d = definitions.get(inst["definition"]) if inst else None
+            meth = ((d or {}).get("methods") or {}).get(st.get("method"))
+            if not meth:
+                continue
+            prim, bind = PRIMITIVES.get(meth.get("prim")), meth.get("bind") or {}
+            conns = {p: (a, ln) for p, a, ln in st.get("conns", [])}
+        else:
+            continue
+        if not prim or not prim.get("contract"):
+            continue
+
+        def wired(port):
+            """the primitive's port -> what the call site wrote for it"""
+            if bind is not None:
+                b = bind.get(port)
+                port = b[0] if isinstance(b, (list, tuple)) else (b or port)
+            got = conns.get(port)
+            return got[0] if got else None
+
+        for port, cmp_, val, ln, _reading in prim["contract"]:
+            if port == prim["out"]:
+                continue                      # a promise, not a requirement
+            left = _int_value(wired(port) or "")
+            if left is None:
+                nm = wired(port)
+                left = _int_value(scal.get(nm, "")) if nm in scal else None
+            if val.endswith(".size"):
+                backing = wired(val[:-5])
+                if is_str(backing or ""):
+                    # a literal's own bytes, plus the NUL the emitter appends --
+                    # so writing the terminator too is not called a mistake
+                    right = len(_decode_str_bytes(backing, ln)) + 1
+                    shown = backing
+                else:
+                    right = sizes.get(backing)
+                    shown = f"{backing}"
+            else:
+                right = _int_value(wired(val) or val)
+                shown = val
+            if left is None or right is None:
+                continue                      # not decidable here; say nothing
+            ok = {"<=": left <= right, "<": left < right, ">=": left >= right,
+                  ">": left > right, "==": left == right, "!=": left != right}[cmp_]
+            if not ok:
+                where = st.get("line")
+                name = st.get("method") or st.get("op")
+                fail(f"line {where}: `{name}` is given {port} {left}, but "
+                     f"'{shown}' is {right} bytes. A syscall writes what it is "
+                     f"told to write; the kernel cannot see where the buffer "
+                     f"ends. Both numbers are known here.")
+
+
 def hoist_guard_bounds(steps, slots):
     """Read a guard's BOUND once, before the loop, instead of every iteration.
 
@@ -5587,6 +5682,7 @@ def plan(definitions, slots, steps, overrides):
     derive_port_needs(definitions)
     check_port_needs(definitions, slots, steps)
     steps = expand_procedures(definitions, slots, steps, PRIMITIVES)
+    check_call_fit(definitions, slots, steps)
     steps = hoist_guard_bounds(steps, slots)
     scalars, buffers, instances = check_slots(definitions, slots)
 

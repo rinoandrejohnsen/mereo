@@ -1,0 +1,27 @@
+include "../../linux.mereo"
+
+-- REJECTED on purpose: a syscall handed more room than the buffer has.
+--
+-- `read` is told to put up to 4096 bytes somewhere, and `small` is 16 of them.
+-- The kernel writes what it is told to write; it has never seen the buffer and
+-- cannot find where it ends. So this smashes the frame with whatever arrives on
+-- the descriptor -- a stack overflow driven by input, from two literals sitting
+-- one line apart.
+--
+-- Nothing downstream can catch it. A syscall is inline assembly with a "memory"
+-- clobber, and a clobber says SOMETHING changed, not this buffer and that many
+-- bytes -- so GCC stays silent at every warning level, including `-fanalyzer`.
+--
+-- The requirement is an ordinary contract clause on the primitive itself,
+-- `ensure capacity <= buffer.size`, and which side it constrains is DERIVED:
+-- a clause on the OUT port is a promise about the result and is checked at run
+-- time, while one on an IN port is a requirement on the call and is decided
+-- here. Same keyword, no run-time cost -- the corpus is byte-identical with the
+-- clauses added.
+
+program goes
+  small is 16 bytes
+  n is 0
+  input is already linux.file (descriptor is 0)
+  input.read (buffer is small, capacity is 4096, count is n)
+end

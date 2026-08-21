@@ -64,11 +64,29 @@ requirement as a `concept`, Zig — and compiles all three.
 | a fallible call whose failure is ignored | refused | warned | refused |
 | a resource named after the scope that released it | refused | refused | refused |
 | a write to a read-only buffer | refused | refused | refused |
+| a syscall handed more room than the buffer has | refused | accepted | accepted |
 
 The pattern: mereo decides what is decidable from the text and declines to guess
 at the rest. A view's fit is two declared sizes compared: `backing 'small' is
 16 bytes, too small to view 4096-byte 'wide' at offset 0`. None of it needs a
 prover.
+
+The last row is the one nothing downstream can catch. `read (buffer is small,
+capacity is 4096)` with `small is 16 bytes` asks the kernel to write 4096 bytes
+into a 16-byte frame; the kernel has never seen the buffer and cannot find where
+it ends, and in the emitted C a syscall is inline assembly whose `"memory"`
+clobber says *something changed*, not *this buffer, that many bytes* — so GCC is
+silent at every warning level including `-fanalyzer`. Both numbers sit one line
+apart in the source.
+
+It is declared as an ordinary contract clause on the primitive, `ensure capacity
+<= buffer.size`, and which side it constrains is **derived**: a clause on the
+OUT port is a promise about the result and is checked at run time, while one on
+an IN port is a requirement on the call and is decided when the program is read.
+Same keyword, same grammar, and the corpus is byte-identical with the clauses
+added — 89 binaries, not one instruction. It covers `read`, `write`,
+`getrandom`, `getdents64` and `readlinkat`, and sizes a string literal by its
+own bytes.
 
 ## What is not checked
 
@@ -78,12 +96,11 @@ prover.
 | integer overflow | a scalar is a C `long` and the build passes no `-fwrapv` |
 | division by zero | accepted, even for a literal zero divisor |
 | uninitialised reads | a layout is zero-filled; `raw is 8 bytes` is not |
-| a syscall capacity larger than its buffer | accepted |
 | a span's `length` larger than its backing | accepted |
 
 Each gap is open because its run-time fix spends what the barrier protects. The
 **compile-time** half of each is admissible, and unbuilt rather than declined —
-the last three are decidable from two literals. `-fwrapv` is admissible on
+the last is decidable from two literals. `-fwrapv` is admissible on
 measurement: 377248 bytes against 379168 across 89 binaries, 75.4 ms against
 77.4 ms over 800M byte-loads, identically vectorised.
 

@@ -415,6 +415,10 @@ rejects port/needs-slot   port_needs_slot   "so it needs a SCALAR SLOT"
 
 rejects access/past-end   access_past_end   "reads 101 bytes into"
 rejects access/store-past-end store_past_end "writes 101 bytes into"
+# A syscall cannot be caught downstream: the kernel never sees where the buffer
+# ends, and inline asm with a "memory" clobber tells GCC nothing about which
+# bytes moved. Both numbers are one line apart in the source.
+rejects access/syscall-fit syscall_fit "is given capacity 4096, but 'small' is 16 bytes"
 
 rejects scope/use-after   use_after_scope   "was released when the scope that acquired"
 # ...and the same mistake spelled as a VALUE rather than a receiver. Two checks,
