@@ -989,3 +989,74 @@ SHAPED like this. Two things would change that: emitting real function calls
 instead of splicing every template, which is exactly where `restrict` earns its
 keep; and typed numeric work, where Fortran and Rust beat C for this reason.
 Neither is where mereo is today.
+
+## Could we tell LLVM more than GCC?
+
+Measured 2026-08-21 against clang 22.1.8 and gcc 16.2.1. **No** -- the same three
+facts behave the same way under both. But asking turned up something else.
+
+### The channel is not wider
+
+| fact | gcc | clang |
+| --- | --- | --- |
+| a bound the analysis PROVED, stated | byte-identical | byte-identical |
+| `restrict` on the seven copy loops | byte-identical | byte-identical |
+| the kernel's promise, stated not tested | 2.2% | 0.9% |
+
+The proved-bound result is the one that matters: `__builtin_assume(used +
+copy_2_i < 4194304)` in front of a proved store gives clang the same
+byte-identical binary that `__builtin_unreachable` gives gcc. So the finding
+recorded above -- that a fact already in the program's text buys nothing --
+is about optimisers in general, not about GCC.
+
+The kernel promise still pays under both, and pays LESS under clang, because
+clang's baseline is quicker and the branch matters less.
+
+### The optimiser is better, and it is not ours to claim
+
+| | vs its own C twin | vs the same source under gcc |
+| --- | ---: | ---: |
+| mereo + gcc | 1.007 | -- |
+| mereo + clang | 1.006 | 0.945 |
+| the C twin + clang | -- | **0.935** |
+
+Clang is about 6% quicker on the exam, and it is quicker on the HAND-WRITTEN C by
+the same margin. So it is clang beating gcc, not mereo gaining: the bar does not
+move, both sides of it do. The speedup is also not the vectoriser -- it survives
+`-fno-vectorize -fno-slp-vectorize` intact (0.948), so it is instruction
+selection and scheduling.
+
+**One concrete consequence: LLVM does not need the bound hoist.** 37 vector
+instructions with the hoist and 37 without, where gcc needs it to get 41 rather
+than 4. `hoist_guard_bounds` is a GCC workaround, which is worth knowing given
+the entry above already argues it earns its keep in exactly one program.
+
+### What it would cost
+
+Size, which is a stated claim of this project rather than an incidental.
+
+| `exam/mereo/loglyze` | bytes | vs gcc |
+| --- | ---: | ---: |
+| gcc -O2 -fwhole-program | 5920 | -- |
+| clang -O2 -Os | 9792 | +65%, and the speed advantage is gone |
+| clang -O2, no vectorise, -flto | 12256 | +107%, 0.939 |
+| clang -O2 | 15040 | +154%, 0.946 |
+
+On the small examples the gap is only +15% in total, so it scales with the
+program. All 90 corpus programs build under clang unmodified; the only
+complaint is `externally_visible`, which clang ignores with a warning.
+
+### The decision, not taken
+
+Roughly **6% of run time for double the binary** on the largest program. Both
+numbers are real and they point opposite ways, so this is a judgement rather
+than a finding. Three things worth weighing:
+
+* the 6% is not a parity gain. mereo is at parity under either compiler, and
+  switching moves both sides equally.
+* supporting BOTH is the expensive option, not the safe one: `tests/versus`
+  compares instruction histograms, and two backends means two sets of expected
+  output, or a gate that only ever runs against one.
+* if clang were ever the default, `hoist_guard_bounds` should go with it -- it
+  buys nothing there, and a pass that exists for the other compiler is exactly
+  the kind of thing that rots.
