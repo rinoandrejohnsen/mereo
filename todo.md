@@ -1060,3 +1060,31 @@ than a finding. Three things worth weighing:
 * if clang were ever the default, `hoist_guard_bounds` should go with it -- it
   buys nothing there, and a pass that exists for the other compiler is exactly
   the kind of thing that rots.
+
+### The other levers, pulled
+
+Asked afterwards whether LLVM had levers C source cannot reach. Two more were
+tested and neither moved anything.
+
+**Buffer alignment.** mereo declares `char rbuf[65536]` and has never set an
+alignment, so every buffer is 1-byte aligned as far as either compiler knows,
+and the SWAR scan's 8-byte loads are all presumed unaligned. This is not even a
+matter of telling: mereo writes the declaration and could align it. Doing so at
+16, 32 and 64 gives the same 5920 bytes and, over 41 runs, a ratio of 1.000 and
+a min ratio of 1.000. x86-64 unaligned loads have been free since Nehalem.
+
+**Loop form.** LLVM's own remarks over the corpus are led by "could not
+determine number of loop iterations" (349) and "Cannot vectorize uncountable
+loop" (341), which reads like an indictment of emitting loops as `goto` with a
+conditional `leave`. It is not. The same body written as a counted `for` and as
+mereo's goto form vectorises identically under gcc (38 against 38) and not at
+all under clang (0 against 0). The uncountable loops are uncountable because
+they exit on a data condition -- `leave narrow when [rbuf + j : 1] == 10` --
+which no loop syntax in any language makes countable.
+
+**So the tally across both compilers.** Facts that pay: the kernel's contract,
+and nothing else. Facts that pay nothing: every bound the analysis proves,
+`restrict`, alignment. Form that pays: the widened scan, the bound hoist (gcc
+only), the copy-base hoist. The pattern has held through every measurement --
+what buys anything is either a fact from outside the translation unit, or a
+shape that suits a particular optimiser's weakness.
