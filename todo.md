@@ -1182,3 +1182,47 @@ which is exactly why the two languages produce the same binary from it.
 Worth keeping for a different reason than speed: that the output is valid C++
 unchanged means `tests/scopes` can go on comparing against C++ twins, and any
 future interop is free. That is a property to preserve, not a lever to pull.
+
+## Widen `_scan` from 8 bytes to 32 -- worth 6 to 10% on the exam
+
+Found 2026-08-22 by writing the exam a third time, in C++. See `docs/exam.md`.
+
+The C++ is 10% faster than both the C twin and mereo. None of that is C++.
+Taking the C twin and changing ONE function -- `find_byte` becomes `memchr` --
+gets the same 10%, and lands within noise of the C++:
+
+| against mereo, 21 runs | median | min |
+| --- | ---: | ---: |
+| the C twin as written, word-at-a-time | 0.998 | 1.001 |
+| the same C, `memchr` and nothing else | 0.903 | 0.912 |
+| the C++ | 0.905 | 0.904 |
+| the C twin with a hand-written AVX2 scan, freestanding | 0.940 | 0.939 |
+
+So the gap is scan width, not language and not libc. mereo's `_scan` is the SWAR
+implementation -- eight bytes a step, XOR against a broadcast byte and the
+has-a-zero-byte test. glibc's `memchr` does 32, tuned. The last row is the one
+that matters: a naive AVX2 loop, compiled freestanding with no library at all,
+recovers 6 of the 10 points. mereo generates its own scan, so it can have this.
+
+### What has to be decided first
+
+**Baseline.** mereo targets x86-64 with no `-march`, and AVX2 is not in the
+baseline. Three ways out, in increasing order of what they cost:
+
+* a build flag, and the corpus stops running on pre-Haswell hardware;
+* CPUID at startup and a function pointer, which is what glibc does with IFUNC
+  -- but mereo splices everything into one function and has no calls, so a
+  pointer here would be the first indirect call in any mereo binary;
+* CPUID once into a flag and branch on it in `_scan`, which keeps the code
+  direct at the cost of one well-predicted branch per call.
+
+**Size.** The whole reason the shipped flags are `-O2` and not `-O3` is that
+vectorising everything made it slower and bigger. This is the opposite case --
+one specific loop, vectorised deliberately -- but the AVX2 twin above is 13784
+bytes against the C's 4592, and where that lands for mereo needs measuring
+rather than assuming.
+
+**Whether it is the language's business.** `_scan` is a compiler-generated
+primitive, so this is a mereoc change and not a mereo one, which is the right
+side of the line. But it is the first target-specific code generation in the
+project, and that is a door rather than a step.

@@ -79,6 +79,51 @@ That costs a multiply per probe and buys stating each run's size exactly.
 
 It got the same two optimisations as the C, and one the C did not need.
 
+## The C++
+
+Added afterwards, to ask a different question: the two programs above are both
+hand-rolled to the byte, so what happens if a language is allowed to bring its
+library? `exam/cpp/loglyze.cpp` is the same program written to play to C++'s
+strengths — **hosted**, so it can link one, and reaching for the standard
+library wherever the library is plausibly better than a loop:
+
+| | |
+| --- | --- |
+| `memchr` | glibc dispatches to an AVX2 implementation: 32 bytes a step against the SWAR twin's 8 |
+| `from_chars` / `to_chars` | the fastest integer parse and format in the standard, and the first validates |
+| `string_view` | the whole parse is subranges of one buffer, at no run-time cost |
+| `partial_sort` | ten winners out of 8192 in one pass, against the C twin's ten linear passes |
+
+It does not allocate. `unordered_map` would be the idiomatic choice for the path
+table and is the wrong one here, because the spec fixes the storage — so the
+table is open-addressed by hand, exactly as in the C. That is itself a finding
+about where the library stops helping.
+
+It agrees with both other programs byte for byte, on the million-line log and on
+all 800 adversarial seeds. **And it is 10% faster than either.**
+
+### Where the 10% actually comes from
+
+Not from C++. Taking the C twin and changing **one function** — `find_byte`
+becomes a call to `memchr`, and nothing else is touched:
+
+| against mereo, 21 runs | median | min |
+| --- | ---: | ---: |
+| the C twin as written, word-at-a-time | 0.998 | 1.001 |
+| the same C, `memchr` and nothing else | 0.903 | 0.912 |
+| the C++ | 0.905 | 0.904 |
+
+The C with `memchr` and the C++ are the same speed. Every abstraction in the C++
+— the views, the charconv, the partial sort, the constexpr table — is worth
+nothing measurable, which is the same result the rest of this project keeps
+getting. What is worth 10% is that glibc scans 32 bytes at a time and both other
+programs scan 8.
+
+The scan is reachable without a libc, too. A hand-written AVX2 loop compiled
+freestanding into the C twin gets **0.940** — 6% of the 10%, with glibc's tuned
+version keeping the rest. So this is not a hosted-versus-freestanding gap and
+not a language gap. It is a scan-width gap, and mereo generates its own scan.
+
 ## The numbers
 
 80.5 MB, one million lines, interleaved A/B over 21 runs each so drift hits
