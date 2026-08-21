@@ -5963,6 +5963,8 @@ def classify_accesses(definitions, slots, steps):
         if k is not None: return (k, k)
         sz = size_name(e)
         if sz is not None: return (sz, sz)
+        if e in inv_fact:
+            return (0, inv_fact[e])
         af = adopted_field(e)
         if af is not None and (af, at) not in seen:
             return iv(af, at, seen + ((af, at),))
@@ -6190,6 +6192,53 @@ def classify_accesses(definitions, slots, steps):
         if e.strip() in live:
             return True
         return any(n in live for n in re.findall(r"[A-Za-z_][\w.]*", e))
+
+    # ---------- an adopted invariant, used as a FACT where it survives
+    # `ensure length <= data.size` is checked at adoption. Believing it
+    # afterwards needs two things: `data` must still point where it was adopted
+    # -- `skip` moves it, and then `.size` no longer names the room that is left
+    # -- and every store to the field must be provably within the bound. Where
+    # either fails the instance keeps no fact at all; an assumption that is only
+    # usually true is worse than none.
+    inv_fact = {}
+    for sl in slots:
+        if sl["kind"] != "instance":
+            continue
+        d = definitions.get(sl.get("definition")) or {}
+        lay = d.get("playout") or {}
+        given = dict(sl.get("init") or {})
+        given.update(sl.get("pending") or {})
+        for field, cmp_, val, _ln in (d.get("invariants") or []):
+            if cmp_ not in ("<=", "<") or not val.endswith(".size"):
+                continue
+            other = val[:-5]
+            back = given.get(other)
+            if isinstance(back, (list, tuple)):
+                back = back[0]
+            bn, size = base_of(str(back or ""))
+            if size is None:
+                continue
+            cap = size - (1 if cmp_ == "<" else 0)
+            off_f = (lay.get(field) or (None,))[0]
+            off_o = (lay.get(other) or (None,))[0]
+            ok = True
+            for j, st in enumerate(steps):
+                if st.get("type") not in ("store", "fstore", "atomic"):
+                    continue
+                addr = str(st.get("addr", ""))
+                head, _p, rest = addr.partition("+")
+                if head.strip() != sl["name"]:
+                    continue
+                where = _acc_const(rest) if rest.strip() else 0
+                if where == off_o:            # the pointer itself moved
+                    ok = False; break
+                if where != off_f:
+                    continue
+                hi = iv(str(st.get("value", "")), j)[1]
+                if hi is None or hi > cap:
+                    ok = False; break
+            if ok:
+                inv_fact[f"{sl['name']}.{field}"] = cap
 
     out = []
     for i, st in enumerate(steps):

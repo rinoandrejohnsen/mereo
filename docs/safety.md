@@ -130,11 +130,9 @@ measurement, not part of the compiler.
 
 | | | |
 | --- | ---: | --- |
-| **proved** | **3314** | **98.7%** |
-| bound-unresolved | 39 | 1.2% |
+| **proved** | **3313** | **98.8%** |
+| bound-unresolved | 37 | 1.1% |
 | data-dependent | 4 | 0.1% |
-| opaque-base | 1 | 0.0% |
-| out of range | 1 | 0.0% |
 
 The one out-of-range access is `access_past_end.mereo`, which mereoc already
 refuses. Six violations planted outside the corpus — a loop wider than its

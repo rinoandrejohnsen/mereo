@@ -693,11 +693,27 @@ TLS parser, all indices parsed off the wire; 20 in the third; the rest small.
    `backing_of`, where `resolve_base` correctly gives up because bounds need a
    number and taint does not.
 
-6. **The span invariant as a FACT** (item 2, second half). This is what unblocks
-   the 7. It cannot come earlier: assuming `length <= data.size` is only sound
-   once every store to a length field is proved to preserve it, and proving that
-   needs the analysis in place. `span.take` narrows through a conditional
-   minimum, so it should go through; anything that does not, reports unproved.
+6. **The span invariant as a FACT** (item 2, second half). **DONE, and it buys
+   2 accesses rather than the 7 predicted.** The mechanism is right and the
+   payoff is small, for two reasons both worth keeping:
+
+   * **`skip` moves the pointer.** `data is data + n` means `.size` no longer
+     names the room that is left, so the invariant stops being about the same
+     thing. An instance whose `data` is ever written keeps NO fact -- which is
+     correct, not conservative.
+   * **`take` narrows through a conditional store** the analysis cannot see. The
+     value is `min(count, length)`, spelled as a `when` clause, and the `copy`
+     map only records an assign's `expr` -- a conditional assign has `clauses`
+     and is invisible. Proving `min(a, b) <= b` needs the same case split the
+     branchless idiom already gets for multiplication.
+
+   That second one is the next thing to do if this is worth more: **teach `iv`
+   about conditional assigns**, evaluating each clause under its own condition
+   and joining. It would also make `when` stores generally analysable, which is
+   wider than spans.
+
+   Corpus now: **3313 of 3354 proved (98.8%), 41 unproved** -- 32 wanting a
+   run-time guard, 4 guarded-but-untied, 5 internal-unresolved.
 
 #### Decided
 
