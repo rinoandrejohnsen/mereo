@@ -149,16 +149,48 @@ the two meanings share a spelling, and the collision is silent: it compiles, and
 it segfaults. `tests/progs/method_syscall.mereo` sidesteps it with `16 bytes`
 and says why in a comment, which is a workaround and not a fix.
 
-**The obvious shape of a fix is syntax that already exists.** `in register` and
-`in stack` are how a program body already says which side of this line it wants;
-letting a state field take the same words would make the intent explicit where
-it is currently inferred from a width. `slot is 8 bytes in stack` is storage,
-`slot is 8 bytes in register` is a word, and a bare `N bytes` keeps today's
-meaning so nothing in the corpus moves. Worth deciding before it bites someone.
+**A better fix than syntax: stop choosing.** The `in register` / `in stack`
+route below would make the intent explicit, but it asks the programmer to encode
+a decision the compiler already makes better. Emit a state field as STORAGE
+always -- `char slot[8]` -- and let GCC's scalar replacement of aggregates put
+it back in a register wherever it is only ever read and written as a whole
+value. That is decided by USE, which is the right basis, and it is the same
+decision C++ gets for free when a `string_view` never touches memory.
 
-The cheap half, if the design half waits: refuse `[FIELD + ...]` when FIELD is a
-register-width state field, naming the width rule. That turns a segfault into a
-message without settling the surface question.
+Measured 2026-08-22, by rewriting every register-width state field in the corpus
+to storage by hand and rebuilding:
+
+| | |
+| --- | --- |
+| state fields rewritten | 84, across 24 programs |
+| byte-identical binaries | **22 of 24** |
+| the two that moved | `jsontest` +64 B, `showcase` +16 B |
+| corpus total | 116648 -> 116728 bytes, **+80, or +0.07%** |
+| the exam, 84 MB | identical output, ratio 0.991 median / 0.995 min |
+
+And the boundary behaves. A field whose address is passed to a syscall keeps 4
+stack references, because there it genuinely IS storage; one used purely as a
+64-bit value keeps 0 and never leaves a register. GCC decides from use, exactly
+as wanted, and clang agrees.
+
+So the fix is 80 bytes across the whole corpus, and it buys: one meaning for `N
+bytes` instead of two, the miscompile gone rather than diagnosed, no new surface
+syntax, and `tests/progs/method_syscall.mereo` drops the `16 bytes` workaround
+and its explaining comment.
+
+What still needs checking before doing it: `as signed` / `as unsigned` on a
+state field, which today reinterprets a REGISTER and would have to reinterpret a
+load instead; and whether any field is read as a whole word in one method and
+indexed in another, which the rewrite makes legal where it is currently a
+segfault -- probably a feature, but it should be a decision rather than a
+side effect.
+
+**The syntax route, kept for the record.** `in register` and `in stack` are how
+a program body already says which side of this line it wants; letting a state
+field take the same words would make the intent explicit where it is currently
+inferred from a width. Cheaper still, if both design halves wait: refuse
+`[FIELD + ...]` when FIELD is a register-width state field, naming the width
+rule, which turns a segfault into a message without settling anything.
 
 ## An array view -- a span that counts elements?
 
