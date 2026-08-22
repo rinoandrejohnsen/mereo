@@ -1,0 +1,25 @@
+include "../../linux.mereo"
+
+-- `NAME is VALUE` opens a name if nothing has and assigns it if something has,
+-- so a scope reaching for a fresh temp silently takes one a sibling used -- and
+-- reads what the sibling left. Here `two` means its own `v` and gets `one`'s 7,
+-- so the program printed 14 rather than 107, in silence.
+--
+-- C++ gives each block its own `v` and warns that the second is used
+-- uninitialised. mereo cannot say that, because the read is not uninitialised:
+-- every scalar has a value, it is simply the previous scope's. What it can see
+-- is the shape -- this scope WRITES the name later, so it meant one of its own.
+
+program goes
+  w is 8 bytes
+  t is 0
+  one goes
+    v is 7
+    t is t + v
+  end
+  two goes
+    t is t + v
+    v is 100
+  end
+  [w + 0 : 8] is t
+end

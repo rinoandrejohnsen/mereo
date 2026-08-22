@@ -1646,7 +1646,40 @@ only happen between two scopes of the SAME body -- which is a much smaller
 surface than "anywhere in the program", and makes a check correspondingly more
 affordable.
 
-### The check worth considering, and what to measure first
+### DONE 2026-08-22: the sibling-temp read is refused
+
+A scope that READS a scalar a sibling opened, and WRITES it later, is refused --
+the write later is what says the scope meant a temp of its own, and the read
+before it is what got someone else's:
+
+```
+line 10: 'two' reads 'v' before writing it, and 'v' was opened in 'one' -- so
+this reads what 'one' left rather than a fresh value. Scalars are one flat set
+per body, so `v is ...` in 'two' assigns that same name. Give this one its own
+name.
+```
+
+Reading a scalar an earlier scope computed stays silent, because that is the
+flat namespace working as intended -- a first attempt without the write-later
+condition flagged 55 of those across the corpus, every one legitimate.
+
+**Two things had to be got right, and the first was nearly a wasted build.** A
+scalar's home scope comes from its declaration LINE against the scopes' line
+ranges, because the IR has no "declared in scope X" -- every scalar is a flat
+slot whether it was opened at the top or inside a loop. A detector that seeded
+every scalar as program-level instead reported 0 on the corpus AND 0 on the
+known-bad case, which is the shape of a check that would have shipped vacuous.
+
+And spliced names have to be skipped: a template's line numbers are its own, so
+a spliced scalar's declaration line falls inside whatever unrelated scope of the
+caller happens to span it. That is `<template>_<n>_<local>` for a name and
+`<template>_<n>` for a scope -- the second has no trailing underscore, and a
+pattern requiring one left `x25519` refusing to build.
+
+Measured quiet on all 90 programs and byte-identical binaries; gated by
+`rejects scope/sibling-temp`.
+
+### What is still not caught
 
 A scope that READS a scalar it has not written, where the writes that reach it
 come from a SIBLING scope rather than an enclosing one, is the suspicious shape.

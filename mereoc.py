@@ -5604,6 +5604,107 @@ def report_unproved(verdicts):
         note(f"line {ln}: `[{expr}]` not proved in range -- {why}.")
 
 
+def check_sibling_temp(slots, steps):
+    """Refuse a scope that reads a scalar a SIBLING scope opened, then writes it.
+
+    `NAME is VALUE` opens a name if nothing has, and assigns it if something
+    has, so a scope reaching for a fresh temp silently takes a name a sibling
+    already used -- and reads whatever the sibling left:
+
+        one goes
+          v is 7
+          t is t + v
+        end
+        two goes
+          t is t + v       -- v is 7 here, not a fresh temp
+          v is 100
+        end
+
+    C++ gives each block its own `v` and warns that the second is used
+    uninitialised. mereo cannot say that, because the read is not uninitialised
+    -- every scalar has a value, it is simply the previous scope's. What it can
+    see is the shape: this scope WRITES the name later, so it meant one of its
+    own, and it read before that write, so it got someone else's.
+
+    Reading a scalar an earlier scope computed is the flat namespace working as
+    intended and stays silent; what is refused is reading one this scope then
+    claims. A scalar's home is the scope its declaration line falls inside,
+    which the slot's line and the scopes' line ranges give exactly."""
+    ranges, stk = [], []
+    for st in steps:
+        if st.get("type") == "loop_start":
+            stk.append((st.get("name"), st.get("line")))
+        elif st.get("type") == "loop_end" and stk:
+            nm, a = stk.pop()
+            ranges.append((nm, a, st.get("line")))
+
+    def home(line):
+        best = None
+        for nm, a, b in ranges:
+            if a is not None and b is not None and a <= line <= b:
+                if best is None or (a >= best[1] and b <= best[2]):
+                    best = (nm, a, b)
+        return best
+
+    # Spliced names carry `<template>_<call site>_<local>`, and their LINE
+    # numbers are the template's, not this body's -- so a spliced scalar's
+    # declaration line falls inside whatever unrelated scope of the caller
+    # happens to span it, and every comparison below would be nonsense. A splice
+    # is its own flat set anyway, so nothing here is the shape being looked for.
+    # `<template>_<call site>_<local>` for a spliced scalar, and
+    # `<template>_<call site>` for a spliced SCOPE -- `mul_55`, with no trailing
+    # underscore, which a pattern requiring one walks straight past.
+    _spliced = re.compile(r"_\d+_|_\d+$")
+    hom = {sl["name"]: home(sl["line"])
+           for sl in slots if sl.get("kind") == "scalar" and sl.get("line")
+           and not _spliced.search(sl["name"])}
+    if not any(hom.values()):
+        return
+    will, stk2 = {}, []
+    for i, st in enumerate(steps):
+        t = st.get("type")
+        if t == "loop_start":
+            stk2.append((st.get("name"), i)); continue
+        if t == "loop_end":
+            if stk2: stk2.pop()
+            continue
+        if t == "assign" and st.get("name"):
+            for k in stk2:
+                will.setdefault(k, set()).add(st["name"])
+    cur, wrote = [], {}
+    for i, st in enumerate(steps):
+        t = st.get("type")
+        if t == "loop_start":
+            cur.append((st.get("name"), i)); wrote[cur[-1]] = set(); continue
+        if t == "loop_end":
+            if cur: wrote.pop(cur.pop(), None)
+            continue
+        txts = [str(v) for k, v in st.items()
+                if k in ("expr", "cond", "value", "addr", "store_val") and v]
+        for c in st.get("conns") or ():
+            if isinstance(c, (list, tuple)) and len(c) >= 2:
+                txts.append(str(c[1]))
+        for txt in txts:
+            for nm in re.findall(r"(?<![\w.])[A-Za-z_]\w*(?![\w.(])", txt):
+                h = hom.get(nm)
+                if not h or not cur:
+                    continue
+                if any(s == h[0] for s, _ in cur):
+                    continue
+                here = cur[-1]
+                if _spliced.search(str(here[0] or "")) or _spliced.search(str(h[0] or "")):
+                    continue
+                if nm in will.get(here, ()) and nm not in wrote.get(here, ()):
+                    fail(f"line {st.get('line') or h[1]}: '{here[0]}' reads "
+                         f"'{nm}' before writing it, and '{nm}' was opened in "
+                         f"'{h[0]}' -- so this reads what '{h[0]}' left rather "
+                         "than a fresh value. Scalars are one flat set per body, "
+                         f"so `{nm} is ...` in '{here[0]}' assigns that same "
+                         "name. Give this one its own name.")
+        if t == "assign" and st.get("name") and cur:
+            wrote.setdefault(cur[-1], set()).add(st["name"])
+
+
 def check_shadowed_counters(steps):
     """Refuse two nested loops whose bounds test the same scalar.
 
@@ -7014,6 +7115,7 @@ def plan(definitions, slots, steps, overrides):
     steps, _dropped = drop_proved_checks(definitions, slots, steps)
     ACCESS_VERDICTS[:] = classify_accesses(definitions, slots, steps)
     check_shadowed_counters(steps)
+    check_sibling_temp(slots, steps)
     refuse_proven_wrong(ACCESS_VERDICTS)
     report_unproved(ACCESS_VERDICTS)
     steps = hoist_guard_bounds(steps, slots)

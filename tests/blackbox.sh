@@ -475,6 +475,7 @@ rejects msg/ensure-shape   msg_ensure_shape   "holds exactly one shape"
 rejects msg/ensure-first   msg_ensure_first   "a check goes after the locals"
 rejects msg/field-static   msg_field_static   "belongs to the INSTANCE"
 rejects msg/assign-bytes   msg_assign_bytes   "is a run of bytes"
+rejects scope/sibling-temp sibling_temp     "reads what 'one' left"
 
 # The surface changed on 2026-08-14 -- parens for arguments, `.` for members --
 # and messages kept recommending the old spellings for months, including "no
