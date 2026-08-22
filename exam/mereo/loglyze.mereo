@@ -81,11 +81,6 @@ program goes
   w is 0
   ready is 0
   rel is 0
-  word is 0
-  z is 0
-  zh is 0
-  tt is 0
-  tz is 0
 
   h is 0
   hidx is 0
@@ -125,32 +120,15 @@ program goes
       -- has-a-zero-byte test finds without a branch per byte. `~z & HIGH` is
       -- spelled `HIGH ^ (z & HIGH)`, since mereo has no bitwise not and the
       -- two agree on exactly the bits HIGH selects.
-      seek goes
-        wide goes
-          leave wide when j + 8 > n
-          word is [rbuf + j : 8]
-          z is word ^ 0x0a0a0a0a0a0a0a0a
-          zh is z & 0x8080808080808080
-          tt is z - 0x0101010101010101
-          tt is tt & 0x8080808080808080
-          tt is tt ^ zh
-          tt is tt & (z - 0x0101010101010101)
-          found goes
-            leave found when tt == 0
-            bits.low_bit (source is tt, result is tz)
-            j is j + (tz >> 3)
-            leave seek
-          end
-          j is j + 8
-          repeat wide
-        end
-        narrow goes
-          leave narrow when j >= n
-          leave narrow when [rbuf + j : 1] == 10
-          j is j + 1
-          repeat narrow
-        end
-      end
+      -- The newline scan is the only loop that touches every byte of the
+      -- input. It used to be hand-rolled SWAR here, eight bytes a step, and
+      -- that was the right call when the library scanned eight too. `text.find`
+      -- now does THIRTY-TWO where the machine has AVX2, so hand-rolling it is
+      -- the slower way to say the same thing.
+      seek_at is 0
+      text.find (data is rbuf + j, length is n - j, byte is 10, offset is seek_at)
+      j is j + seek_at
+
       chunk is j - i
 
       ready is 0

@@ -380,6 +380,29 @@ AUXLEN = (
 # (the third primitive kind, next to `call` and `asm`). All args are `long`
 # (the same convention as the syscall wrappers); a pointer is passed as
 # (long)&thing and cast back inside. No call/ret survives inlining.
+# Whether this machine has AVX2, asked once at start-up and answered into a
+# flag `_scan` branches on. Three checks, in the order the manual requires: the
+# OS must have enabled XSAVE (CPUID.1:ECX.27), it must be saving the XMM and YMM
+# state on a context switch (XCR0 bits 1 and 2), and only then does the AVX2 bit
+# itself mean anything (CPUID.7.0:EBX.5). Skipping the middle one is the classic
+# way to fault on a kernel that does not preserve the upper halves.
+#
+# CPUID rather than `__builtin_cpu_supports`, which needs libgcc's model
+# initialiser -- a constructor, and there are none here.
+CPU_PROBE = (
+    'static int _mereo_avx2 = 0;\n'
+    'static inline __attribute__((always_inline)) void _mereo_cpu(void) {\n'
+    '    unsigned int _a, _b, _c, _d, _lo, _hi;\n'
+    '    __asm__ volatile ("cpuid" : "=a"(_a), "=b"(_b), "=c"(_c), "=d"(_d)\n'
+    '                      : "a"(1u), "c"(0u));\n'
+    '    if (!(_c & (1u << 27))) return;            /* OSXSAVE */\n'
+    '    __asm__ volatile ("xgetbv" : "=a"(_lo), "=d"(_hi) : "c"(0u));\n'
+    '    if ((_lo & 6u) != 6u) return;              /* XMM and YMM state saved */\n'
+    '    __asm__ volatile ("cpuid" : "=a"(_a), "=b"(_b), "=c"(_c), "=d"(_d)\n'
+    '                      : "a"(7u), "c"(0u));\n'
+    '    _mereo_avx2 = (int)((_b >> 5) & 1u);       /* AVX2 */\n'
+    '}')
+
 HELPER_C = {
     # itoa: write _n as signed decimal into the buffer at _op, return length.
     "_decimal":
@@ -398,6 +421,48 @@ HELPER_C = {
         'static inline __attribute__((always_inline)) long _scan(long _pp, long _len, long _b) {\n'
         '    const unsigned char *_p = (const unsigned char *)_pp;\n'
         '    long _i = 0;\n'
+        # THIRTY-TWO bytes a step where the machine has AVX2, which is a 3x to 6x
+        # difference on this loop alone and the largest single win measured in
+        # the project. Written as one asm block rather than intrinsics for two
+        # reasons: intrinsics need `target("avx2")` on the function, which cannot
+        # be combined with `always_inline` into a baseline caller, and keeping the
+        # broadcast and the loop in one block stops the compiler reusing ymm1
+        # between iterations.
+        #
+        # The block only ADVANCES `_i`. Whatever it leaves, the word-at-a-time
+        # loop below finishes -- on a hit `_p[_i] == _b` and the byte tail stops
+        # at once, on a miss it resumes where the vectors ran out. So there is
+        # one exit path and one place the answer is computed.
+        #
+        # `_len >= 32` guards the SETUP, not the loop: the broadcast and the
+        # `vzeroupper` cost even when the body cannot run once, and a scan over a
+        # short field is the common case. Without it, a 16-byte scan measured
+        # slower than the word-at-a-time it replaced.
+        '    if (_mereo_avx2 && _len >= 32) {\n'
+        '        __asm__ volatile (\n'
+        '            "vmovd        %k[bv], %%xmm1\\n\\t"\n'
+        '            "vpbroadcastb %%xmm1, %%ymm1\\n\\t"\n'
+        '            "1:\\n\\t"\n'
+        '            "lea          32(%[i]), %%rax\\n\\t"\n'
+        '            "cmp          %[ln], %%rax\\n\\t"\n'
+        '            "jg           2f\\n\\t"\n'
+        '            "vmovdqu      (%[pp],%[i]), %%ymm0\\n\\t"\n'
+        '            "vpcmpeqb     %%ymm1, %%ymm0, %%ymm0\\n\\t"\n'
+        '            "vpmovmskb    %%ymm0, %%edx\\n\\t"\n'
+        '            "test         %%edx, %%edx\\n\\t"\n'
+        '            "jnz          3f\\n\\t"\n'
+        '            "add          $32, %[i]\\n\\t"\n'
+        '            "jmp          1b\\n\\t"\n'
+        '            "3:\\n\\t"\n'
+        '            "tzcnt        %%edx, %%edx\\n\\t"\n'
+        '            "add          %%rdx, %[i]\\n\\t"\n'
+        '            "2:\\n\\t"\n'
+        '            "vzeroupper\\n\\t"\n'
+        '            : [i] "+r" (_i)\n'
+        '            : [pp] "r" (_p), [ln] "r" (_len),\n'
+        '              [bv] "r" ((unsigned int)(_b & 0xff))\n'
+        '            : "rax", "rdx", "xmm0", "xmm1", "cc", "memory");\n'
+        '    }\n'
         # Word at a time: XOR a word against the broadcast byte and the one
         # that matched becomes zero, which the has-a-zero-byte test finds
         # without a branch per byte. This is memchr for the whole language --
@@ -3964,13 +4029,17 @@ def parse_bytes_literal(rest, ln):
     return out
 
 
-def signal_prologue(sigpipe_on, interrupts_on):
+def signal_prologue(sigpipe_on, interrupts_on, scan_used=False):
     """The rt_sigaction dispositions, emitted ahead of every declaration.
 
     Kept in one place because WHERE these land is load-bearing: `_sigaction` is
     inline asm with a "memory" clobber, so it pins any initializer emitted above
     it (see the call site)."""
     out = []
+    if scan_used:
+        # before anything scans, and it is one CPUID pair -- see CPU_PROBE
+        out.append("    _mereo_cpu();")
+        out.append("")
     if sigpipe_on:
         # ignore SIGPIPE (signal 13) so a write to a vanished reader returns
         # -EPIPE instead of killing the process; SIG_IGN = 1, and with no handler
@@ -8314,9 +8383,11 @@ def transpile(sources, prog):
         out.append(SYS_SIGACTION)
     out += [emit_asm_wrapper(p, PRIMITIVES[p]) for p in sorted(used)
             if PRIMITIVES[p].get("kind") == "asm"]
-    out += [HELPER_C[c] for c in sorted(                    # the byte-layer helpers
-            {PRIMITIVES[p]["cfunc"] for p in used
-             if PRIMITIVES[p].get("kind") == "helper"})]
+    _helpers = sorted({PRIMITIVES[p]["cfunc"] for p in used
+                       if PRIMITIVES[p].get("kind") == "helper"})
+    if "_scan" in _helpers:
+        out.append(CPU_PROBE)              # `_scan` branches on what it answers
+    out += [HELPER_C[c] for c in _helpers]
     if interrupts_on:
         out.append(SIGSTUB)
     if fallible:
@@ -8367,7 +8438,8 @@ def transpile(sources, prog):
     # bytes more than the identical `buffer is 24 bytes` + `buffer as structure`.
     # Below it, GCC folds the dead zeroing away and the two forms are
     # byte-identical -- same zero-filled semantics, no instructions.
-    body.extend(signal_prologue(sigpipe_on, interrupts_on))
+    body.extend(signal_prologue(sigpipe_on, interrupts_on,
+                                scan_used="_scan" in "\n".join(out)))
     bufnames = {s["name"] for s in slots if s["kind"] == "buffer"
                 or (s["kind"] == "instance"
                     and definitions[s["definition"]].get("playout")

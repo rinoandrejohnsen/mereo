@@ -131,10 +131,21 @@ both:
 
 | | min | median | sd |
 | --- | ---: | ---: | ---: |
-| C, hand-optimised | 53.6 ms | **54.7 ms** | 0.86 |
-| mereo | 54.3 ms | **54.8 ms** | 0.96 |
+| C, hand-optimised | 53.6 ms | **54.6 ms** | 0.90 |
+| mereo | 53.3 ms | **51.7 ms** | 0.75 |
 
-**Ratio 1.000.** The medians are the same. A clock has variance in it, though,
+**Ratio 0.947 median, 0.943 min — mereo is about 5% faster than the C twin**,
+and that is a recent change rather than the original result. The exam ran at
+1.000 for weeks, which is what it says below and what the rest of this page was
+written against. Two things moved it, and both came out of asking where the
+remaining time was:
+
+* `text.find` — the language's `memchr`, and the thing every scan goes through —
+  now reads **thirty-two bytes a step** on a machine with AVX2, against the
+  eight it read before. That loop alone is 3x to 6x faster.
+* the exam stopped hand-rolling the newline scan. It had its own eight-byte SWAR
+  for the one loop that touches every byte, which was the right call when the
+  library scanned eight and is the slower way to say the same thing now. A clock has variance in it, though,
 so the same claim is made again below with none: counted exactly, **mereo
 executes 10.9% fewer instructions than the C twin** on this input, and the same
 inlining that makes its binary 30% larger is why. This started at 1.012, and what

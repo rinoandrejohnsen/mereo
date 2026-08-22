@@ -1307,7 +1307,7 @@ Worth keeping for a different reason than speed: that the output is valid C++
 unchanged means `tests/scopes` can go on comparing against C++ twins, and any
 future interop is free. That is a property to preserve, not a lever to pull.
 
-## Widen `_scan` from 8 bytes to 32 -- worth 6 to 10% on the exam
+## DONE 2026-08-22: `_scan` widened to 32 bytes
 
 Found 2026-08-22 by writing the exam a third time, in C++. See `docs/exam.md`.
 
@@ -1328,7 +1328,57 @@ has-a-zero-byte test. glibc's `memchr` does 32, tuned. The last row is the one
 that matters: a naive AVX2 loop, compiled freestanding with no library at all,
 recovers 6 of the 10 points. mereo generates its own scan, so it can have this.
 
-### What has to be decided first
+### How it was done, and what it cost
+
+Thirty-two bytes a step through AVX2, as one inline-asm block inside the
+existing `always_inline` helper. Intrinsics were not an option -- they need
+`target("avx2")` on the function, which cannot then be inlined into a baseline
+caller -- and one block keeps the broadcast and the loop together so the
+compiler cannot reuse `ymm1` between iterations.
+
+**The baseline question answered itself: CPUID at start-up, once.** Three checks
+in the order the manual requires -- OSXSAVE, then XCR0 bits 1 and 2 for the YMM
+state, then the AVX2 bit -- into a flag `_scan` branches on. Skipping the middle
+check is the classic way to fault on a kernel that does not preserve the upper
+halves. Nothing about the shipped flags changes and pre-Haswell still runs the
+word-at-a-time path.
+
+`_len >= 32` guards the SETUP rather than the loop: the broadcast and the
+`vzeroupper` cost even when the body cannot run once, and a scan over a short
+field is the common case. Without that guard a 16-byte scan measured slower than
+what it replaced.
+
+| the scan alone, 400,000 iterations | 8 bytes | 32 bytes |
+| --- | ---: | ---: |
+| len 16 | 0.4 ms | 0.3 ms |
+| len 64 | 1.3 ms | 0.4 ms |
+| len 256 | 6.0 ms | 1.0 ms |
+| len 4096 | 60.3 ms | 15.6 ms |
+
+Correctness is exhaustive rather than sampled: every length 0..200 against every
+match position, plus the exam's 400 adversarial seeds and byte-identical output
+on the full 84 MB.
+
+**The size cost is real and was accepted deliberately.** `tests/versus`
+caught it -- `span_scan` went from 140 instructions and 569 bytes to 172 and
+657, against a C twin that did not move -- and the baseline was re-blessed
+knowing that is what carrying two paths costs.
+
+### The half that was not the compiler
+
+Widening `_scan` on its own moved the exam 0.8%, not the 6 to 10% predicted.
+The reason is worth keeping: **the exam hand-rolled its own SWAR** for the
+newline scan, the one loop that touches every byte, so the library never saw it.
+Routing that through `text.find` took the pair to **0.947 median, 0.943 min**
+against the C twin, and 0.933 against mereo as it stood this morning --
+17,958,755 executed instructions down to 15,296,270.
+
+Which is a lesson about the library rather than about this program: hand-rolling
+a scan was right advice when the library scanned eight bytes, and became wrong
+advice the moment it scanned thirty-two. Anything else in the corpus doing the
+same should be looked at.
+
+### What had to be decided first
 
 **Baseline.** mereo targets x86-64 with no `-march`, and AVX2 is not in the
 baseline. Three ways out, in increasing order of what they cost:
