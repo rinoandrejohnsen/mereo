@@ -1378,6 +1378,31 @@ a scan was right advice when the library scanned eight bytes, and became wrong
 advice the moment it scanned thirty-two. Anything else in the corpus doing the
 same should be looked at.
 
+### It did NOT beat C with the same scan, and the claim was corrected
+
+0.947 is against the twin AS WRITTEN, which still scans eight bytes. mereo got a
+wider scan and the twin did not, so that number measures the change and not the
+languages. Given the same scan:
+
+| | median |
+| --- | ---: |
+| C, glibc `memchr` (hosted) | **50.0 ms** |
+| C, hand-written AVX2, freestanding | 51.4 ms |
+| **mereo** | **51.7 ms** |
+| C, eight-byte SWAR, as the exam writes it | 54.5 ms |
+
+Parity with the AVX2 twin -- 0.991 median, 0.997 min -- which is the bar, and
+**4.6% behind glibc's memchr**, which is the remaining headroom.
+
+### Still open: the last 4.6%, and it is one loop
+
+glibc's `memchr` is four 32-byte vectors per iteration with an aligned-head
+prologue, so it issues one branch per 128 bytes where mereo issues one per 32
+and never aligns. Unrolling and aligning is the same technique again, applied to
+the same eight lines, and is worth measuring before anything else on this page.
+The exhaustive test already written -- every length 0..200 against every match
+position -- is what makes that safe to attempt.
+
 ### What had to be decided first
 
 **Baseline.** mereo targets x86-64 with no `-march`, and AVX2 is not in the
