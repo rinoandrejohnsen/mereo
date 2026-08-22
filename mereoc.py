@@ -5642,6 +5642,14 @@ def report_unproved(verdicts):
         note(f"line {ln}: `[{expr}]` not proved in range -- {why}.")
 
 
+# `nonneg_loop_bounds` lived here: the analysis knows every loop bound's sign,
+# and handing that to GCC as `if ((long)BOUND < 0) __builtin_unreachable();`
+# before the loop DOES remove the entry test -- 27,153 compares on the exam. It
+# was removed after measuring what it costs: GCC takes the fact and peels and
+# unrolls on the strength of it, adding 458,385 instructions to save those
+# 27,153, and the program runs 3% SLOWER. Narrowing it to the one loop that
+# showed the whole compare win did not help either (ratio 1.011). See todo.md.
+#
 def check_sibling_temp(slots, steps):
     """Refuse a scope that reads a scalar a SIBLING scope opened, then writes it.
 

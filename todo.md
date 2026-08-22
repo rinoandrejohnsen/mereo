@@ -2115,7 +2115,40 @@ From the other end: stating `plen > 0` before one mereo loop removes 47,402
 compares, and stating it at all twenty-five removes 48,495 -- the same handful,
 since most bounds were never the blocker.
 
-### Why this is worth doing something about
+### BUILT 2026-08-22, MEASURED, AND REVERTED
+
+It was built. `nonneg_loop_bounds` walked every `leave X when i >= BOUND`,
+asked the interval domain for BOUND's lower bound through the same probe
+`drop_proved_checks` uses, and the emitter stated the survivors before the
+loop's label as `if ((long)BOUND < 0) __builtin_unreachable();`. Fifteen facts
+on the exam, output byte-identical to the C twin on the full 84 MB.
+
+**It works and it is slower.**
+
+| | instructions | compares | wall clock |
+| --- | ---: | ---: | ---: |
+| as shipped | 17,958,755 | 3,136,871 | — |
+| with the sign stated | 18,417,140 | **3,109,718** | **1.030 median, 1.019 min** |
+
+The compares fall by 27,153, exactly as the experiment predicted. GCC then
+takes the fact and peels and unrolls on the strength of it, adding 458,385
+instructions to save those 27,153, and the program runs **3% slower**. Narrowing
+it to the single loop that showed the whole compare win does not help either --
+1.011 median, 0.997 min, which is noise and not a gain.
+
+So the entry test was never the cost. It is one predictable, well-predicted
+compare per loop, and on a machine that retires three instructions a cycle it is
+nearly free; what is not free is what GCC does once it believes the loop always
+runs.
+
+Two things worth keeping from it. The mechanism is sound and small -- roughly
+forty lines, and the probe that made it possible already existed. And it is a
+second, sharper example of the rule recorded elsewhere in this file: **a fact
+that changes what GCC does is not the same as a fact worth giving it.** The
+earlier finding was that stating a proved bound changes nothing. This one
+changes something, and the change is a loss.
+
+### Why it had looked worth doing
 
 **mereo already knows.** The bounds are lengths: they come from `.size`, from
 `text.find`, from a `read` count with `ensure count >= 0` on it. The interval
@@ -2134,8 +2167,11 @@ Two shapes for a fix, neither designed yet:
   needs no new syntax and no assumption, but does change what the generated C
   says.
 
-The second is cleaner and the first is already known to work. Either needs the
-analysis to hand its result to the emitter, which nothing currently does.
+The first was built and reverted -- see above. **The second is untested**, and it
+is not obviously the same experiment: comparing unsigned changes the
+INSTRUCTION rather than adding an assumption, so GCC has no new licence to peel
+or unroll and cannot spend the fact the way it spent the last one. That is the
+one worth trying if this is picked up again.
 
 ### What it is NOT, recorded so it is not re-derived
 
