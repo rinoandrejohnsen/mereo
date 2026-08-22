@@ -2232,3 +2232,48 @@ Worth testing if it is ever picked up: whether narrowing only the LOOP COUNTERS
 and LENGTHS -- the values the analysis already proves are small and
 non-negative -- moves the REX share. That is a code-generation choice rather
 than a language one, and it is the same family as the `in register` work.
+
+
+## Narrower and unsigned scalars, written and measured: both are slower
+
+Asked 2026-08-22, after the IPC gap was traced to scalar width. **mereo cannot
+express it** -- `X is 0` is one machine word, signed, and there is no other
+form -- so the experiment was done on the generated C, which measures exactly
+what a language change would buy.
+
+87 of the exam's scalars were narrowed, holding back the ones that carry an
+address or a 64-bit total. Both variants build and produce output identical to
+the C twin on the full 84 MB.
+
+| | instructions | compares | REX | bytes/ins | vs mereo |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| mereo, signed 64 | 17,958,755 | 3,136,871 | 68.7% | 3.850 | — |
+| unsigned 64 | 18,917,697 | 3,040,975 | 69.8% | 3.853 | **1.034** |
+| unsigned 32 | 19,779,417 | 3,020,059 | **59.5%** | **3.698** | **1.023** |
+| the C twin | 20,348,221 | 2,921,593 | 48.9% | 3.429 | 1.000 |
+
+Everything the analysis predicted happens, and the clock still goes the wrong
+way. Unsigned removes 96,000 compares, exactly the signedness finding. Narrowing
+to 32 bits drops the REX share nine points and the fetch cost to 3.698 bytes an
+instruction, exactly the front-end finding. **And both are 2-3% SLOWER**, because
+each buys its saving with a larger instruction count -- a 32-bit value mixed
+with 64-bit addresses needs extending, and the extensions cost more than the
+prefixes saved.
+
+So the shipped design is the fastest of the three on this workload, and the IPC
+"deficit" is not a deficit. It is the price of executing 12% fewer instructions,
+and paying it is the better trade here.
+
+**This closes the question rather than opening work.** The signedness entry
+above and the scalar-width entry both end here: the fact can be handed to GCC
+(measured, slower), and the types can be narrowed (measured, slower). What is
+left is the possibility that a different workload -- one less dominated by
+byte-at-a-time scanning over 64-bit addresses -- would come out the other way,
+which is worth remembering when a future program does not reach parity.
+
+### A real bug found on the way
+
+`n is 0 as unsigned` is **accepted and silently ignored**: the emitted C is
+`long n = 0`, exactly as without it. A reading that the language takes and drops
+is worse than one it refuses, and this one looks like it does the thing this
+entry is about. Either make it mean something or refuse it.
