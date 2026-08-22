@@ -273,15 +273,39 @@ address mapped to its opcode:
 
 So mereo is not doing worse arithmetic to get its smaller count — it does
 **28% less of it**, and 24% less shuffling of values between registers and the
-stack. What it does slightly more of is comparing, which is the contract checks
-and the `leave ... when` structure, and that is where the extra 2% of control
-flow comes from too.
+stack. The one column where it does more is comparing, and that has a cause
+worth naming, because it is the same cause as the other two.
+
+**C's `do_line` is a function, so `return` ends the line.** It uses that eight
+times: eight ways for a line to be malformed, each one `malformed++; return;`,
+and nothing after them runs. mereo has no functions, so `leave parse` leaves the
+*scope* and the code after it still runs — which means it has to be told whether
+the parse succeeded:
+
+```ada
+  ready is 0                      -- and then, further down
+  leave slow when ready != 0
+  leave finish when ready == 0
+  leave digits_loop when bad == 0
+```
+
+`ready`, `over` and `bad` are the flags that stand in for a return, and testing
+them is where the extra comparing goes. Five such tests per line against C's
+zero, on a program whose whole per-line path is about sixteen tests, is the
+7%.
 
 The shape of the saving names its cause. Straight-line work — arithmetic and
 data movement — falls by a quarter, while control flow and comparison stay
 flat. That is the signature of removing calls: the address arithmetic, the frame
 adjustment and the argument shuffling go, and every branch and test the program
 actually asked for stays exactly where it was.
+
+**All of it is one decision.** mereo has no functions, and that single fact
+produces every number on this page: the binary is 30% larger because each helper
+is copied per use; the instruction count is 11% lower because no call, frame or
+argument shuffling remains; and the comparing is 7% higher because a scope's
+early exit needs a flag where a function's `return` needs nothing. The trade is
+not three trades. It is one, seen from three sides.
 
 So the shape of the trade is sharper than "bigger but the same speed". mereo
 does the same work in fewer, branchier instructions, and pays back in fetch what
