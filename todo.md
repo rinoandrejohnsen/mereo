@@ -2025,3 +2025,62 @@ A first attempt at counting this by regex was abandoned: it cannot tell an
 ordinary reassignment (`i is i + 1` inside a loop) from a fresh-temp collision,
 and it counted 527 of the former. The count has to come from the planner's own
 step list and scope stack, not from indentation.
+
+
+## `new NAME is VALUE`, and the analysis re-measured
+
+Three things, 2026-08-22.
+
+### `new` says which half of `NAME is` you meant
+
+The duality was that `NAME is VALUE` opens the name if nothing has and assigns
+it if something has, with no way to state intent. `new NAME is VALUE` states it
+and is refused when the name is taken:
+
+```
+line 6: `new v is ...` asks for a name of its own, and 'v' is already taken --
+scalars are one flat set per body, so this would assign that one rather than
+open a new one. Pick another name, or drop `new` if assigning 'v' was meant.
+```
+
+Neither `new` nor `blank` is RESERVED, and that was a correction rather than a
+choice: reserving `blank` broke `field.mereo`, which has a method by that name.
+Both read in exactly one position -- `new NAME is NUMBER`, `NAME is blank CLASS`
+-- so contextual is enough, and the comment beside `RESERVED` now says so.
+
+Gated by `rejects scope/new-taken` and `bb scope/new-free`.
+
+### Why a buffer may not reuse a sibling's name -- it was one rule all along
+
+The entry above asked for the reason and assumed there were two rules. There is
+one: **a buffer, an instance and a scalar are each ONE declaration in one
+function**, so two cannot share a name however far apart the scopes are. A
+scalar is the exception that proves it -- `v is 5` written twice is one
+declaration and an assignment, not two declarations, so uniqueness has nothing
+to compare, which is exactly why it shares silently where a buffer cannot. Both
+the message and `docs/control-flow.md` now say this.
+
+### The analysis: unchanged at 98.7%, and one verdict split
+
+Re-measured after the week's changes: **3016 of 3056 proved, 98.7%** -- the same
+as before them, so nothing regressed.
+
+One real improvement, and it was a reporting fault rather than a proving one.
+`resolve_base` gives up when either half is unknown -- the buffer, or the OFFSET
+into it -- and reported both as "the backing did not resolve", which sends the
+reader looking for a backing that was never in doubt. In `jsontest`,
+`at is [doc : 8] + off` resolves `doc`'s field to `raw` immediately; what does
+not resolve is `off`. `backing_of` already answers the first question alone, so
+the verdict now splits:
+
+| | before | after |
+| --- | ---: | ---: |
+| opaque-base | 9 | **3** |
+| offset-unresolved | -- | 6 |
+
+Three accesses in the whole corpus genuinely have an unknown backing: two in
+`head` (`[given : 8]`, a pointer out of the auxiliary vector) and one in `stat`
+(`operand.data`, a span field). That is a much smaller and more honest number
+than 9, and it points at the right half of each.
+
+All 90 binaries byte-identical -- the analysis makes lists, not code.

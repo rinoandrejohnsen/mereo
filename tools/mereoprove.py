@@ -14,6 +14,7 @@ access `[base + index : width]`:
   bound-unresolved  a bound exists but this prototype cannot chase it
   data-dependent    no bound in scope at all
   opaque-base       the backing itself did not resolve
+  offset-unresolved the backing resolved; the offset into it did not
 
 WHAT IT KNOWS: constant indices; induction variables bounded at the top
 (`loop_exit X >= B`) or the bottom (`loop_end cond X < B`), corrected for

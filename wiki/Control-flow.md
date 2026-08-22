@@ -219,6 +219,25 @@ unique* — and a template's locals are private to its splice, so no caller sees
 them. An owned resource used after the scope that acquired it is refused by
 name, since its release already ran.
 
+The reason for that first rule is worth stating, because it looks arbitrary
+beside the scalars: **each of these is one declaration in one function**, so two
+of them cannot share a name however far apart the scopes are. A scalar is the
+exception that proves it — `v is 5` written twice is one declaration and an
+assignment, not two declarations, so there is nothing for a uniqueness check to
+compare, and that is exactly why it shares silently where a buffer cannot.
+
+Where a scope wants a scalar of its own and means it, say so:
+
+```ada
+  s goes
+    new v is 5      -- refused if `v` is already taken
+  end
+```
+
+`new` is the half of `NAME is VALUE` that was missing: the plain form opens the
+name or assigns it and nothing says which, while `new` says which and is
+refused when the name is not free.
+
 | | mereo | C / C++ |
 | --- | --- | --- |
 | scalar declared in a block | visible after it | block-scoped |

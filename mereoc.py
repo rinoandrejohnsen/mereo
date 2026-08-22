@@ -99,6 +99,10 @@ RESERVED = {"is", "already", "and", "in", "out", "end", "contains",   # `contain
             "goes", "likely", "when", "scope", "repeat", "leave", "pure",
             "arguments", "environment", "auxiliary", "as", "to",
             "high", "low", "atomic", "fence", "branchless", "clobbers"}
+# `new` and `blank` are not reserved either, for the same reason: `new NAME is
+# NUMBER` and `NAME is blank CLASS` each read the word in one position and
+# nowhere else, so a method or a field may still be called either. Reserving
+# `blank` broke `field.mereo`, which has a method by that name.
 # `bit`/`bits` are NOT reserved -- they are contextual, keywords only in the
 # field-declaration position (`X is bit N` / `X is bits N to M`), matched by
 # their own regexes; elsewhere they are ordinary names (bits.mereo's `bits`
@@ -2599,6 +2603,32 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                          f"lay the view over it:\n    bits is N bytes in "
                          f"{m.group(3)}\n    {m.group(1)} is bits as "
                          f"{m.group(2)}")
+                # `new NAME is NUMBER` -- the same declaration, said out loud.
+                # `NAME is VALUE` opens the name if nothing has and assigns it if
+                # something has, and nothing in the line says which; `new` says
+                # which, and is refused when the name is already taken. It is the
+                # spelling to reach for when a scope wants a temporary of its
+                # own, since scalars are one flat set per body and a name a
+                # sibling used is the same name.
+                m = re.match(rf"^new (\w+) is ({_NUMLIT})$", s)
+                if m:
+                    nm = m.group(1)
+                    if nm in bound or any(sl.get("kind") == "scalar"
+                                          and sl["name"] == nm for sl in slots):
+                        fail(f"line {n}: `new {nm} is ...` asks for a name of "
+                             f"its own, and '{nm}' is already taken -- scalars "
+                             "are one flat set per body, so this would assign "
+                             "that one rather than open a new one. Pick another "
+                             f"name, or drop `new` if assigning '{nm}' is what "
+                             "was meant.")
+                    name_ok(nm, n, "slot")
+                    slots.append({"kind": "scalar", "name": nm,
+                                  "init": norm_int_c(m.group(2)), "line": n})
+                    if any(k == "loop" for k, _nm in scope_kinds):
+                        steps.append({"type": "assign", "name": nm,
+                                      "expr": m.group(2), "line": n})
+                    laststep = None
+                    continue
                 m = re.match(rf"^(\w+) is ({_NUMLIT})$", s)
                 if m:
                     nm = m.group(1)
@@ -3840,9 +3870,15 @@ def check_slots(definitions, slots):
             SCALAR_WORDS.add(slot["name"])     # eight bytes, in a register
         for name in names:
             if name in seen:
-                fail(f"line {slot['line']}: name '{name}' is not unique "
-                     "(instance state is emitted as instance_slot; "
-                     "_write_value is reserved by the emitter)")
+                fail(f"line {slot['line']}: name '{name}' is not unique -- "
+                     "a buffer, an instance and a scalar are each ONE "
+                     "declaration in one function, so two of them cannot share "
+                     "a name however far apart the scopes are. (A scalar is the "
+                     "exception that proves it: `v is 5` written twice is one "
+                     "declaration and an assignment, not two declarations, "
+                     "which is why it is allowed and why it silently shares.) "
+                     "Instance state is emitted as `instance_slot`, so those "
+                     "collide too, and `_write_value` belongs to the emitter.")
             seen.add(name)
     # A resource/view field is a real C long (`INST_field`); let expressions
     # resolve it by that name too, so a MULTI-STEP method inlined on an instance
@@ -5599,7 +5635,9 @@ def report_unproved(verdicts):
             why = {"data-dependent": "no bound on the index is in scope",
                    "bound-unresolved": "a bound is in scope but could not be "
                                        "resolved to a number",
-                   "opaque-base": "the backing did not resolve"}.get(
+                   "opaque-base": "the backing did not resolve",
+                   "offset-unresolved": "the backing resolved, but the offset "
+                                        "into it did not"}.get(
                        kind, "not decided")
         note(f"line {ln}: `[{expr}]` not proved in range -- {why}.")
 
@@ -6778,7 +6816,16 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
                           else ("input-guarded" if is_guarded(idx, i)
                                 else "input-unguarded"))
                 if size is None:
-                    out.append(["opaque-base", lhs.strip(), inner, ln, None,
+                    # `resolve_base` gives up when either half is unknown -- the
+                    # buffer, or the OFFSET into it -- and reported both the same
+                    # way, which sent the reader looking for a backing that was
+                    # never in doubt. `at is [doc : 8] + off` resolves `doc`'s
+                    # field to `raw` immediately; what does not resolve is `off`.
+                    # `backing_of` answers the first question alone, so ask it,
+                    # and say which half is actually missing.
+                    kind = ("offset-unresolved" if backing_of(lhs.strip(), i)
+                            else "opaque-base")
+                    out.append([kind, lhs.strip(), inner, ln, None,
                                 None, width, lit, origin]); continue
                 bnd = binding.get(i, {})
                 lo, hi = iv(idx.strip(), i) if idx.strip() else (0, 0)
