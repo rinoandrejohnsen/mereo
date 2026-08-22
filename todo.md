@@ -1501,8 +1501,49 @@ when c'`. A conditional check is meaningful and the workaround is an enclosing
 scope, so this is a small gap rather than a wrong answer, but the message should
 say the word is not accepted there rather than blame the expression.
 
-Also unfixed and worth knowing: **a top-level template must have at least one
-port**, while a method inside a definition may have none. `bump goes` at the
-left margin is not a template, and `bump () goes` is refused for an empty list.
-The message now says so; whether the restriction should exist is a separate
-question.
+The other one left is its own entry below, because it turned out to be a real
+restriction rather than a wording fault.
+
+
+## A top-level template must have at least one port, and should not have to
+
+Found in the second scan, 2026-08-22, and worth its own entry because the first
+explanation for it was wrong.
+
+A METHOD inside a definition may take no ports -- `bump goes` is fine, because
+it has the instance's state to reach. A TEMPLATE at the left margin may not:
+
+| written | |
+| --- | --- |
+| `bump goes` | not a template at all; falls to the top-level line list |
+| `bump () goes` | refused: the port list is empty |
+| `bump (v) goes` | accepted |
+
+The regexes say it plainly: a method is `^(\w+)(?: \((.*)\))? goes$` with the
+list optional, a template is `^(\w+) \((.*)\) goes$` with it required.
+
+**The tempting justification is false.** A template with no state might look
+like work nothing can reach, since its locals are private to the splice -- that
+is what the refusal said until this was checked. But a template reaches the
+world through calls, not only through ports:
+
+```
+shout (unused) goes                       -- `unused` is never read
+  msg is "hi\n"
+  screen is already linux.file (descriptor is 1)
+  screen.write (buffer is msg, count is msg.size)
+end
+```
+
+Accepted, and it prints. The port is pure ceremony: the template does real work
+and the only reason it carries a parameter is that the grammar demands one. So
+the restriction does not prevent anything -- it just makes people invent a fake
+name, which is the shape a rule takes when it is arbitrary.
+
+**Two ways out, and the first is nearly free:** let a top-level `NAME goes`
+parse as a portless template, which is the method spelling already, so the two
+stop differing for no reason. Or keep the requirement and say why -- but the why
+would have to be better than the one that was there, since that one was wrong.
+
+Worth doing with the `when`-on-`ensure` gap, which is the same size and the same
+kind: something composes everywhere except one place, with no reason recorded.

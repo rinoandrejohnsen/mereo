@@ -1780,9 +1780,10 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                                 "the port list is empty; ")
                              + "a parameter list is names separated by commas, "
                                "`(a, b)`, each a plain word, and at "
-                               "least one -- a template with no ports is work "
-                               "nothing can reach, since its locals are private "
-                               "to the splice.")
+                               "least one. A template with no ports has no "
+                               "spelling today, so give it a port it uses -- or "
+                               "see todo.md, which has the case for allowing "
+                               "none.")
                     name_ok(p, n, "parameter")
                 # one definition holding one method of the same name: downstream
                 # (procedure_call, inline_procedure, the splice) sees exactly what
