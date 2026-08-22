@@ -168,6 +168,47 @@ while the other must address. Storage-for-everything would silently turn every
 span in the corpus into a read of its own header. Representation was never the
 question; meaning was.
 
+### Should storage be the DEFAULT instead? Measured: no, 81 to 1
+
+Asked because `N bytes` reads like bytes, and in a program body that is exactly
+what it is -- so a field defaulting to a NUMBER looks like the tail wagging the
+dog. Counted across both libraries and the whole corpus:
+
+| field declarations inside a definition | |
+| --- | ---: |
+| bare, register width -- the ambiguous ones | 81 |
+| wider than a register, storage by width | 81 |
+| carrying a reading (`as signed`), so plainly a number | 38 |
+| explicit `in stack` / `in register` | 2 |
+
+Of the 81 bare ones, **exactly two are ever used as an access base**:
+`span.data` and `builder.data`, and both genuinely hold an address, so reading
+them as a number IS what they want. The other 79 -- every stat, poll and termios
+field in `linux.mereo`, `builder.count`, `builder.limit`, every `record.tag` in
+the test corpus -- are plain numbers that nothing dereferences. Exactly one
+field in the corpus wanted storage at register width, and it is the poll entry
+that started this.
+
+So flipping the default would mean writing `in register` on 81 declarations and
+silently breaking any that were missed -- the same failure mode, pointed the
+other way. The default stays.
+
+### The inconsistency that IS real, and is not the default
+
+`buffer is 4096 bytes` in a program body is storage; `length is 8 bytes` in a
+definition is a number. Same words, different meaning, decided by where they are
+written. `in stack` does not remove that -- it only settles the narrower
+question of what a WIDTH means inside a definition, which is where the silent
+miscompile was.
+
+The context split is defensible on its own terms: a program body declares
+storage, that being what a program body is for, while a definition's field list
+describes a record layout, where fields are values at offsets. The width rule
+was the weak part -- eight bytes a number and nine bytes storage is an
+implementation artifact wearing a surface -- and that is the half now sayable.
+Worth revisiting only if someone trips on the first half in real code; nothing
+in the corpus has.
+
 ### Still open: refusing the silent case
 
 `in stack` gives the programmer a way to say it, but a bare `N bytes` field
