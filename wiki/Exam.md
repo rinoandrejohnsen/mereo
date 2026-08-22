@@ -240,12 +240,22 @@ What it is:
 | C | 152,300,541 | 19.1% |
 | mereo | 157,470,696 | **22.1%** |
 
-**mereo runs 87 million fewer instructions and 5 million more branches.**
-Inlining removes straight-line work — the call, the frame, the argument
-shuffling — and leaves every branch exactly where it was. What is left is a
-denser stream: a branch every 4.5 instructions against C's every 5.2. The front
-end fetches one contiguous run per cycle, so a stream that turns more often
-gives it less to work with, and that is the whole of the difference.
+**mereo runs 87 million fewer instructions and 5 million more branches** — and
+the second number is the smaller story of the two. Branches are up **3.4%**;
+instructions are down **10.9%**. Had mereo executed C's instruction count with
+its own branches, density would read 19.7% against C's 19.1%, which is nothing.
+**The denominator moved, not the numerator.**
+
+So mereo does not branch meaningfully more. It does less straight-line work
+between the same branches — inlining removes the call, the frame and the
+argument shuffling, and leaves control flow exactly where it was. The front end
+fetches one contiguous run per cycle, so it redirects just as often as C's and
+has less to show for each one.
+
+The two profiles agree on this. Sampling branches by region gives the same shape
+for both: about half in the byte scan, a tenth in the hash. The loops are the
+same loops — mereo's scan and C's `find_byte` are the same SWAR word-at-a-time
+test, branch for branch.
 
 So the shape of the trade is sharper than "bigger but the same speed". mereo
 does the same work in fewer, branchier instructions, and pays back in fetch what
