@@ -269,7 +269,26 @@ release_server:
     <span class="t-plain">v</span> <span class="t-bind">is</span> <span class="t-number">100</span>
   <span class="t-structure">end</span>
                     <span class="t-comment">-- mereo prints 14. C++ warns `v is used uninitialized`.</span></code></pre>
-<p>That is the cost of the flat set, and it buys something real: a scope reads its surroundings without plumbing anything through ports. The sharpest case — two nested loops counted by the same scalar, where the inner one <strong>resets</strong> it — is refused outright (<a href="#safety">Safety</a> has it). The rest is a habit: a scalar opened inside a scope is not private, so name it as though it were not.</p>
+<p>That is the cost of the flat set, and it buys something real: a scope reads its surroundings without plumbing anything through ports. The sharpest case — two nested loops counted by the same scalar, where the inner one <strong>resets</strong> it — is refused outright (<a href="#safety">Safety</a> has it).</p>
+<h4>The flat set stops at a template</h4>
+<p>A <strong>template is where the flat set ends</strong>, and this is what keeps the rule usable. Its locals are not the caller's: each splice gets its own, renamed per <strong>call site</strong>, so the same template used twice has two of everything.</p>
+<pre><code><span class="t-call">label</span> <span class="t-operator">(</span><span class="t-plain">answer</span><span class="t-operator">)</span> <span class="t-structure">goes</span>
+  <span class="t-plain">my_name</span> <span class="t-bind">is</span> <span class="t-number">3</span>           <span class="t-comment">-- the template's own</span>
+  <span class="t-plain">my_name</span> <span class="t-bind">is</span> <span class="t-plain">my_name</span> <span class="t-operator">+</span> <span class="t-number">1</span>
+  <span class="t-plain">answer</span> <span class="t-bind">is</span> <span class="t-plain">my_name</span>
+<span class="t-structure">end</span>
+
+<span class="t-structure">program</span> <span class="t-structure">goes</span>
+  <span class="t-plain">my_name</span> <span class="t-bind">is</span> <span class="t-number">100</span>         <span class="t-comment">-- the program's</span>
+  <span class="t-decl">s</span> <span class="t-structure">goes</span>
+    <span class="t-plain">my_name</span> <span class="t-bind">is</span> <span class="t-number">200</span>       <span class="t-comment">-- a plain scope: ASSIGNS the program's</span>
+  <span class="t-structure">end</span>
+  <span class="t-call">label</span> <span class="t-operator">(</span><span class="t-label">answer</span> <span class="t-bind">is</span> <span class="t-plain">got</span><span class="t-operator">)</span>  <span class="t-comment">-- a splice: its my_name is a fresh variable</span></code></pre>
+<p><code>my_name</code> ends as 200 and <code>got</code> as 4, and the emitted C says why:</p>
+<pre><code>    long my_name = 100;          /* the program's        */
+    long label_1_my_name = 3;    /* the splice's, renamed */</code></pre>
+<p>Two calls give <code>label_1_my_name</code> and <code>label_2_my_name</code>. The isolation runs both ways: a template cannot read or write a caller's scalar it has no port for — writing one opens a local of its own, and reading one is a read of nothing. What it <em>can</em> see beyond its ports is a top-level constant, which is a number rather than storage.</p>
+<p>So the habit is narrower than the flat set makes it sound: <strong>inside a program, a scalar opened in a scope is not private — name it as though it were not. Inside a template, it is.</strong></p>
 <h3>Names in a scope, against C and C++</h3>
 <p>A scope here controls <strong>when things happen and when they are released</strong>. It does not control what a name means. C and C++ use the same braces for both; mereo separates them, and the difference shows up in five places.</p>
 <p><strong>A scalar declared in a scope is visible outside it.</strong> There is one flat set of scalars per program, so <code>NAME is VALUE</code> opens a name wherever it is written and that name is live everywhere. This is what lets a scope read its surroundings without plumbing anything through ports.</p>

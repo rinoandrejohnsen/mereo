@@ -1627,6 +1627,25 @@ mereo prints **14**. The C++ shape prints 7 and **warns**, `'v' is used
 uninitialized`. mereo cannot warn the same way, because the read is not
 uninitialised -- every scalar has a value -- it is simply the wrong one.
 
+### The flat set stops at a template, which narrows all of the above
+
+Verified 2026-08-22. A template's locals are NOT in the caller's flat set: each
+splice gets its own, renamed per CALL SITE. The same template used twice has two
+of everything -- `label_1_my_name` and `label_2_my_name` in the emitted C.
+
+The isolation runs both ways. A template cannot read a caller's scalar it has no
+port for (the read is a read of nothing, and the caller's scalar then reports as
+written-but-never-read), and it cannot write one (that opens a local of its own,
+which then reports as unused). The only thing it sees beyond its ports is a
+top-level CONSTANT, which is a number rather than storage.
+
+So the hazards above are bounded by the unit of reuse. Within one program body a
+scalar opened in a scope is not private; within a template it is. That is worth
+stating before any check is built, because it means the sibling-read shape can
+only happen between two scopes of the SAME body -- which is a much smaller
+surface than "anywhere in the program", and makes a check correspondingly more
+affordable.
+
 ### The check worth considering, and what to measure first
 
 A scope that READS a scalar it has not written, where the writes that reach it

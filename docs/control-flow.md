@@ -129,8 +129,45 @@ a **sibling** left behind:
 That is the cost of the flat set, and it buys something real: a scope reads its
 surroundings without plumbing anything through ports. The sharpest case — two
 nested loops counted by the same scalar, where the inner one **resets** it — is
-refused outright ([Safety](safety.md) has it). The rest is a habit: a scalar
-opened inside a scope is not private, so name it as though it were not.
+refused outright ([Safety](safety.md) has it).
+
+### The flat set stops at a template
+
+A **template is where the flat set ends**, and this is what keeps the rule
+usable. Its locals are not the caller's: each splice gets its own, renamed per
+**call site**, so the same template used twice has two of everything.
+
+```
+label (answer) goes
+  my_name is 3           -- the template's own
+  my_name is my_name + 1
+  answer is my_name
+end
+
+program goes
+  my_name is 100         -- the program's
+  s goes
+    my_name is 200       -- a plain scope: ASSIGNS the program's
+  end
+  label (answer is got)  -- a splice: its my_name is a fresh variable
+```
+
+`my_name` ends as 200 and `got` as 4, and the emitted C says why:
+
+```
+    long my_name = 100;          /* the program's        */
+    long label_1_my_name = 3;    /* the splice's, renamed */
+```
+
+Two calls give `label_1_my_name` and `label_2_my_name`. The isolation runs both
+ways: a template cannot read or write a caller's scalar it has no port for —
+writing one opens a local of its own, and reading one is a read of nothing. What
+it *can* see beyond its ports is a top-level constant, which is a number rather
+than storage.
+
+So the habit is narrower than the flat set makes it sound: **inside a program, a
+scalar opened in a scope is not private — name it as though it were not. Inside
+a template, it is.**
 
 ## Names in a scope, against C and C++
 
