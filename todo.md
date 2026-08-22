@@ -125,10 +125,10 @@ opt-in in `build.sh` (`STRIP_SECTIONS=1`), not as the default.
 
 ---
 
-## `N bytes`: fixed with `in stack`, and one diagnostic still open
+## `N bytes`: fixed with `in stack`
 
-**Status:** the surface question is settled and shipped. `slot is 8 bytes in
-stack` is storage; a bare `N bytes` keeps its meaning, so nothing in the corpus
+**Status:** closed. The surface question and the diagnostic are both done.
+`slot is 8 bytes in stack` is storage; a bare `N bytes` keeps its meaning, so nothing in the corpus
 moved -- all 90 binaries byte-identical. `in register` states the default and is
 refused on a width a register cannot hold.
 
@@ -245,16 +245,31 @@ now share `own_bytes_text`. Flag views needed including in `_data` -- they carry
 Only scalar state (`NAME is 0`, no width) keeps a long per field: it has no
 bytes and so no offset, and a definition cannot mix widths with defaults anyway.
 
-### Still open: refusing the silent case
+### Done 2026-08-22: the silent case is refused
 
-`in stack` gives the programmer a way to say it, but a bare `N bytes` field
-dereferenced without ever being assigned an address is still a segfault rather
-than a message. The sound rule is there -- a register-width field used as an
-access base, never written by any method and never given a value at adoption,
-cannot hold an address -- but it needs proper scoping to apply. A first pass by
-regex could not tell a resource FIELD from a program-body buffer of the same
-spelling, and refusing wrongly here would break `span`. Worth doing with the
-definition's own tables rather than a pattern.
+A register-width field that a method DEREFERENCES has to be able to hold an
+address, and one that nothing ever gives an address holds zero. That is now a
+message instead of a segfault:
+
+```
+line 9: 'w' reads `[slot + ...]`, which follows 'slot' as an ADDRESS -- but
+nothing ever gives 'slot' one, so it holds zero. Write `slot is 8 bytes in
+stack` if those bytes ARE the storage, or give it an address to follow.
+```
+
+The rule counts a value from anywhere a field can get one: a method body, a
+primitive method's bound argument, or the adoption at the use site. That last
+one is what a first pass by regex could not see -- `page is already builder
+(data is room, ...)` gives `data` an address, and the adopted name arrives in
+`pending` rather than `init`, so the check reads all five of `init`, `pending`,
+`constinit`, `runinit` and `aliases`. Without that it refused every builder in
+the corpus, which is the false positive the earlier note predicted.
+
+`span.data` passes on the first count instead: `skip` writes `data is data + n`.
+
+All 90 binaries are byte-identical -- it is a diagnostic and generates nothing.
+Gated by `rejects field/unset-deref`, and the same program with `in stack` added
+builds and exits 0.
 
 ## An array view -- a span that counts elements?
 

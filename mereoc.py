@@ -3445,6 +3445,24 @@ def check_slots(definitions, slots):
                      f"between uses. Call it where you need it: "
                      f"`{slot['definition']} where ...`")
             if defn.get("playout") is not None:
+                # A register-width field that some method DEREFERENCES has to be
+                # able to hold an address, and one that nothing ever writes --
+                # not a method, not a bound argument, not this adoption -- holds
+                # zero. That spelling compiled and segfaulted before `in stack`
+                # existed to mean the other thing, so it is refused here rather
+                # than left to run.
+                _given = set()
+                for _k in ("init", "pending", "constinit", "runinit", "aliases"):
+                    _given |= set((slot.get(_k) or {}).keys())
+                _unset = unset_deref_fields(defn) - _given
+                if _unset:
+                    _f = sorted(_unset)[0]
+                    fail(f"line {slot['line']}: '{slot['name']}' reads "
+                         f"`[{_f} + ...]`, which follows '{_f}' as an ADDRESS -- "
+                         f"but nothing ever gives '{_f}' one, so it holds zero. "
+                         f"Write `{_f} is {defn['playout'][_f][1]} bytes in "
+                         "stack` if those bytes ARE the storage, or give it an "
+                         "address to follow.")
                 # a PURE LAYOUT -> a contiguous block. Register as a buffer so
                 # the name is its address and `INST.FIELD` works. A `new`
                 # layout owns that block; a lens (`BUF as LAYOUT`) instead
@@ -4139,6 +4157,39 @@ def is_resource(defn):
     scalars."""
     return bool(defn["methods"]) or bool(defn.get("layered"))
 
+
+
+def unset_deref_fields(defn):
+    """Register-width fields some method DEREFERENCES that nothing ever writes.
+
+    `[field + k : w]` on a field of register width reads the field as an
+    ADDRESS. That is what `span.data` wants -- it holds where the bytes are, and
+    following it is the point. A field nothing ever assigns holds zero, so the
+    same spelling is a store through a null pointer: it compiles, and it
+    segfaults, which is what `in stack` exists to say instead.
+
+    Assignment counts from anywhere the field can get a value: a method body, a
+    primitive method's bound argument, or the adoption at the use site -- which
+    is why the answer is a SET for the caller to subtract the adopted names
+    from, rather than a verdict here."""
+    pl = defn.get("playout") or {}
+    arrays = set(defn.get("arrays") or ())
+    cand = {f for f, e in pl.items()
+            if len(e) >= 2 and e[1] in (1, 2, 4, 8) and f not in arrays}
+    if not cand:
+        return set()
+    deref, written = set(), set()
+    for meth in (defn.get("methods") or {}).values():
+        lines = [str(l) for l in (meth.get("procedure") or ())]
+        for _port, _a in (meth.get("bind") or {}).items():
+            lines.append(str(_a[0] if isinstance(_a, (list, tuple)) else _a))
+        for l in lines:
+            for f in cand:
+                if re.search(rf"\[\s*{re.escape(f)}\b", l):
+                    deref.add(f)
+                if re.match(rf"^\s*{re.escape(f)} is\b", l):
+                    written.add(f)
+    return deref - written
 
 
 def own_bytes_text(inst_name, defn, field):

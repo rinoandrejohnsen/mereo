@@ -1,0 +1,22 @@
+include "../../linux.mereo"
+
+-- `[field + k : w]` on a field of register width follows the field as an
+-- ADDRESS. That is what `span.data` wants -- it holds where the bytes are. A
+-- field nothing ever gives an address holds zero, so the same spelling is a
+-- store through a null pointer: it compiled, and it segfaulted, until this
+-- was refused.
+--
+-- `slot` here is never written by a method, never bound as an argument, and
+-- never adopted with a value. `in stack` is what it meant.
+
+watcher is
+  slot is 8 bytes
+  arm goes
+    [slot + 0 : 4] is 1
+  end
+end
+
+program goes
+  w is already watcher ()
+  w.arm ()
+end
