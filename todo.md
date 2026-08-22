@@ -1350,3 +1350,91 @@ rather than assuming.
 primitive, so this is a mereoc change and not a mereo one, which is the right
 side of the line. But it is the first target-specific code generation in the
 project, and that is a door rather than a step.
+
+## Scanning the language for more inconsistencies of the `N bytes` kind
+
+Done 2026-08-22, after `N bytes` was closed. The shape to look for is what made
+that one bad: **one spelling, more than one meaning, and something invisible
+choosing between them.** Five turned up. None of them miscompiles -- that is the
+first thing worth saying, because `N bytes` did, and these all either do the
+right thing or refuse. They are consistency and diagnostic faults, not
+correctness ones, and they are ranked here by how much they cost a reader.
+
+### 1. Adoption ignores a default the declaration already wrote
+
+A **state slot** carries a default and adoption must restate it anyway. A
+**field** carries no default and may be omitted. So the thing that says what it
+starts as is mandatory, and the thing that says nothing is optional -- exactly
+backwards.
+
+| definition has | `already X` | `already X ()` | `already X (a is 1)` |
+| --- | --- | --- | --- |
+| fields | ok | ok | ok |
+| state | **refused** | **refused** | ok |
+| neither | refused | refused | refused |
+
+And the default is not decorative: an ACQUIRED instance uses it.
+`examples/socket.mereo` writes `descriptor is -1` once and gets
+`_descriptor = -1`; the same declaration adopted demands the value again. The
+check at `mereoc.py` carries no comment saying why, unlike almost everything
+around it, which suggests it was never decided so much as arrived at.
+
+**Fix:** let a state slot's default stand at adoption, as it already does at
+acquisition, and keep the refusal only for slots with no default. One rule,
+stated where the reader is looking.
+
+### 2. `ensure` at a definition's top level accepts exactly one shape
+
+`span` writes `ensure length <= data.size` and it works. Every other form is
+`unrecognized definition line`, which reads like a typo rather than a limit:
+
+| | |
+| --- | --- |
+| `ensure length <= data.size` | accepted |
+| `ensure length <= 8` | "unrecognized definition line" |
+| `ensure a <= b` | "unrecognized definition line" |
+| `ensure length > 0` | "unrecognized definition line" |
+
+**Fix, cheapest half:** recognise `ensure` there and say what it supports. The
+message is the bug; the restriction may well be right.
+
+### 3. `ensure` in a method means two things by POSITION
+
+First line of a method, it is a CONTRACT CLAUSE. After any statement, it is a
+check. So `span.at` writes `b is 0` before its `ensure` and works, and the same
+`ensure` moved up one line is refused with `ensure` before the method's body --
+a message that names the rule without explaining it or saying what to do.
+
+**Fix:** say it. "An `ensure` on a method's first line declares a contract on a
+primitive body; this method has a procedure body, so write the check after the
+locals it reads." Same refusal, useful sentence.
+
+### 4. `NAME is NUMBER` means three things by context
+
+At the left margin a CONSTANT (inlined). In a program body a SCALAR (`long
+count = 0`). In a definition a STATE SLOT (`long h_seen = 0`). Milder than the
+others, because the three places are far apart and nothing can be mistaken for
+another within one scope -- but it is the same shape as `N bytes` and belongs on
+the list. Worth leaving alone unless someone trips.
+
+Also stale and worth fixing on the way past: `docs/syntax-summary.md` still says
+"There is no named constant yet", which the left-margin form disproves.
+
+### 5. Placement words are accepted asymmetrically
+
+`in stack`, `in static` and `in register` all work on a buffer. On a field only
+`in register` and `in stack` do; `in static` is "unrecognized definition line"
+-- which is likely correct, since staticness is a property of the INSTANCE and
+not of one field, but the message does not say so. And assigning a number to an
+`in stack` field reports "'h' is not a scalar slot", naming the instance rather
+than the field and explaining neither.
+
+**Fix:** both are messages, not rules.
+
+### The pattern across all five
+
+Four of them are diagnostics rather than semantics: the language already does
+the right thing and describes it badly, usually by falling through to a generic
+"unrecognized" line. Only the first is a rule worth changing. That is a better
+place to be than `N bytes` was, and it suggests the next pass should be over the
+error messages rather than the grammar.
