@@ -204,6 +204,53 @@ That is the trade stated plainly. mereo spends bytes to save instructions, and
 the two cancel on this workload. It is not a coincidence that the size and the
 instruction count move in opposite directions: **they have the same cause.**
 
+### Why the lower IPC, since it sounds like a fault
+
+Pinned to one core so the counters are whole:
+
+| | cycles | instructions | IPC |
+| --- | ---: | ---: | ---: |
+| C | 228,728,737 | 798,334,309 | **3.490** |
+| mereo | 231,640,663 | 711,505,256 | **3.072** |
+
+The first thing to say is that a lower IPC here is arithmetic rather than a
+fault: the same cycles divided by 11% fewer instructions is a smaller number by
+construction. mereo is not stalling more in any way that costs time — the wall
+clock is the same.
+
+The second is *why* the cycles did not fall along with the instructions, and the
+counters answer it. mereo is **front-end bound**: the pipeline is waiting for
+instructions to be fetched, not for work to finish.
+
+| | retiring | front-end | back-end | bad speculation |
+| --- | ---: | ---: | ---: | ---: |
+| C | 48.6% | 24.5% | 4.7% | 22.2% |
+| mereo | 40.9% | **35.8%** | 3.5% | 19.8% |
+
+mereo is better on the other three and loses on that one. Its front end fails to
+deliver 507 million uops against C's 344 million. The obvious causes are not it:
+**L1 instruction misses are zero for both** — 5014 bytes and 3798 both sit in a
+32 KB cache — and both run 99.7% out of the uop cache, so it is not decode
+bandwidth either.
+
+What it is:
+
+| | branches | of instructions |
+| --- | ---: | ---: |
+| C | 152,300,541 | 19.1% |
+| mereo | 157,470,696 | **22.1%** |
+
+**mereo runs 87 million fewer instructions and 5 million more branches.**
+Inlining removes straight-line work — the call, the frame, the argument
+shuffling — and leaves every branch exactly where it was. What is left is a
+denser stream: a branch every 4.5 instructions against C's every 5.2. The front
+end fetches one contiguous run per cycle, so a stream that turns more often
+gives it less to work with, and that is the whole of the difference.
+
+So the shape of the trade is sharper than "bigger but the same speed". mereo
+does the same work in fewer, branchier instructions, and pays back in fetch what
+it saved in execution.
+
 A note on tooling, since it cost an hour. `perf stat -e instructions:u` is the
 obvious instrument and is wrong here: this is a hybrid CPU, the process migrates
 between P-cores and E-cores, and each PMU counts only while the process is on
