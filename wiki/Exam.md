@@ -276,30 +276,49 @@ So mereo is not doing worse arithmetic to get its smaller count — it does
 stack. The one column where it does more is comparing, and that has a cause
 worth naming, because it is the same cause as the other two.
 
-The gap is **9.1 compares per line**, and where they go is **not established**.
-The obvious explanation is wrong, and it is worth writing down because it is the
-one anybody reaches for.
+The gap is **9.1 compares per line**, and about **40% of it is signedness**.
 
-C's `do_line` is a function, so `return` ends the line — eight
-`malformed++; return;` and nothing after them runs. mereo has no functions, so
-`leave parse` leaves the *scope* and the code after still runs, which is why
-loglyze keeps a `bad` flag and tests it once at the end. That looks like the
-cause and is not: **that test runs once per line, so it can account for at most
-one of the nine.**
+mereo's scalars are signed 64-bit; the C twin's lengths and indices are `u32`.
+That decides whether a loop needs an entry test. mereo's per-line path runs nine
+loops, each shaped
 
-Rewriting the parse to count each failure at its own site — which is exactly
-what C does, and which mereo can express — made compares **worse**, 3,288,110
-against 3,136,871, because a conditional scope costs the same test that
-`leave ... when` did and adds the increment. And the first attempt at that
-rewrite was simply wrong: of the fourteen `leave parse` sites, three are not
-failures at all, so counting at every one of them changed the answer. Both of
-those are recorded rather than swept up, since the shape of the mistake is more
-useful than the number.
+```ada
+  w is 0
+  mix goes
+    leave mix when w >= plen
+```
 
-What can be said: **a `return` is not special, and mereo can do what C does
-here.** The extra comparing is not a language limitation that has been
-identified; it is a difference between two programs that has not yet been
-explained.
+which lowers to a test at the top. For an *unsigned* bound, `0 >= plen` is false
+whenever `plen != 0` — and the parse has already refused `plen == 0` — so GCC
+folds the entry test away and falls straight into the body. For a *signed*
+bound it cannot: `plen` might be negative, and nothing has said otherwise. The
+test survives, and runs once more than the loop does.
+
+Measured from both ends, which is why it can be stated as a cause rather than a
+story:
+
+| | compares |
+| --- | ---: |
+| C as written, `u32` lengths | 2,921,593 |
+| the same C, types changed to `long` | **3,006,734** |
+| mereo | 3,136,871 |
+
+Changing nothing but the C twin's types moves it 85,141 of the way. From the
+other side, telling GCC `plen > 0` at one mereo loop removes 47,402 compares on
+its own, and doing it at all twenty-five loops removes 48,495 — the same
+handful of loops, since most bounds were never the blocker.
+
+The remaining 60% is not attributed. It is spread across the parse rather than
+sitting in one place, and no single change has been found that moves it.
+
+**What this is not.** The obvious explanation — that mereo has no functions, so
+a scope's early exit needs a flag where a `return` needs nothing — is wrong, and
+worth recording because it is the one anybody reaches for. That flag is tested
+once per line, so it can account for at most one of the nine. Rewriting the
+parse to count each failure at its own site, exactly as C does and as mereo can
+express, made compares **worse** — 3,288,110 — because a conditional scope costs
+the same test `leave ... when` did and adds the increment. A `return` is not
+special here, and mereo can do what C does.
 
 The shape of the saving names its cause. Straight-line work — arithmetic and
 data movement — falls by a quarter, while control flow and comparison stay
@@ -312,8 +331,9 @@ fact produces both of them: the binary is 30% larger because each helper is
 copied per use, and the instruction count is 11% lower because no call, frame or
 argument shuffling remains. The same trade, seen from two sides.
 
-The comparing is not part of it — see above. It was written here as though it
-were, and it is not.
+The comparing is a different cause: signedness, for 40% of it, and something
+unattributed for the rest. It was written here as though it followed from the
+missing functions, and it does not.
 
 So the shape of the trade is sharper than "bigger but the same speed". mereo
 does the same work in fewer, branchier instructions, and pays back in fetch what

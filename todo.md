@@ -2084,3 +2084,67 @@ Three accesses in the whole corpus genuinely have an unknown backing: two in
 than 9, and it points at the right half of each.
 
 All 90 binaries byte-identical -- the analysis makes lists, not code.
+
+## Signed scalars cost a compare at every length-bounded loop
+
+Found 2026-08-22, running down why mereo executes 7% more compares than the C
+twin. About 40% of that gap is this, measured from both ends.
+
+mereo's scalars are signed 64-bit. The C twin's lengths and indices are `u32`.
+A loop bounded by a length lowers to a test at the top:
+
+```
+  w is 0
+  mix goes
+    leave mix when w >= plen
+```
+
+For an UNSIGNED bound, `0 >= plen` is false whenever `plen != 0`, and the parse
+has already refused `plen == 0`, so GCC folds the entry test away and falls into
+the body. For a SIGNED bound it cannot -- `plen` might be negative and nothing
+has said otherwise -- so the test survives and runs once more than the loop
+does. mereo's per-line path runs nine such loops.
+
+| | compares |
+| --- | ---: |
+| C as written | 2,921,593 |
+| the same C with `long` instead of `u32` | 3,006,734 |
+| mereo | 3,136,871 |
+
+From the other end: stating `plen > 0` before one mereo loop removes 47,402
+compares, and stating it at all twenty-five removes 48,495 -- the same handful,
+since most bounds were never the blocker.
+
+### Why this is worth doing something about
+
+**mereo already knows.** The bounds are lengths: they come from `.size`, from
+`text.find`, from a `read` count with `ensure count >= 0` on it. The interval
+analysis that proves accesses in range has the non-negativity of every one of
+them, and throws it away at the point where GCC needs it.
+
+Two shapes for a fix, neither designed yet:
+
+* emit the fact -- `if ((long)BOUND < 0) __builtin_unreachable();` before a loop
+  whose bound the analysis knows is non-negative. This is measured to work; it
+  is also the one thing recorded elsewhere in this file as usually worthless,
+  and it is worth understanding why this case differs. It is not a bound on an
+  ACCESS, which GCC re-derives on its own -- it is a fact about a SIGN, which
+  GCC cannot get from anywhere else.
+* compare unsigned where the analysis proves both sides non-negative, which
+  needs no new syntax and no assumption, but does change what the generated C
+  says.
+
+The second is cleaner and the first is already known to work. Either needs the
+analysis to hand its result to the emitter, which nothing currently does.
+
+### What it is NOT, recorded so it is not re-derived
+
+The tempting explanation was that mereo has no functions, so a scope's early
+exit needs a flag where `return` needs nothing. It is wrong. The flag is tested
+once per line and can account for one of the nine. Rewriting the parse to count
+each failure at its own site -- what C does, and expressible in mereo -- made
+compares WORSE, 3,288,110, because a conditional scope costs the same test that
+`leave ... when` did and adds the increment.
+
+The other 60% of the gap is unattributed. It is spread across the parse rather
+than sitting anywhere, and no single change has been found that moves it.
