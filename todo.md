@@ -2277,3 +2277,50 @@ which is worth remembering when a future program does not reach parity.
 `long n = 0`, exactly as without it. A reading that the language takes and drops
 is worse than one it refuses, and this one looks like it does the thing this
 entry is about. Either make it mean something or refuse it.
+
+
+## uops.info on the exam's instruction mix: no better combination exists
+
+Checked 2026-08-22 against `uops.info/instructions.xml`, architecture `ADL-P`,
+which is the P-core this machine measures on. The question was whether a
+different choice of instructions would beat the current one, given mereo is
+front-end bound and its `movabs` constants are 6.9% of every byte fetched.
+
+**The answer is no, and the table explains a failed experiment rather than
+suggesting a new one.**
+
+| | uops | TP | ports |
+| --- | ---: | ---: | --- |
+| `MOV (R64, I64)` -- movabs | 1 | 0.28 | **p0156B**, four wide ALU ports |
+| `MOV (R64, M64)` -- a load | 1 | 0.33 | **p23A**, the two load ports |
+| `MOVZX (R32, M8)` | 1 | 0.35 | p23A |
+| `IMUL (R32, R32, I32)` | 1 | **1.00** | **p1 only** |
+| `TZCNT` | 1 | **1.00** | **p1 only** |
+| `ADD (R64, I8)` | **0** | 0.20 | eliminated |
+
+The SWAR broadcast constants are `movabs`, ten bytes each, 679,237 executions,
+4.75 MB of fetch. Routing them through memory to save three bytes apiece was
+tried and lost -- 70.97 MB fetched against 69.14. The table says why: it moves
+them off four idle ALU ports onto the two LOAD ports, which a program reading
+every byte through `movzbl` is already leaning on. Measured port pressure agrees:
+p2/3/10 is the busiest counter in both programs.
+
+So `movabs` is the right instruction. It costs one uop on the widest ports in
+the machine, and its only price is fetch bytes -- and every way of paying less
+fetch costs something scarcer.
+
+**The genuinely expensive instructions are `IMUL` and `TZCNT`**, both p1-only at
+a throughput of 1.00, and both programs execute the same number of them --
+271,904 IMULs each, since the FNV hash multiplies once per path byte. Neither
+language has an advantage there, and a hash without a multiply would change the
+output.
+
+### What this closes
+
+Together with the two entries above -- handing GCC the sign (slower) and
+narrowing the scalars (slower) -- the instruction-level question is finished.
+The mix mereo emits is the best of the ones available: fewer instructions than
+C, each a little larger, on ports that are not the bottleneck. What is left is
+structural, and it is the one thing not yet tried: **giving mereo real functions
+instead of inlining every helper**, which is the other half of the size finding
+and would move the fetch cost rather than shuffle it between ports.
