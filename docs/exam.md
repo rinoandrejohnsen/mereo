@@ -278,23 +278,30 @@ So mereo is not doing worse arithmetic to get its smaller count — it does
 stack. The one column where it does more is comparing, and that has a cause
 worth naming, because it is the same cause as the other two.
 
-**C's `do_line` is a function, so `return` ends the line.** It uses that eight
-times: eight ways for a line to be malformed, each one `malformed++; return;`,
-and nothing after them runs. mereo has no functions, so `leave parse` leaves the
-*scope* and the code after it still runs — which means it has to be told whether
-the parse succeeded:
+The gap is **9.1 compares per line**, and where they go is **not established**.
+The obvious explanation is wrong, and it is worth writing down because it is the
+one anybody reaches for.
 
-```
-  ready is 0                      -- and then, further down
-  leave slow when ready != 0
-  leave finish when ready == 0
-  leave digits_loop when bad == 0
-```
+C's `do_line` is a function, so `return` ends the line — eight
+`malformed++; return;` and nothing after them runs. mereo has no functions, so
+`leave parse` leaves the *scope* and the code after still runs, which is why
+loglyze keeps a `bad` flag and tests it once at the end. That looks like the
+cause and is not: **that test runs once per line, so it can account for at most
+one of the nine.**
 
-`ready`, `over` and `bad` are the flags that stand in for a return, and testing
-them is where the extra comparing goes. Five such tests per line against C's
-zero, on a program whose whole per-line path is about sixteen tests, is the
-7%.
+Rewriting the parse to count each failure at its own site — which is exactly
+what C does, and which mereo can express — made compares **worse**, 3,288,110
+against 3,136,871, because a conditional scope costs the same test that
+`leave ... when` did and adds the increment. And the first attempt at that
+rewrite was simply wrong: of the fourteen `leave parse` sites, three are not
+failures at all, so counting at every one of them changed the answer. Both of
+those are recorded rather than swept up, since the shape of the mistake is more
+useful than the number.
+
+What can be said: **a `return` is not special, and mereo can do what C does
+here.** The extra comparing is not a language limitation that has been
+identified; it is a difference between two programs that has not yet been
+explained.
 
 The shape of the saving names its cause. Straight-line work — arithmetic and
 data movement — falls by a quarter, while control flow and comparison stay
@@ -302,12 +309,13 @@ flat. That is the signature of removing calls: the address arithmetic, the frame
 adjustment and the argument shuffling go, and every branch and test the program
 actually asked for stays exactly where it was.
 
-**All of it is one decision.** mereo has no functions, and that single fact
-produces every number on this page: the binary is 30% larger because each helper
-is copied per use; the instruction count is 11% lower because no call, frame or
-argument shuffling remains; and the comparing is 7% higher because a scope's
-early exit needs a flag where a function's `return` needs nothing. The trade is
-not three trades. It is one, seen from three sides.
+**Two of the three are one decision.** mereo has no functions, and that single
+fact produces both of them: the binary is 30% larger because each helper is
+copied per use, and the instruction count is 11% lower because no call, frame or
+argument shuffling remains. The same trade, seen from two sides.
+
+The comparing is not part of it — see above. It was written here as though it
+were, and it is not.
 
 So the shape of the trade is sharper than "bigger but the same speed". mereo
 does the same work in fewer, branchier instructions, and pays back in fetch what
