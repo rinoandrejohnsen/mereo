@@ -1,0 +1,13 @@
+include "../../linux.mereo"
+-- Whether storage is static belongs to the INSTANCE, not to one field of it.
+-- Refusing is right; "unrecognized definition line" was not the way to say so.
+holder is
+  a is 8 bytes in static
+  go goes
+    a is a + 1
+  end
+end
+program goes
+  h is already holder (a is 1)
+  h.go ()
+end

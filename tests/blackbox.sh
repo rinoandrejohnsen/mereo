@@ -469,6 +469,12 @@ rejects access/past-end   access_past_end   "reads 101 bytes into"
 rejects field/bad-register field_bad_register "a register holds 1, 2, 4 or 8 bytes"
 rejects field/unset-deref  field_unset_deref  "but nothing ever gives"
 rejects adopt/already-bare  already_bare  "must name every field"
+# Four refusals that used to fall through to a generic "unrecognized" line, so
+# a semantic limit on a keyword the language has arrived as a syntax error.
+rejects msg/ensure-shape   msg_ensure_shape   "holds exactly one shape"
+rejects msg/ensure-first   msg_ensure_first   "a check goes after the locals"
+rejects msg/field-static   msg_field_static   "belongs to the INSTANCE"
+rejects msg/assign-bytes   msg_assign_bytes   "is a run of bytes"
 # ...and the DERIVED cases, which no literal gives away. The bound is read off
 # the loop, the index is an induction variable, the size is the array's. GCC
 # reports neither, even at -Warray-bounds=2 -Wstringop-overflow=4 -fanalyzer.

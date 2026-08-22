@@ -1398,53 +1398,34 @@ All 90 binaries byte-identical. Gated by `rejects adopt/already-bare`. Docs in
 `linux.file.already (descriptor is 1)`, which is not the syntax and never was,
 and the stale "there is no named constant yet".
 
-### 2. `ensure` at a definition's top level accepts exactly one shape
+### 2-5 DONE 2026-08-22: all four were messages, and all four now explain
 
-`span` writes `ensure length <= data.size` and it works. Every other form is
-`unrecognized definition line`, which reads like a typo rather than a limit:
+Every one fell through to a generic line, so a semantic limit on a keyword the
+language plainly has arrived at the reader as a syntax error.
 
-| | |
+| was | now says |
 | --- | --- |
-| `ensure length <= data.size` | accepted |
-| `ensure length <= 8` | "unrecognized definition line" |
-| `ensure a <= b` | "unrecognized definition line" |
-| `ensure length > 0` | "unrecognized definition line" |
+| `ensure a <= b` in a definition -> "unrecognized definition line" | that an `ensure` there is an INVARIANT holding one shape, `FIELD <op> FIELD.size`, and that a check over values belongs in a method |
+| `ensure` first in a method -> "`ensure` before the method's body" | that the first line declares a CONTRACT on a primitive body, that this body is a procedure, and that `span.at` writes `b is 0` before its check |
+| `a is 8 bytes in static` -> "unrecognized definition line" | the field grammar in order, and that staticness belongs to the INSTANCE rather than one field |
+| assigning to an `in stack` field -> "'h' is not a scalar slot" | that it is a run of bytes with no single value, and to write a store |
 
-**Fix, cheapest half:** recognise `ensure` there and say what it supports. The
-message is the bug; the restriction may well be right.
+The last still names the address the field resolves to rather than the field,
+because the splice has substituted one for the other by then; the sentence says
+what happened, which is what the reader needed. Threading the original name
+through the rename is more machinery than the message is worth.
 
-### 3. `ensure` in a method means two things by POSITION
+Gated by four `rejects` cases, one per message, each matching on the clause that
+carries the explanation rather than on the whole text -- so a reworded message
+stays green and a message that stops explaining does not.
 
-First line of a method, it is a CONTRACT CLAUSE. After any statement, it is a
-check. So `span.at` writes `b is 0` before its `ensure` and works, and the same
-`ensure` moved up one line is refused with `ensure` before the method's body --
-a message that names the rule without explaining it or saying what to do.
-
-**Fix:** say it. "An `ensure` on a method's first line declares a contract on a
-primitive body; this method has a procedure body, so write the check after the
-locals it reads." Same refusal, useful sentence.
-
-### 4. `NAME is NUMBER` means three things by context
-
-At the left margin a CONSTANT (inlined). In a program body a SCALAR (`long
-count = 0`). In a definition a STATE SLOT (`long h_seen = 0`). Milder than the
-others, because the three places are far apart and nothing can be mistaken for
-another within one scope -- but it is the same shape as `N bytes` and belongs on
-the list. Worth leaving alone unless someone trips.
-
-Also stale and worth fixing on the way past: `docs/syntax-summary.md` still says
-"There is no named constant yet", which the left-margin form disproves.
-
-### 5. Placement words are accepted asymmetrically
-
-`in stack`, `in static` and `in register` all work on a buffer. On a field only
-`in register` and `in stack` do; `in static` is "unrecognized definition line"
--- which is likely correct, since staticness is a property of the INSTANCE and
-not of one field, but the message does not say so. And assigning a number to an
-`in stack` field reports "'h' is not a scalar slot", naming the instance rather
-than the field and explaining neither.
-
-**Fix:** both are messages, not rules.
+**Number 4 needed no code.** `NAME is NUMBER` does mean three things by
+position, but its one real collision -- a scalar taking a constant's name -- is
+already refused where it is written, with a message that names the pattern
+outright: "two meanings, chosen by context". The gap was that nothing SAID so
+where a reader would look, and `docs/memory.md` now carries the three in a
+table. All 90 binaries byte-identical, as they should be for a pass over
+diagnostics.
 
 ### The pattern across all five
 

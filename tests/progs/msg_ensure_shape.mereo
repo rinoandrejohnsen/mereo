@@ -1,0 +1,16 @@
+include "../../linux.mereo"
+-- An `ensure` at a definition's top level is an INVARIANT and holds one shape.
+-- Any other used to fall through to "unrecognized definition line", which reads
+-- like a typo rather than a limit on a keyword the language plainly has.
+view is
+  a is 8 bytes
+  b is 8 bytes
+  ensure a <= b
+  go goes
+    a is a + 1
+  end
+end
+program goes
+  v is already view (a is 1, b is 2)
+  v.go ()
+end

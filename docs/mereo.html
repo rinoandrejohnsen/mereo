@@ -336,6 +336,9 @@ release_server:
 <h2>Memory and views</h2>
 <p>mereo has no heap. Memory is declared where it is used, in the stack or in static storage, and a buffer's name is its address. What carries a type is not the variable but the access.</p>
 <h3>Backings</h3>
+<p><code>NAME is NUMBER</code> means one of three things, and <strong>where you write it decides which</strong>:</p>
+<table><thead><tr><th>written</th><th>is</th><th>and it</th></tr></thead><tbody><tr><td>at the left margin</td><td>a <strong>constant</strong></td><td>reads as its number wherever a number is accepted</td></tr><tr><td>in a program body</td><td>a <strong>scalar</strong></td><td>is one machine word, signed, and can be assigned</td></tr><tr><td>in a definition</td><td>a <strong>state slot</strong></td><td>is per-instance, and its number is the value it starts at</td></tr></tbody></table>
+<p>The three places are far enough apart that nothing is ambiguous within one scope, and the one collision that can happen — a scalar taking a constant's name — is refused where it is written. Fields are the other declaration and never overlap with these: a field is <code>N bytes</code>, never a number.</p>
 <p>A <strong>backing</strong> is a run of bytes with a name:</p>
 <pre><code>  <span class="t-plain">block</span> <span class="t-bind">is</span> <span class="t-number">4096</span> <span class="t-inside">bytes</span>
   <span class="t-plain">message</span> <span class="t-bind">is</span> <span class="t-string">"hello, world\n"</span></code></pre>

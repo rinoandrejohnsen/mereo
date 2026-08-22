@@ -1,0 +1,15 @@
+include "../../linux.mereo"
+-- `ensure` on a method's FIRST line declares a contract on a primitive body;
+-- after any statement it is a check. The refusal used to name the rule without
+-- explaining it or saying where the line belongs instead.
+holder is
+  a is 8 bytes
+  go goes
+    ensure a > 0
+    a is a + 1
+  end
+end
+program goes
+  h is already holder (a is 1)
+  h.go ()
+end

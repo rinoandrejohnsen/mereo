@@ -2019,6 +2019,26 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     defn.setdefault("invariants", []).append(
                         (m.group(1), m.group(2), m.group(3), n))
                     continue
+                if re.match(r"^ensure\b", s):
+                    # recognised, then refused with the reason -- falling through
+                    # to "unrecognized definition line" made a supported keyword
+                    # in an unsupported shape read like a typo.
+                    fail(f"line {n}: `{s}` -- an `ensure` here is an INVARIANT "
+                         "on the definition's own fields, checked where an "
+                         "instance is adopted, and it holds exactly one shape: "
+                         "`ensure FIELD <op> FIELD.size`, which ties a field to "
+                         "the size of the backing another field was given (see "
+                         "`span` in core.mereo). A check over values belongs in "
+                         "a method, where the values exist.")
+                if re.match(r"^\w+ is \d+ bytes\b", s):
+                    # ...same for a field whose trailing words did not parse.
+                    fail(f"line {n}: `{s}` -- a field is `NAME is N bytes`, "
+                         "then optionally `as signed`/`as unsigned`, then "
+                         "`as big`/`as little`, then `in stack`/`in register`, "
+                         "in that order. `in static` is not among them: whether "
+                         "storage is static belongs to the INSTANCE, not to one "
+                         "field of it, so write it where the instance is "
+                         "declared.")
                 fail(f"line {n}: unrecognized definition line: {s!r}")
             if ind == 4 and method is not None:
                 # a procedure method opens its body with slot decls / a loop --
@@ -2153,7 +2173,13 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                             (m.group(1), m.group(2), m.group(3), n))
                     continue
                 if method["prim"] is None and not method["delegate"]:
-                    fail(f"line {n}: `ensure` before the method's body")
+                    fail(f"line {n}: `{s}` opens '{method['name']}', where an "
+                         "`ensure` declares a CONTRACT on a primitive body -- a "
+                         "clause the syscall promises or is checked against. "
+                         "This method has a procedure body instead, so the same "
+                         "line is a check, and a check goes after the locals and "
+                         "arguments it reads. `span.at` in core.mereo is the "
+                         "shape: `b is 0`, then `ensure offset < length`.")
                 m = re.match(r"^ensure (.+?)(?: as (signed|unsigned))? "
                              r"(<=|>=|==|!=|<|>) (.+)$", s)
                 if m:
@@ -7134,6 +7160,18 @@ def plan(definitions, slots, steps, overrides):
         check_released(st)
         if st["type"] == "assign":           # `X is EXPR` -- recompute a scalar
             if st["name"] not in scalars:
+                if st["name"] in buffers:
+                    # A run of bytes, which has no single value to be given. The
+                    # common way to arrive here is assigning to a field that is
+                    # `in stack`: it resolves to WHERE those bytes are, and the
+                    # old message named that address and called it "not a scalar
+                    # slot", which is true and unhelpful.
+                    fail(f"line {st['line']}: '{st['name']}' is a run of bytes, "
+                         "so there is no single value to give it. Write a store "
+                         f"-- `[{st['name']} + 0 : N] is ...` -- for the bytes "
+                         "you mean. A field declared `in stack` is this: it "
+                         "holds bytes rather than a number, which is what the "
+                         "words asked for.")
                 fail(f"line {st['line']}: '{st['name']}' is not a scalar slot "
                      "(declare it with `NAME is NUMBER` before assigning)")
             if st.get("clauses") is not None:

@@ -1,0 +1,14 @@
+include "../../linux.mereo"
+-- A field declared `in stack` holds BYTES, so there is no single value to give
+-- it. The old message named the address it resolves to and called that "not a
+-- scalar slot" -- true, and no help at all.
+holder is
+  a is 8 bytes in stack
+  go goes
+    a is a + 1
+  end
+end
+program goes
+  h is blank holder
+  h.go ()
+end

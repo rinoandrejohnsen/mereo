@@ -6,6 +6,20 @@ the variable but the access.
 
 ## Backings
 
+`NAME is NUMBER` means one of three things, and **where you write it decides
+which**:
+
+| written | is | and it |
+| --- | --- | --- |
+| at the left margin | a **constant** | reads as its number wherever a number is accepted |
+| in a program body | a **scalar** | is one machine word, signed, and can be assigned |
+| in a definition | a **state slot** | is per-instance, and its number is the value it starts at |
+
+The three places are far enough apart that nothing is ambiguous within one
+scope, and the one collision that can happen — a scalar taking a constant's name
+— is refused where it is written. Fields are the other declaration and never
+overlap with these: a field is `N bytes`, never a number.
+
 A **backing** is a run of bytes with a name:
 
 ```
