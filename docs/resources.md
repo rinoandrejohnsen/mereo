@@ -40,10 +40,27 @@ Three words distinguish what an instance does with the thing it names:
 | `NAME is CLASS (...)` | acquires it, and releases it at the scope's end |
 | `NAME is adopted CLASS (...)` | takes ownership of something already open, and releases it |
 | `NAME is already CLASS (...)` | borrows it; releases nothing |
+| `NAME is blank CLASS` | a fresh zeroed block of that shape; releases nothing |
 
 `already linux.file (descriptor is 1)` names standard output without ever
 closing it. `adopted` is for a descriptor obtained some other way — the two ends
 of a pipe, for instance — which the tower should still close.
+
+**`already` names every field**, because it borrows a thing that already exists
+and each field is a fact about that thing. There is no defaulting: zero is not
+"unset", and `descriptor is 0` is standard input, so `already linux.file` with
+the field left off used to compile, exit zero, and write into whatever fd 0 was.
+
+`blank` is the other job — storage of that shape, zeroed, belonging to nobody
+else — and takes no values, because zero is the whole of what it says:
+
+```
+  entry is blank linux.dirent      -- a record the kernel is about to fill
+  bound is blank linux.sockaddr_in -- ...filled field by field below
+```
+
+Fill it afterwards, by store or by a method. The two used to share the word
+`already`, which is why the borrow could quietly become a zero.
 
 ## The release tower
 

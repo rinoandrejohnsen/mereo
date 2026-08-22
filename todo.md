@@ -1360,48 +1360,43 @@ first thing worth saying, because `N bytes` did, and these all either do the
 right thing or refuse. They are consistency and diagnostic faults, not
 correctness ones, and they are ranked here by how much they cost a reader.
 
-### 1. `already` does two jobs, and one of them writes to the wrong file
+### 1. DONE 2026-08-22: `already` borrows, `blank` zeroes
 
-**Corrected 2026-08-22** -- the first draft of this entry had it backwards. It
-said a state slot's default should stand at adoption the way it does at
-acquisition. That is wrong: `already` BORROWS something that already exists, so
-naming its state is the point, and defaulting it would be inventing a fact about
-a real thing. Requiring it is right.
-
-The fault is on the FIELD side, and it is worse than untidy:
+`already` was doing two jobs, and sharing the word made one of them silent:
 
 ```
 t is already linux.file            -- descriptor omitted
 t.write (buffer is msg, count is msg.size)
 ```
 
-Accepted. `descriptor` defaults to zero, zero is standard input, and with fd 0
-opened read-write -- which a shell does with `0<>` -- this **exits 0 and writes
-the text into the wrong file**. No diagnostic, no failure. It is only caught
-when fd 0 happens not to be writable, and then as a run-time `-9`.
+Accepted, because a field defaults to zero -- and zero is standard input. With
+fd 0 opened read-write, which a shell does with `0<>`, it **exited 0 and wrote
+the text into the wrong file**, no diagnostic at all. Caught only when fd 0
+happened not to be writable, and then as a run-time `-9`.
 
-The cause is that `already` is two things at once:
+Split. `already` borrows a thing that already exists, so it names every field;
+`blank CLASS` is a fresh zeroed block of that shape and takes no values, since
+zero is the whole of what it says. The refusal points from one to the other:
 
-| written | means |
-| --- | --- |
-| `already linux.file (descriptor is 1)` | borrow this existing thing, here is its handle |
-| `already linux.sockaddr_in` | give me a fresh zeroed block of this shape |
+```
+line 4: 't' is `already linux.file`, which borrows a thing that already exists,
+so it must name every field -- missing descriptor. For a fresh zeroed one, write
+`blank linux.file`.
+```
 
-Both are in the corpus and both are legitimate. `examples/ls` writes `entry is
-already linux.dirent` for a record the KERNEL fills; `examples/server` writes
-`bound is already linux.sockaddr_in` and fills it field by field; `showcase` has
-`totals is already tally` for a zeroed accumulator. Requiring every field was
-tried and refuses all six, so that is not the fix.
+**Lenses are excluded, and finding that out was the useful part.** `X is BACKING
+as CLASS` gets `mode: "adopted"` internally, so the first strict rule refused
+six corpus programs -- `ls`, `server`, `showcase`, `socket`, `uname` -- which
+all read like `already CLASS` in the error and are nothing of the kind. A lens
+borrows the BACKING's bytes and its fields ARE those bytes; there is nothing to
+name. Once excluded, every one of the 90 built unchanged, which says the corpus
+never wanted the loose form: the only two programs using it were two of this
+week's own tests.
 
-**What to decide:** the two jobs want different words. A fresh zeroed block is a
-declaration of storage and reads like one -- something in the family of `NAME is
-CLASS bytes` or a `new`/`blank` word -- while `already` keeps its meaning of
-borrowing a thing that exists, and then may require every field, since a handle
-nobody named is not a handle.
-
-Until then the hazard is narrow and worth stating plainly: **`already` on a
-definition whose fields are HANDLES, with a field omitted, is a silent zero.**
-`linux.file` is the one that matters, and `descriptor is 0` is standard input.
+All 90 binaries byte-identical. Gated by `rejects adopt/already-bare`. Docs in
+`resources.md` and `syntax-summary.md` -- the latter also had
+`linux.file.already (descriptor is 1)`, which is not the syntax and never was,
+and the stale "there is no named constant yet".
 
 ### 2. `ensure` at a definition's top level accepts exactly one shape
 

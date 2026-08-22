@@ -2461,6 +2461,26 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                          " same word that reads a value as `signed` or `big`."
                          + (" `as adopted` is that same view, released on the way"
                             " out." if m.group(2) == "adopted" else ""))
+                # `NAME is blank CLASS` -- a fresh zeroed block of that shape,
+                # which is a DECLARATION of storage and not a borrow. It takes no
+                # values: zero is the whole of what it says. `already` is the
+                # other job, and having one word for both is what let
+                # `already linux.file` mean standard input in silence.
+                m = re.match(r"^(\w+) is blank ([\w.]+)$", s)
+                if m:
+                    name_ok(m.group(1), n, "instance")
+                    inst = {"kind": "instance", "name": m.group(1),
+                            "mode": "adopted", "blank": True,
+                            "definition": deref(m.group(2), ns_of_line.get(n), n,
+                                                "definition"),
+                            "init": {}, "aliases": {}, "line": n,
+                            "had_where": False}
+                    slots.append(inst)
+                    steps.append({"type": "adopt", "name": m.group(1),
+                                  "line": n})
+                    inblock = None
+                    laststep = None
+                    continue
                 m = re.match(r"^(\w+) is already ([\w.]+)(?:\s*\((.*)\))?$", s)
                 if m:
                     name_ok(m.group(1), n, "instance")
@@ -3454,6 +3474,24 @@ def check_slots(definitions, slots):
                 _given = set()
                 for _k in ("init", "pending", "constinit", "runinit", "aliases"):
                     _given |= set((slot.get(_k) or {}).keys())
+                # `already` BORROWS a thing that exists, so every field is a fact
+                # about that thing and zero is not "unset" -- `descriptor is 0`
+                # is standard input, and `already linux.file` with the field
+                # left off wrote to it and exited 0. A fresh zeroed block is the
+                # other job and says so: `blank CLASS`.
+                if (slot.get("mode") == "adopted" and not slot.get("blank")
+                        and not slot.get("lens")):
+                    # a LENS is excluded: `X is BACKING as CLASS` borrows the
+                    # backing's bytes, and its fields ARE those bytes -- there is
+                    # nothing to name, and the bytes are already someone's.
+                    _miss = sorted(f for f in (defn.get("playout") or {})
+                                   if f not in _given)
+                    if _miss:
+                        fail(f"line {slot['line']}: '{slot['name']}' is "
+                             f"`already {slot['definition']}`, which borrows a "
+                             "thing that already exists, so it must name every "
+                             f"field -- missing {', '.join(_miss)}. For a fresh "
+                             f"zeroed one, write `blank {slot['definition']}`.")
                 _unset = unset_deref_fields(defn) - _given
                 if _unset:
                     _f = sorted(_unset)[0]

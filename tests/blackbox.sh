@@ -468,6 +468,7 @@ rejects port/needs-slot   port_needs_slot   "so it needs a SCALAR SLOT"
 rejects access/past-end   access_past_end   "reads 101 bytes into"
 rejects field/bad-register field_bad_register "a register holds 1, 2, 4 or 8 bytes"
 rejects field/unset-deref  field_unset_deref  "but nothing ever gives"
+rejects adopt/already-bare  already_bare  "must name every field"
 # ...and the DERIVED cases, which no literal gives away. The bound is read off
 # the loop, the index is an induction variable, the size is the array's. GCC
 # reports neither, even at -Warray-bounds=2 -Wstringop-overflow=4 -fanalyzer.

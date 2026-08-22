@@ -1,0 +1,14 @@
+include "../../linux.mereo"
+
+-- `already` BORROWS a thing that already exists, so every field is a fact about
+-- that thing. Zero is not "unset": `descriptor is 0` is standard input, and this
+-- program without the refusal below compiled, exited 0, and wrote its text into
+-- whatever fd 0 happened to be -- silently, when fd 0 was opened read-write.
+--
+-- A fresh zeroed block is the OTHER job and says so: `blank linux.file`.
+
+program goes
+  msg is "borrowed nothing\n"
+  t is already linux.file
+  t.write (buffer is msg, count is msg.size)
+end

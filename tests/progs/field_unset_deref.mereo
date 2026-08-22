@@ -17,6 +17,6 @@ watcher is
 end
 
 program goes
-  w is already watcher ()
+  w is blank watcher
   w.arm ()
 end

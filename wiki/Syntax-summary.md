@@ -33,7 +33,8 @@ raw is constant bytes 0xe3, 0xb0     -- ...given byte by byte
 n is msg.size                  -- a COMPILE-TIME number (not counting the NUL)
 ```
 
-Numbers: `42`, `-1`, `0x2f`, `0b1011`. There is no named constant yet.
+Numbers: `42`, `-1`, `0x2f`, `0b1011`. A name for one is the left-margin
+form above.
 See [Buffers](Memory),
 [Scalars](Memory), [Storage](Memory).
 
@@ -165,11 +166,16 @@ file is                        -- define one
   end
 end
 
-source is linux.file (path is "x.txt")  -- own one -- released at the scope's end
-linux.file.already (descriptor is 1)  -- borrow one -- nothing to release
-NAME is adopted linux.file (descriptor is fd)  -- take ownership of something already open
-source.read (buffer is buf)    -- call a method
+source is linux.file (path is "x.txt")   -- own one -- released at the scope's end
+out is already linux.file (descriptor is 1)   -- borrow one -- names every field
+held is adopted linux.file (descriptor is fd) -- take ownership of something open
+entry is blank linux.dirent     -- a fresh zeroed block of that shape
+source.read (buffer is buf)     -- call a method
 ```
+
+`already` borrows a thing that exists, so it names every field — zero is not
+"unset", and `descriptor is 0` is standard input. `blank` is the other job and
+takes no values.
 
 See [Defining a resource](Resources), [`open`](Library).
 
