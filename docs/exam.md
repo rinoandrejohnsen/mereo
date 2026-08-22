@@ -146,12 +146,33 @@ for byte on the million-line log and on all 800 adversarial inputs.
 | | C | mereo |
 | --- | ---: | ---: |
 | source | 214 lines | 357 lines |
-| binary, same linker script | 4592 B | 6512 B |
-| instructions in `.text` | 988 | 1402 |
+| binary, same linker script | 4656 B | 5920 B |
+| `.text` | 3798 B | 5014 B |
+| instructions in `.text` | 988 | 1250 |
 
-mereo is 40% more instructions at the same speed, because the extra sits in cold
-paths — the report, the error blocks, the release tower — and never runs in the
-loop that reads 80 MB.
+mereo is 27% more instructions at the same speed. **The reason given here for
+years was wrong**, and is corrected: it said the extra sat in cold paths — the
+error blocks, the release tower — and never ran. `tests/size` attributes every
+byte, by building with `-g` and reading each instruction's generated-C line:
+
+| | |
+| --- | ---: |
+| mereo `.text` | 5014 B |
+| ...the spine, which runs | **4958 B** |
+| ...the cold tower | 56 B |
+| ...unattributed | 0 B |
+
+The tower is **1.1%**. GCC deletes most of it — six of the program's
+thirty-one error messages survive into the binary, the rest being unreachable
+once the checks around them are proved — so there is very little cold code left
+to blame. The extra 1160 bytes are in the spine, against the C twin's whole
+3798, and the honest statement is that **mereo's running code is about 30%
+larger than the C twin's at the same speed**, which the timing above already
+implies: more bytes, the same work, no slower.
+
+The old claim went unchecked long enough that the figures in this table drifted
+by 150 instructions without anyone noticing, which is why the attribution is now
+a suite rather than a sentence.
 
 ## What the exam found
 

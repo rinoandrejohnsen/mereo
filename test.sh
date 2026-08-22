@@ -27,6 +27,13 @@
 #      does the error point at the line it is on? The second half is the whole
 #      argument about `concept` and about deriving a port's requirement.
 #
+#   6. WHERE THE BYTES ARE                   (tests/size/run.sh)
+#      mereo is bigger than its hand-written C twin, and the reason given for
+#      years was that the extra is cold -- error blocks and the release tower.
+#      This attributes every byte and checks that the answer is still whatever
+#      the docs claim, since the figures drifted once already while nobody was
+#      measuring.
+#
 # Also runs build.sh (mereocheck hot/cold layout gate) and checks every declared
 # syscall number against <asm/unistd_64.h>.
 set -u
@@ -54,6 +61,11 @@ echo
 # differently. Zig is optional -- its column is skipped when it is not installed.
 echo "### Suite 5 -- compile-time checking versus C++ and Zig"
 "$DIR/tests/checking/run.sh" || rc=1
+
+echo
+# Where the extra bytes are, attributed rather than asserted.
+echo "### Suite 6 -- where mereo's bytes are, against the C twin"
+"$DIR/tests/size/run.sh" || rc=1
 echo
 echo "### Build + layout gate"
 "$DIR/build.sh" >/dev/null 2>&1 && echo "  build + mereocheck: ok" \
