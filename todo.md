@@ -2184,3 +2184,51 @@ compares WORSE, 3,288,110, because a conditional scope costs the same test that
 
 The other 60% of the gap is unattributed. It is spread across the parse rather
 than sitting anywhere, and no single change has been found that moves it.
+
+## The scalar width is what costs the IPC, and it is measured
+
+Found 2026-08-22, running the front-end question to the bottom. mereo's IPC is
+3.072 against the C twin's 3.490, at the same wall clock. The chain is now
+complete and every link is measured.
+
+**The front end fetches bytes, and the two programs fetch the same number:**
+
+| | instructions | bytes fetched | bytes each |
+| --- | ---: | ---: | ---: |
+| C | 20,348,221 | 69,780,683 | 3.429 |
+| mereo | 17,958,755 | 69,141,947 | **3.850** |
+
+Same fetch work, 12% fewer instructions out of it. That is the front-end stall
+(35.8% against 24.5%), and it is why the cycles do not fall when the instruction
+count does.
+
+**The instructions are bigger because the scalars are 64-bit.** Every 64-bit
+operation carries a REX prefix, one byte: 68.7% of mereo's executed instructions
+against C's 48.9%. Twenty points at a byte each is about half the 0.42-byte gap;
+the rest is `movabs` for 64-bit constants, ten bytes where a 32-bit one takes
+five, and mereo runs 679,237 of those against C's 403,002.
+
+**Ruled out by measurement, not argument.** L1 instruction misses: zero, both --
+5014 and 3798 bytes both sit in a 32 KB cache. Decode: 99.7% from the uop cache,
+both. Fetch redirects: mereo executes FEWER taken branches, 89.7M against 91.6M.
+Stack traffic: 2.4% against 2.6%, mereo lower, so it is not register pressure
+from one huge function either. Each of those was the obvious answer and none of
+them is.
+
+### What could be done, and what it is worth
+
+The scalar width is a language decision and not a bug -- see the signedness
+entry, and `docs/design.md`. But it has a price that was not known before today,
+and the price is the IPC.
+
+**Nothing here is a small fix.** A narrower scalar would change what `X is 0`
+means, which is the most-used line in the language. What is worth knowing is
+that the exam's parity is not luck: mereo wins on instruction count and loses
+the same amount on fetch, and the two happen to cancel on this workload. A
+program with a different mix would not cancel, in either direction, and neither
+outcome would mean anything had regressed.
+
+Worth testing if it is ever picked up: whether narrowing only the LOOP COUNTERS
+and LENGTHS -- the values the analysis already proves are small and
+non-negative -- moves the REX share. That is a code-generation choice rather
+than a language one, and it is the same family as the `in register` work.

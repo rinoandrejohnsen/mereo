@@ -231,7 +231,39 @@ mereo is better on the other three and loses on that one. Its front end fails to
 deliver 507 million uops against C's 344 million. The obvious causes are not it:
 **L1 instruction misses are zero for both** — 5014 bytes and 3798 both sit in a
 32 KB cache — and both run 99.7% out of the uop cache, so it is not decode
-bandwidth either.
+bandwidth either. Nor is it fetch redirects: mereo executes *fewer* taken
+branches, 89.7 million against 91.6.
+
+**It is that mereo's instructions are bigger.** The front end fetches a fixed
+number of BYTES per cycle, and the two programs fetch almost exactly the same
+number of them:
+
+| | instructions | bytes fetched | bytes each |
+| --- | ---: | ---: | ---: |
+| C | 20,348,221 | 69,780,683 | 3.429 |
+| mereo | 17,958,755 | 69,141,947 | **3.850** |
+
+Same fetch work; mereo gets 12% fewer instructions out of it. That is the whole
+of the front-end difference, and it is why the cycles do not fall when the
+instruction count does.
+
+**And the reason they are bigger is the scalar width.** mereo's scalars are
+signed 64-bit; the C twin's lengths and indices are `u32`. Every 64-bit
+operation on x86-64 carries a REX prefix, one extra byte:
+
+| | carry a REX prefix |
+| --- | ---: |
+| C | 9,940,670 of 20,348,221 — 48.9% |
+| mereo | 12,342,721 of 17,958,755 — **68.7%** |
+
+Twenty points more, at a byte each, is about half the 0.42-byte gap. The rest is
+the same fact in another form: a 64-bit constant needs `movabs`, ten bytes,
+where a 32-bit one needs five — and mereo executes 679,237 of those against C's
+403,002, most of them the SWAR masks.
+
+C's twice-as-large share of two-byte instructions is the same story seen from
+the other end: a two-byte x86 instruction is register-to-register at 32 bits,
+and mereo has half as many of them, 14.4% against 28.3%.
 
 What it is:
 
@@ -326,14 +358,22 @@ flat. That is the signature of removing calls: the address arithmetic, the frame
 adjustment and the argument shuffling go, and every branch and test the program
 actually asked for stays exactly where it was.
 
-**Two of the three are one decision.** mereo has no functions, and that single
-fact produces both of them: the binary is 30% larger because each helper is
-copied per use, and the instruction count is 11% lower because no call, frame or
-argument shuffling remains. The same trade, seen from two sides.
+**It is two decisions, not three numbers.**
 
-The comparing is a different cause: signedness, for 40% of it, and something
-unattributed for the rest. It was written here as though it followed from the
-missing functions, and it does not.
+**No functions** gives the first two: the binary is 30% larger because each
+helper is copied per use, and the instruction count is 11% lower because no
+call, frame or argument shuffling remains. One trade, seen from two sides.
+
+**64-bit scalars** give the rest. They make each instruction bigger — a REX
+prefix on 69% of them against C's 49% — so the same fetch bandwidth delivers 12%
+fewer, which is the front-end stall, the lower IPC, and the cycles that refuse
+to fall. Being *signed* on top of that is 40% of the extra comparing, since a
+signed bound cannot be proved non-negative and its loop keeps an entry test C's
+does not.
+
+So the wall clock reads the same for a reason with two halves: inlining removes
+instructions, and the scalar width makes each survivor more expensive to fetch.
+Neither is an accident and neither is free.
 
 So the shape of the trade is sharper than "bigger but the same speed". mereo
 does the same work in fewer, branchier instructions, and pays back in fetch what
