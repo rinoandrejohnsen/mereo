@@ -759,21 +759,34 @@ LIST, and only the list. Which is fine, as long as nobody claims otherwise.
 
 The 30 are diagnosed correctly and should stay. The other 36 are blind spots.
 
-### Resolve the base -- 22 cases, no research required
+### Resolve the base -- mostly a missing constant lookup, now fixed
 
-`exam/mereo/loglyze.mereo` is the whole story. `ln` is a scalar holding either
-`rbuf + i` (line 164) or `line` (line 182), and every `[ln + t : 1]` after the
-join reports "the backing did not resolve" -- because the analysis resolves a
-base only when it NAMES a buffer. It already has reaching definitions with
-kills; they are applied to the index and not to the base.
+**Corrected 2026-08-22.** The claim here was that 22 accesses needed reaching
+definitions applied to the base, and that `exam/mereo/loglyze.mereo` was the
+whole story because `ln` holds either `rbuf + i` or `line`. Wrong on the
+diagnosis. Fifteen of them were `_acc_const` not consulting `CONSTANTS`: `rbuf
+is read_buf bytes` with `read_buf is 65536` at the left margin, and the emitter
+resolved that while the analysis did not, so every access into the biggest
+buffer in the program reported that its backing did not resolve. A blind spot
+introduced by the top-level-constants work itself, three commits earlier.
 
-Applying them to the base and joining the candidates -- the room left is the
-worst of `rbuf.size - i` and `line.size` -- closes all 22. This is the single
-highest-value change to the list and needs nothing from the literature, though
-it is the same shape as the published work: Maalej and Pereira build exactly
-this on LLVM (range plus inequality over pointers-with-offsets, the case they
-name as the common one in C) and report 2.5x to 3.5x more pointer pairs
-disambiguated than LLVM's built-in analyses on SPEC.
+Fixed, and the corpus goes from 3007 proved to **3016 of 3056, 98.7%**, with
+opaque-base falling from 24 to 9. All 90 binaries are byte-identical across the
+change, which is the expected shape: the analysis makes lists, not code.
+
+The nine that remain are genuinely dynamic bases -- `[given : 8]`, a pointer
+loaded from memory; `number_2_at`, a template local holding an address;
+`operand.data`, a span's own field. Those do want the reaching-definition work
+described above, and it is now a nine-case job rather than a twenty-two-case
+one.
+
+And `ln` was not a base problem at all. With the constant resolved it moves to
+**bound-unresolved**, which is the honest verdict: the access is `[rbuf + i +
+st_s]` with `i` up to 65535 and `st_s` up to 8191, and 73726 is past the end of
+a 65536-byte buffer. The program is safe because `llen` is `j - i` and `j <= n`,
+so `i + llen <= n` -- a RELATION between two variables, which a non-relational
+interval domain cannot hold, and which is exactly what the next section is
+about. The base was never the problem.
 
 ### Pentagons -- 14 cases, a known algorithm
 

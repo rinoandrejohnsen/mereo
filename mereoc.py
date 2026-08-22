@@ -5318,6 +5318,12 @@ def _acc_const(e):
     e = str(e).strip()
     try: return int(e, 0)
     except Exception: pass
+    # `read_buf is 65536` at the left margin names a number, and `rbuf is
+    # read_buf bytes` is then a buffer whose size the emitter resolves and the
+    # analysis did not -- so every access into it reported that its backing did
+    # not resolve, which is a blind spot rather than anything about the program.
+    if e in CONSTANTS:
+        return _acc_const(CONSTANTS[e])
     if re.fullmatch(r"[\d\s+*\-()]+", e):
         try: return int(eval(e, {"__builtins__": {}}, {}))
         except Exception: return None
