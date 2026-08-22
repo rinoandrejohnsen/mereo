@@ -2807,7 +2807,7 @@ def cleanup_arg(inst_name, a, defn, backing, scalars, buffers):
         text = a
         for arr in sorted(defn.get("arrays") or (), key=len, reverse=True):
             text = re.sub(rf"\b{re.escape(arr)}\b",
-                          f"{inst_name}_{arr.replace(' ', '_')}", text)
+                          own_bytes_text(inst_name, defn, arr), text)
         return resolve_value(text, scalars, buffers, defn.get("line", 0))
     return state_cell(inst_name, a, defn, backing)
 
@@ -3444,7 +3444,7 @@ def check_slots(definitions, slots):
                      "not something to hold -- it is work, and keeps nothing "
                      f"between uses. Call it where you need it: "
                      f"`{slot['definition']} where ...`")
-            if defn.get("playout") is not None and is_pure_layout(defn):
+            if defn.get("playout") is not None:
                 # a PURE LAYOUT -> a contiguous block. Register as a buffer so
                 # the name is its address and `INST.FIELD` works. A `new`
                 # layout owns that block; a lens (`BUF as LAYOUT`) instead
@@ -3552,9 +3552,10 @@ def check_slots(definitions, slots):
                 if isinstance(slot["backing"], tuple):
                     fail(f"line {slot['line']}: '{slot['name']}' is a resource "
                          f"lensed over '{slot['lens']}', which is `in register` "
-                         "-- a resource's state is ALREADY register-resident (a "
-                         "handle has to survive a syscall). Lens it over memory, "
-                         "or drop the lens and let it hold its own state")
+                         "-- a resource with `N bytes` fields is a block like "
+                         "any other definition, so it needs bytes to lie over. "
+                         "Lens it over memory, or drop the lens and let it hold "
+                         "its own block")
                 if defn.get("playout") or defn.get("bitfields"):
                     # classify by how the INSTANCE was made: lensed over bytes,
                     # so its fields ARE those bytes -- readable and writable
@@ -4140,12 +4141,25 @@ def is_resource(defn):
 
 
 
+def own_bytes_text(inst_name, defn, field):
+    """The mereo TEXT for where a byte-run field lives, for substitution into a
+    body that is re-parsed. A definition with `N bytes` fields is one block, so
+    the field is at an offset in it; only a resource whose byte-runs are
+    separate arrays hands back the array's own name."""
+    pl = defn.get("playout")
+    if pl is not None and field in pl:
+        off = pl[field][0]
+        return f"{inst_name} + {off}" if off else inst_name
+    return f"{inst_name}_{field.replace(' ', '_')}"
+
+
 def state_cell(inst_name, path, defn, backing=None):
     """The C lvalue for one field of an instance. Representation follows the
-    shape (same `N bytes` syntax either way): a PURE LAYOUT (byte fields, no
-    lifecycle) is a contiguous block, so a field is a memory cell; a resource
-    (an `acquire`/`release`, or scalar state) keeps each field in a register-
-    resident `INST_field` long -- so a fd stays in a register across syscalls."""
+    shape, and the shape is the FIELDS: any definition with `N bytes` fields is
+    a contiguous block, so a field is a cell in it, whether or not the
+    definition also owns a lifecycle. A resource is nothing special in terms of
+    storage. Scalar state (`NAME is 0`, no width) has no bytes and no offset, so
+    it stays an `INST_field` long."""
     pl = defn.get("playout")
     if backing is not None and pl is not None and path in pl:
         # a behavioral lens: the field lives in the provided backing's bytes,
@@ -4153,7 +4167,10 @@ def state_cell(inst_name, path, defn, backing=None):
         off, width, signed, _big = pl[path]
         return (f"(*({width_type(str(width), 0, signed)} *)"
                 f"({deref_addr(f'{backing} + {off}')}))")
-    if pl is not None and is_pure_layout(defn) and path in pl:
+    if pl is not None and path in pl:
+        if path in defn.get("arrays", ()):
+            # a run of bytes inside the block: its ADDRESS, as a buffer's name is
+            return f"((long){inst_name} + {pl[path][0]})"
         off, width, signed, _big = pl[path]
         return (f"(*({width_type(str(width), 0, signed)} *)"
                 f"({deref_addr(f'(long){inst_name} + {off}')}))")
@@ -4637,7 +4654,7 @@ def wire_call(meth, defn, inst, conns_list, scalars, buffers, line):
         _text = _actual
         for _arr in sorted(defn.get("arrays") or (), key=len, reverse=True):
             _text = re.sub(rf"\b{re.escape(_arr)}\b",
-                           f"{inst['name']}_{_arr.replace(' ', '_')}", _text)
+                           own_bytes_text(inst["name"], defn, _arr), _text)
         valmap[_actual] = resolve_value(_text, scalars, buffers, _ln)
     return valmap
 
@@ -5057,7 +5074,9 @@ def inline_procedure(meth, st, cid, definitions, slots, prims):
                         and path not in locals_):
                     # `in register` owns no bytes, so its fields are NOT a view
                     # over a block -- they are the state cells below.
-                    _data = inst.get("lens") or is_pure_layout(idefn)
+                    _data = (inst.get("lens")
+                             or idefn.get("playout") is not None
+                             or idefn.get("bitfields") is not None)
                     _back = inst.get("lens")
                     if (_data and _back
                             and (_back in REGISTER_WORDS or _back in SCALAR_WORDS)):
@@ -5071,12 +5090,12 @@ def inline_procedure(meth, st, cid, definitions, slots, prims):
                         # re-parsed as mereo -- so substitute a mereo access, not
                         # the C cell (which would not parse).
                         _off, _w, _sg, _big = _pl[path]
-                        if path in (idefn.get("stackfields") or ()):
-                            # ...unless the field said `in stack`, which puts it
-                            # on the storage side of the width rule. Then the
-                            # useful substitution is WHERE it is, not what it
-                            # holds -- so `[field + k : w]` in the body offsets
-                            # into its bytes instead of dereferencing them.
+                        if path in (idefn.get("arrays") or ()):
+                            # ...unless the field is a RUN of bytes -- wider
+                            # than a register, or `in stack` at register width.
+                            # Then the useful substitution is WHERE it is, not
+                            # what it holds, so `[field + k : w]` in the body
+                            # offsets into its bytes rather than following them.
                             _base = (inst["lens"] if inst.get("lens")
                                      else inst["name"])
                             _parts = [_base]
@@ -5108,7 +5127,7 @@ def inline_procedure(meth, st, cid, definitions, slots, prims):
                         # gives it, which is registered as a backing, so the
                         # body's `[field + k : w]` resolves like any other. The
                         # C cell (`(long)NAME`) would not re-parse as mereo.
-                        rmap[path] = f"{inst['name']}_{path.replace(' ', '_')}"
+                        rmap[path] = own_bytes_text(inst["name"], idefn, path)
                     else:
                         rmap[path] = state_cell(inst["name"], path, idefn,
                                                 inst.get("backing"))
@@ -8070,12 +8089,14 @@ def transpile(sources, prog):
         elif slot.get("lens"):
             pass                          # a lens owns no storage -- it IS its backing
         elif (slot["kind"] == "instance"
-              and definitions[slot["definition"]].get("playout")
-              and is_pure_layout(definitions[slot["definition"]])):
-            # a PURE LAYOUT: a scoped, zero-initialized stack block (addressable;
-            # each instance its own). Only a lifecycle makes it a resource ->
-            # the scalar-long path below (register-resident). An
-            # `aligned M` on the instance sets the block's alignment (SIMD, DMA).
+              and definitions[slot["definition"]].get("playout")):
+            # `N bytes` FIELDS: a scoped, zero-initialized stack block
+            # (addressable; each instance its own). A resource is nothing
+            # special in terms of storage -- owning a lifecycle says what an
+            # instance DOES, not how its fields are laid out, so the same
+            # fields give the same block either way. Only scalar state (`NAME is
+            # 0`, no width) takes the long-per-field path below, having no bytes
+            # and no offset. An `aligned M` sets the block's alignment.
             al = (f" __attribute__((aligned({slot['align']})))"
                   if slot.get("align") else "")
             body.append(f"    char {slot['name']}"

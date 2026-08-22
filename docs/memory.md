@@ -197,6 +197,15 @@ store goes through whatever the field holds, which is nothing.
 `in register` states the default, and is refused on a width a register cannot
 hold.
 
+**The fields are the storage, and nothing else changes it.** A definition with
+`N bytes` fields is one contiguous block, laid end to end with no padding, and
+an instance of it is that block in the scope that holds it — 8 + 4 + 2 is
+`14 bytes`, whether the definition carries templates, or a lifecycle, or
+neither. Owning something says what an instance *does*, not how its fields are
+laid out. Only **scalar state** — `count is 0`, a default value with no width —
+is different, having no bytes and so no offset; a definition cannot mix the two,
+and says so if you try.
+
 A **flag view** names the individual bits of a word, which is what a mode or a
 set of options is:
 

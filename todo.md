@@ -209,6 +209,42 @@ implementation artifact wearing a surface -- and that is the half now sayable.
 Worth revisiting only if someone trips on the first half in real code; nothing
 in the corpus has.
 
+### Done 2026-08-22: a resource is nothing special in terms of storage
+
+A definition with `N bytes` fields was one contiguous block only if it did NOT
+own a lifecycle. The same three fields gave `char f[14]` on a layout and three
+separate locals on a resource, decided by whether an `acquire` happened to be
+present -- so the same declarations meant a record in one case and independent
+registers in the other. The stated reason was that a descriptor must stay in a
+register across syscalls; that is no longer true of the block, and measurably
+was not.
+
+Now the fields ARE the storage in both. `method_syscall`'s watcher is
+`char source[12]`, four for the descriptor and eight for the poll entry, instead
+of an `int` and a `char[8]` side by side.
+
+| | |
+| --- | --- |
+| binaries byte-identical | **88 of 90** |
+| the two that moved | `jsontest` +64 B, `keys` +48 B |
+| corpus | 388344 -> 388456 bytes, **+112, or +0.03%** |
+| the exam | 5920 bytes unchanged, identical output, ratio 1.010 |
+
+The mixed-width case is what made it free, and it is worth recording separately
+because it is the one that looked risky: three fields at offsets 0, 4 and 12,
+read and written at 4, 8 and 2 bytes, inside one `char[14]`, keeps **0 stack
+references** under both gcc and clang and comes out one instruction shorter than
+three separate locals. Scalar replacement handles a shared block at mixed widths
+as well as it handles separate scalars.
+
+Five sites moved together: the buffer-entry decision, the declaration, the
+splice's `_data` test, `state_cell`, and the three body-substitution paths, which
+now share `own_bytes_text`. Flag views needed including in `_data` -- they carry
+`bitfields` rather than a `playout` and were briefly left behind.
+
+Only scalar state (`NAME is 0`, no width) keeps a long per field: it has no
+bytes and so no offset, and a definition cannot mix widths with defaults anyway.
+
 ### Still open: refusing the silent case
 
 `in stack` gives the programmer a way to say it, but a bare `N bytes` field
