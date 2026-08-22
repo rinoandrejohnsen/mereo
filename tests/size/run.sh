@@ -56,6 +56,43 @@ printf '  %-34s %s%%\n' "spine over the C twin" "$(( (SPINE - CTEXT) * 100 / CTE
 [ "$SPINE" -lt $((CTEXT * 2)) ] || { echo "  FAIL  spine is more than twice the C twin"; fail=1; }
 [ "$SPINE" -gt "$CTEXT" ] || printf '  note: the spine is no larger than the C twin -- docs/exam.md should say so\n'
 
+# ---------------------------------------------------------------- executed
+# The static size is half the story and the wall clock is the noisy half.
+# callgrind counts every instruction a run executes, exactly -- the same binary
+# on the same input gives the same number to the digit -- so this is the parity
+# measurement with no variance in it at all. It is also the one that explains
+# the other two: mereo is larger BECAUSE everything is inlined, and executes
+# fewer instructions FOR THE SAME REASON.
+if command -v valgrind >/dev/null; then
+    IN=$OUT/in.log
+    if [ ! -s "$IN" ]; then
+        python3 "$DIR/exam/tools/gen.py" 24000 > "$IN" 2>/dev/null || :
+    fi
+    if [ -s "$IN" ]; then
+        gcc -O2 $CF $LD -o "$OUT/m" "$OUT/m.c"             2>/dev/null
+        gcc -O2 $CF $LD -o "$OUT/c" "$DIR/exam/c/loglyze.c" 2>/dev/null
+        irefs () {
+            valgrind --tool=callgrind --callgrind-out-file=/dev/null "$1" \
+                     < "$IN" >/dev/null 2>"$OUT/cg.err"
+            grep -oE 'I *refs: *[0-9,]+' "$OUT/cg.err" | grep -oE '[0-9,]+$' | tr -d ,
+        }
+        MI=$(irefs "$OUT/m"); CI=$(irefs "$OUT/c")
+        if [ -n "$MI" ] && [ -n "$CI" ] && [ "$CI" != 0 ]; then
+            printf '  %-34s %s\n' "instructions executed, mereo" "$MI"
+            printf '  %-34s %s\n' "instructions executed, C twin" "$CI"
+            printf '  %-34s %s%%\n' "mereo over the C twin" "$(( (MI - CI) * 100 / CI ))"
+            # mereo executing MORE than the twin would undo the explanation the
+            # exam gives for the size, so it is the thing to catch.
+            [ "$MI" -le "$CI" ] || { echo "  FAIL  mereo now executes more instructions than the C twin"; fail=1; }
+            # ...and a run that suddenly executes a fraction of the work is a
+            # broken binary, not a win.
+            [ "$MI" -gt $((CI / 2)) ] || { echo "  FAIL  mereo executes under half the C twin -- check the output"; fail=1; }
+        fi
+    fi
+else
+    echo "  (valgrind absent -- the executed-instruction check is skipped)"
+fi
+
 echo "---"
 [ "$fail" = 0 ] && echo "size: every byte attributed; the difference is in the spine, not the tower" \
                 || echo "size: FAILED"

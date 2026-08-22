@@ -134,7 +134,10 @@ both:
 | C, hand-optimised | 53.6 ms | **54.7 ms** | 0.86 |
 | mereo | 54.3 ms | **54.8 ms** | 0.96 |
 
-**Ratio 1.000.** The medians are the same. This started at 1.012, and what
+**Ratio 1.000.** The medians are the same. A clock has variance in it, though,
+so the same claim is made again below with none: counted exactly, **mereo
+executes 10.9% fewer instructions than the C twin** on this input, and the same
+inlining that makes its binary 30% larger is why. This started at 1.012, and what
 closed it was not the program but the compiler: `read` cannot return more than
 the capacity it was given — that is the kernel's design, not a hope — so mereo
 states it to GCC rather than testing it. The branch could never have been
@@ -171,6 +174,42 @@ implies: more bytes, the same work, no slower.
 The old claim went unchecked long enough that the figures in this table drifted
 by 150 instructions without anyone noticing, which is why the attribution is now
 a suite rather than a sentence.
+
+### The instructions actually executed
+
+Wall-clock says parity and the binary says 30% larger, which reads like a
+contradiction until the third measurement. `valgrind --tool=callgrind` counts
+every instruction a run executes, exactly and deterministically -- three runs of
+the same binary on the same input give the same number to the digit -- and it
+works on these freestanding no-libc binaries unchanged.
+
+| 84 MB, one million lines | instructions executed |
+| --- | ---: |
+| C, hand-optimised | 798,334,157 |
+| mereo | **711,505,137** |
+
+**mereo executes 10.9% fewer instructions than the C twin.** The ratio is stable
+as the input grows -- 0.854 at 200 KB, 0.883 at 2 MB, 0.889 at 8 MB, 0.891 at
+84 MB -- converging as start-up washes out.
+
+So the three numbers fit together rather than fighting:
+
+| | |
+| --- | --- |
+| mereo's binary is **30% larger** | every library helper is `always_inline`, so one used nine times is nine copies |
+| mereo executes **11% fewer instructions** | ...and inlining is also why: no call, no frame, no argument shuffling, and GCC specialises each copy against what it knows there |
+| the wall clock is **the same** | fewer instructions at a lower IPC -- more code in flight against the same caches |
+
+That is the trade stated plainly. mereo spends bytes to save instructions, and
+the two cancel on this workload. It is not a coincidence that the size and the
+instruction count move in opposite directions: **they have the same cause.**
+
+A note on tooling, since it cost an hour. `perf stat -e instructions:u` is the
+obvious instrument and is wrong here: this is a hybrid CPU, the process migrates
+between P-cores and E-cores, and each PMU counts only while the process is on
+its own core type. Reading `cpu_core` alone said mereo executed 8% MORE, which
+is the opposite of the truth. Callgrind has no such split, needs no privileges,
+and is exact.
 
 ### Where the 1160 bytes are
 
