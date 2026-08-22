@@ -172,6 +172,27 @@ The old claim went unchecked long enough that the figures in this table drifted
 by 150 instructions without anyone noticing, which is why the attribution is now
 a suite rather than a sentence.
 
+### Where the 1160 bytes are
+
+**mereo has no functions.** Everything lowers into one flat `_start`, and every
+library helper is `always_inline`, so a helper used nine times is nine copies.
+GCC keeps three real functions in the C twin and one in mereo:
+
+| | C | mereo |
+| --- | --- | --- |
+| functions in the binary | `_start`, `do_line`, `emit_u64` | `_start` |
+| the number formatter | `emit_u64`, **one copy**, called 5 times — 192 B | `_decimal`, **inlined at all 9 call sites** — 846 B |
+
+That one helper is 654 of the 1160. `_write_value` and `_write` add most of the
+rest the same way. The trade is deliberate and it is the same trade that buys
+the speed: no calls means no call overhead, no frames, and no spills at a
+boundary, which is why the timing above is at parity while the size is not.
+
+Two things this is *not*. It is not the error paths, which are 1.1%. And it is
+not signedness: mereo's `_decimal` takes a signed value and handles a minus
+sign where C's `emit_u64` does not, but compiled side by side that is 288 bytes
+against 240 — 48 per copy, not 654. The multiplier is the copies.
+
 ## What the exam found
 
 Parity is the headline, but the findings are the point of running it.
