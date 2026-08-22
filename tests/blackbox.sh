@@ -475,6 +475,19 @@ rejects msg/ensure-shape   msg_ensure_shape   "holds exactly one shape"
 rejects msg/ensure-first   msg_ensure_first   "a check goes after the locals"
 rejects msg/field-static   msg_field_static   "belongs to the INSTANCE"
 rejects msg/assign-bytes   msg_assign_bytes   "is a run of bytes"
+
+# The surface changed on 2026-08-14 -- parens for arguments, `.` for members --
+# and messages kept recommending the old spellings for months, including "no
+# `program is`" and "expected `with a and b`". A message that tells you to write
+# syntax the compiler rejects is worse than no message. Nothing user-facing may
+# name the dead forms again.
+printf '  %-24s ' "surface/no-dead-syntax"
+if grep -nE '`with |where \.\.\.|program is`|with a and b' "$DIR/mereoc.py" \
+     | grep -v 'a program RUNS' > /dev/null; then
+    printf 'FAIL  mereoc.py still recommends dead syntax\n'; fail=$((fail+1))
+else
+    printf 'ok\n'; pass=$((pass+1))
+fi
 # ...and the DERIVED cases, which no literal gives away. The bound is read off
 # the loop, the index is an induction variable, the size is the array's. GCC
 # reports neither, even at -Warray-bounds=2 -Wstringop-overflow=4 -fanalyzer.

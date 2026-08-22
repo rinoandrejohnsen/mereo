@@ -666,7 +666,7 @@ linux is
 
     -- dup3: make TARGET refer to what this file refers to, closing whatever
     -- TARGET was. This is how a program points standard output somewhere else --
-    -- `redirect log where target is 1`.
+    -- `redirect (log is log, target is 1)`.
     --
     -- The copy is NOT owned by anything: two descriptors now name one open file,
     -- this resource releases only its own, and the target is the caller's to
@@ -830,7 +830,7 @@ linux is
 
   -- `files` -- the operations that NAME a file rather than hold one. Stateless,
   -- like `identity`: nothing is acquired, so there is nothing to release, and the
-  -- whole namespace is used by name (`inspect files where ...`).
+  -- whole namespace is used by name (`inspect.files (...)`).
   --
   -- These are here rather than as free-standing templates because every one of
   -- them can fail, and a fallible primitive has to live in a resource so that its

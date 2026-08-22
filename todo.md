@@ -1441,3 +1441,68 @@ from trying it. Asking what `already` MEANS turned it around: the state side is
 right, the field side is wrong, and the wrong side writes to the wrong file and
 exits 0. One of these is a real bug and the other four are wording, and the
 first draft had them the other way up.
+
+## Second scan: the messages were still speaking the old surface
+
+Done 2026-08-22. The first scan looked for one spelling with two meanings; this
+one looked at what the compiler SAYS, and found a different fault running
+through it. The surface changed on 2026-08-14 -- parens for arguments, `.` for
+members, `end` closing blocks -- and the diagnostics did not. **Eleven places
+told the reader to write syntax the compiler rejects.**
+
+The worst of them is the one anybody meets first:
+
+```
+mereoc: error: no `program is` -- this file declares things but never uses them
+```
+
+`program is` has its own refusal saying a program RUNS, so it opens with `goes`.
+So the message for a missing program recommended a form the next message
+forbids. I hit it myself earlier this week and read straight past it.
+
+| said | should have said |
+| --- | --- |
+| ``no `program is` `` | ``no `program goes` `` |
+| ``bad parameter list (expected `with a and b`)`` | a parameter list is `(a, b)` |
+| ``declare the syscall as `... assembly "syscall" where ...` `` | ports bound on the lines below |
+| ``Call it where you need it: `NAME where ...` `` | `NAME (...)` |
+| ``construct with `X is CLASS where ...` `` | `X is CLASS (...)` |
+| ``the call names the template in it: `TEMPLATE X where` `` | `X.TEMPLATE (...)` |
+| the top-level list, offering ``program is`` and ``NAME (PORTS) is`` | both open with `goes` |
+
+Plus four comments in `mereoc.py` naming `with A and B`, `program is` and
+`helper CFUNC where ...`, which mislead a reader of the source the same way.
+
+### Gated, because it rotted silently for eight days
+
+`bb surface/no-dead-syntax` greps `mereoc.py` for the dead spellings and fails
+if any comes back, excluding the one deliberate refusal that QUOTES `program is`
+in order to reject it. Planting `with a and b` back into one message turns it
+red.
+
+### Three more, found on the way
+
+**`leave` and `repeat` with no scope name** said `unknown primitive 'leave'`, as
+though the word did not exist rather than as though it were missing its scope.
+Both now name the shape and say why a jump carries the name it lands on.
+
+**A call to something undeclared** said `unknown primitive 'triple'` -- the word
+"primitive" for what the reader wrote as a template call. It now says what the
+three callable things are and how each is spelled.
+
+**`in register` is accepted on a buffer** and the error for an unknown storage
+word listed only `stack` and `static`. All three are named now.
+
+### One asymmetry left, recorded and not fixed
+
+`when` composes with an assign, a store, a `leave`, a `repeat` and a declaration
+-- but not with `ensure`, where it gives `trailing tokens in expression 'n > 0
+when c'`. A conditional check is meaningful and the workaround is an enclosing
+scope, so this is a small gap rather than a wrong answer, but the message should
+say the word is not accepted there rather than blame the expression.
+
+Also unfixed and worth knowing: **a top-level template must have at least one
+port**, while a method inside a definition may have none. `bump goes` at the
+left margin is not a template, and `bump () goes` is refused for an empty list.
+The message now says so; whether the restriction should exist is a separate
+question.

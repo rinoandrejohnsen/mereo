@@ -90,7 +90,7 @@ import sys
 # No built-in syscalls: this is populated from `call` declarations
 # (see linux.mereo, the mereo twin of linux/calls.h++).
 PRIMITIVES = {}
-HAS_PROGRAM = False   # a `program is` section was seen (an EMPTY one is legal)
+HAS_PROGRAM = False   # a `program goes` section was seen (an EMPTY one is legal)
 
 RESERVED = {"is", "already", "and", "in", "out", "end", "contains",   # `contains` is retired but stays reserved: it must not become an ordinary name while the message above still points at it
             "include", "ensure", "fails", "bytes", "program", "failures",
@@ -132,7 +132,7 @@ VIEWS = set()
 # assignment, and that is now load-bearing. `GUARD goes` opens a conditional
 # scope, so the parser has to decide what `x is 2 goes` is; with the words gone,
 # a line containing `is` outside a condition site is an assignment and nothing
-# else. The words stay in their own constructs (`X is EXPR`, `with A and B`, the
+# else. The words stay in their own constructs (`X is EXPR`, `(a, b)` and B`, the
 # cascade's `or`), where no condition can appear.
 _COND_WORD = {"is": "==", "and": "&&", "or": "||"}
 
@@ -371,7 +371,7 @@ AUXLEN = (
     '    return _n;\n'
     '}')
 
-# C-helper primitives: the byte/text layer. A `NAME is helper CFUNC where ...`
+# C-helper primitives: the byte/text layer. A `NAME is helper CFUNC`
 # declaration binds a mereo primitive to one of these always_inline functions
 # (the third primitive kind, next to `call` and `asm`). All args are `long`
 # (the same convention as the syscall wrappers); a pointer is passed as
@@ -1051,7 +1051,9 @@ def storage_place(place, n):
     if place == "heap":
         fail(f"line {n}: `in heap` is mmap (an owned resource) -- not a plain "
              "storage label, and not supported yet")
-    fail(f"line {n}: unknown storage `in {place}` (use `stack` or `static`)")
+    fail(f"line {n}: unknown storage `in {place}` -- the words are `stack` "
+         "(the default, a scoped frame slot), `static` (one copy for the whole "
+         "program) and `register`.")
 
 
 def assign_step(name, rhs, n):
@@ -1342,7 +1344,7 @@ def _OPENS_BLOCK(s):
     """Does this line open a block -- something an `end` must close?
 
     Three shapes, and nothing else: a header ending in `is` with nothing after
-    it (`program is`, `file is`, `read (buffer, count) is`), anything ending in
+    it (`file is`), anything ending in
     `goes` (a scope or a guard), and the bare `scope`. A declaration
     (`x is 5`, `buf is 64 bytes`) has a value after the `is` and opens
     nothing."""
@@ -1584,7 +1586,7 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
         kinds.pop()
     proc_base = 4       # the indent that body sits at: 4 for a template in a
                         # group (its header is at 2), 2 for one standing alone
-                        # (its header is at 0, like `program is`)
+                        # (its header is at 0, like `program goes`)
 
     # A conditional cascade may run over several lines, each clause on its own
     # ending in ` or` (`X is V1 when C1 or` / `V2 when C2`). Fold such a run onto
@@ -1675,8 +1677,8 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                 # generic syscall wrapper. Point the author at the new form.
                 fail(f"line {n}: `call {m.group(2)}` is no longer a primitive "
                      f"form; declare the syscall as `{m.group(1)} is assembly "
-                     '"syscall" where ...` binding number/args to ABI registers '
-                     "(see linux.mereo)")
+                     '"syscall"` with its ports bound to ABI registers on the '
+                     "lines below (see linux.mereo)")
             m = re.match(r'^(\w+) is (pure |final )?assembly "(.*)"$', s)
             if m:
                 name = m.group(1)
@@ -1730,10 +1732,10 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                 flags["program"] = CURRENT_FILE
                 globals()["HAS_PROGRAM"] = True
                 section = "program"
-                if m.group(1):        # `program with arguments and ... is` -- the
+                if m.group(1):        # `program (arguments, ...) goes` -- the
                     # Linux process-entry views the program wants; independent, any
-                    # subset. `with` is the opt-in: a plain `program is` captures
-                    # nothing and touches no entry data.
+                    # subset. The port list is the opt-in: a plain `program goes`
+                    # captures nothing and touches no entry data.
                     for v in m.group(1).split(","):
                         v = v.strip()
                         if v not in ENTRY_VIEWS:
@@ -1773,8 +1775,14 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                 params = [p.strip() for p in m.group(2).split(",")]
                 for p in params:
                     if not re.fullmatch(r"\w+", p):
-                        fail(f"line {n}: bad parameter list "
-                             "(expected `with a and b`)")
+                        fail(f"line {n}: `{s}` -- "
+                             + (f"`{p}` is not a port name; " if p.strip() else
+                                "the port list is empty; ")
+                             + "a parameter list is names separated by commas, "
+                               "`(a, b)`, each a plain word, and at "
+                               "least one -- a template with no ports is work "
+                               "nothing can reach, since its locals are private "
+                               "to the splice.")
                     name_ok(p, n, "parameter")
                 # one definition holding one method of the same name: downstream
                 # (procedure_call, inline_procedure, the splice) sees exactly what
@@ -1813,9 +1821,13 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     fail(f"line {n}: constant '{cname}' redefined")
                 CONSTANTS[cname] = _int_value(m.group(2))
                 continue
-            fail(f"line {n}: unrecognized top-level line: {s!r} "
-                 "(expected `NAME is`, `NAME is NUMBER`, `NAME extends BASE "
-                 "is`, `NAME (PORTS) is`, `program is`, or `failures is`)")
+            fail(f"line {n}: unrecognized top-level line: {s!r} -- at the "
+                 "left margin a line opens a definition (`NAME is`, or `NAME "
+                 "extends BASE is`), a template (`NAME (PORTS) goes` -- the "
+                 "port list is required here, unlike a method inside a "
+                 "definition), the program (`program goes`), the "
+                 "failure table (`failures is`), or names a number (`NAME is "
+                 "NUMBER`).")
 
         if isinstance(section, dict) and "args" in section:   # a decl
             if section["kind"] == "asm":
@@ -1904,8 +1916,10 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                         params = [p.strip() for p in m.group(2).split(",")]
                         for p in params:
                             if not re.fullmatch(r"\w+", p):
-                                fail(f"line {n}: bad parameter list "
-                                     "(expected `with a and b`)")
+                                fail(f"line {n}: `{p}` is not a port "
+                                     "name -- a parameter list is names "
+                                     "separated by commas, `(a, b)`, and each "
+                                     "is a plain word")
                             name_ok(p, n, "parameter")
                     if mname in ("initialize", "finalize"):
                         _new = "acquire" if mname == "initialize" else "release"
@@ -2448,7 +2462,7 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     # adopted CLASS` is the same view over the same bytes that
                     # ALSO releases on the way out -- one word, one difference,
                     # the same word that means "released" in `is adopted CLASS
-                    # where ...`.
+                    # `(...)`.
                     _own = bool(m.group(4))
                     _vc = deref(m.group(5), ns_of_line.get(n), n, "definition")
                     vdefn = definitions[_vc]
@@ -3489,7 +3503,7 @@ def check_slots(definitions, slots):
                 fail(f"line {slot['line']}: '{slot['definition']}' is a template, "
                      "not something to hold -- it is work, and keeps nothing "
                      f"between uses. Call it where you need it: "
-                     f"`{slot['definition']} where ...`")
+                     f"`{slot['definition']} (...)`")
             if defn.get("playout") is not None:
                 # A register-width field that some method DEREFERENCES has to be
                 # able to hold an address, and one that nothing ever writes --
@@ -4471,7 +4485,7 @@ def parse_expr(actual, scalars, buffers, ln, cond=False):
                      "(`==`, `!=`, `&&`, `||`) so that it can never be read as "
                      "an assignment: `x == 2 goes` opens a conditional scope, "
                      "and `x is 2` sets x. The words keep their own jobs "
-                     "elsewhere -- `X is EXPR`, `with A and B`, and the `or` "
+                     "elsewhere -- `X is EXPR`, `(a, b)`, and the `or` "
                      "between cascade clauses.")
     pos = [0]
 
@@ -7005,7 +7019,8 @@ def plan(definitions, slots, steps, overrides):
     scalars, buffers, instances = check_slots(definitions, slots)
 
     if not steps and not HAS_PROGRAM:
-        fail("no `program is` -- this file declares things but never uses them")
+        fail("no `program goes` -- this file declares things but never uses "
+             "them")
     final = steps[-1] if steps else None
     if (final is None or final["type"] != "bare"
             or not PRIMITIVES.get(final["op"], {}).get("noreturn")):
@@ -7038,10 +7053,24 @@ def plan(definitions, slots, steps, overrides):
             _d = definitions.get(st["op"])
             if _d is not None and kind_of(_d) == "template group":
                 fail(f"line {st['line']}: '{st['op']}' is a template group, so "
-                     f"the call names the template in it: `TEMPLATE {st['op']} "
-                     f"where` (has: {', '.join(_d['methods'])}). Only a template "
-                     "written on its own is called by its own name.")
-            fail(f"line {st['line']}: unknown primitive '{st['op']}'")
+                     "the call names the template inside it: "
+                     f"`{st['op']}.TEMPLATE (...)` (has: "
+                     f"{', '.join(_d['methods'])}). Only a template written on "
+                     "its own is called by its own name.")
+            if st["op"] in ("leave", "repeat"):
+                # keywords, not calls. Falling through here said "unknown
+                # primitive 'leave'", which reads as though the word did not
+                # exist rather than as though it were missing its scope.
+                _w = ("leaves" if st["op"] == "leave" else "goes back to the top of")
+                fail(f"line {st['line']}: `{st['op']}` needs the name of the "
+                     f"scope it {_w} -- `{st['op']} NAME`. Every scope is named "
+                     "where it opens (`NAME goes`), and a jump says which one, "
+                     "so that reading the jump tells you where it lands.")
+            fail(f"line {st['line']}: '{st['op']}' is not a primitive, a "
+                 "template, or a method of anything in scope -- so there is "
+                 "nothing to call. A template is `NAME (ports) goes ... end` at "
+                 "the left margin and is called by its own name; a method is "
+                 "called on an instance, `INSTANCE.NAME (...)`.")
         if not prim["noreturn"] and not st.get("from_method"):
             fail(f"line {st['line']}: bare '{st['op']}' -- fallible primitives "
                  "must live in a resource so they carry an `ensure`")
@@ -7104,8 +7133,8 @@ def plan(definitions, slots, steps, overrides):
 
     def callee(name, line):
         """Resolve a call target. Normally a declared instance; but a stateless
-        definition (no state to hold) is called DIRECTLY by name -- `user
-        identity where ...` -- with no instance ceremony. One WITH state
+        definition (no state to hold) is called DIRECTLY by name -- `user.identity
+        (...)` -- with no instance ceremony. One WITH state
         still needs an instance to name whose state a method reaches."""
         inst = instances.get(name)
         if inst is not None:
@@ -7806,7 +7835,7 @@ def plan(definitions, slots, steps, overrides):
                      f"'{st['method']}'")
             if meth["role"] == "acquire":
                 fail(f"line {st['line']}: construct with "
-                     f"`{st['inst']} is {defn['name']} where ...`, not a call")
+                     f"`{st['inst']} is {defn['name']} (...)`, not a call")
             if meth["role"] == "release":
                 fail(f"line {st['line']}: release is derived from ownership; "
                      "remove the step")

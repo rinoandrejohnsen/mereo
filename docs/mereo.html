@@ -1131,10 +1131,10 @@ port -&gt; 8080</code></pre>
 <pre><code><span class="t-decl">file</span> <span class="t-structure">is</span>                        <span class="t-comment">-- define one</span>
   <span class="t-plain">descriptor</span> <span class="t-bind">is</span> <span class="t-number">4</span> <span class="t-inside">bytes</span> <span class="t-inside">as</span> <span class="t-inside">signed</span>
   <span class="t-structure">acquire</span> <span class="t-operator">(</span><span class="t-plain">path</span><span class="t-operator">)</span> <span class="t-structure">goes</span>
-    <span class="t-plain">open</span> <span class="t-plain">system</span> <span class="t-plain">where</span> <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>
+    <span class="t-call">open</span> <span class="t-operator">(</span><span class="t-label">path</span> <span class="t-bind">is</span> <span class="t-plain">path</span><span class="t-operator">,</span> <span class="t-label">descriptor</span> <span class="t-bind">is</span> <span class="t-plain">descriptor</span><span class="t-operator">)</span>
   <span class="t-structure">end</span>
   <span class="t-structure">release</span> <span class="t-structure">goes</span>
-    <span class="t-plain">close</span> <span class="t-plain">system</span> <span class="t-plain">where</span> <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>
+    <span class="t-call">close</span> <span class="t-operator">(</span><span class="t-label">descriptor</span> <span class="t-bind">is</span> <span class="t-plain">descriptor</span><span class="t-operator">)</span>
   <span class="t-structure">end</span>
   <span class="t-call">read</span> <span class="t-operator">(</span><span class="t-plain">buffer</span><span class="t-operator">,</span> <span class="t-plain">count</span><span class="t-operator">)</span> <span class="t-structure">goes</span>
     <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>

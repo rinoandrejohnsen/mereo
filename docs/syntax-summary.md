@@ -158,10 +158,10 @@ derived (read it → input, assign it → output). See
 file is                        -- define one
   descriptor is 4 bytes as signed
   acquire (path) goes
-    open system where ...
+    open (path is path, descriptor is descriptor)
   end
   release goes
-    close system where ...
+    close (descriptor is descriptor)
   end
   read (buffer, count) goes
     ...
