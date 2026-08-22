@@ -259,6 +259,32 @@ for both: about half in the byte scan, a tenth in the hash. The loops are the
 same loops — mereo's scan and C's `find_byte` are the same SWAR word-at-a-time
 test, branch for branch.
 
+### What the executed instructions actually are
+
+Counted exactly, by kind, on the same input — `callgrind --dump-instr=yes`, each
+address mapped to its opcode:
+
+| | mereo | C | |
+| --- | ---: | ---: | ---: |
+| arithmetic | 2,355,402 | 3,251,528 | **−28%** |
+| data movement | 5,258,248 | 6,950,955 | **−24%** |
+| bitwise / shift | 3,104,274 | 3,174,391 | −2% |
+| compare | 3,136,871 | 2,921,593 | +7% |
+| control | 4,056,199 | 3,964,658 | +2% |
+| total | 17,958,755 | 20,348,221 | −12% |
+
+So mereo is not doing worse arithmetic to get its smaller count — it does
+**28% less of it**, and 24% less shuffling of values between registers and the
+stack. What it does slightly more of is comparing, which is the contract checks
+and the `leave ... when` structure, and that is where the extra 2% of control
+flow comes from too.
+
+The shape of the saving names its cause. Straight-line work — arithmetic and
+data movement — falls by a quarter, while control flow and comparison stay
+flat. That is the signature of removing calls: the address arithmetic, the frame
+adjustment and the argument shuffling go, and every branch and test the program
+actually asked for stays exactly where it was.
+
 So the shape of the trade is sharper than "bigger but the same speed". mereo
 does the same work in fewer, branchier instructions, and pays back in fetch what
 it saved in execution.
