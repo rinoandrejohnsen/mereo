@@ -288,6 +288,8 @@ release_server:
 <pre><code>    long my_name = 100;          /* the program's        */
     long label_1_my_name = 3;    /* the splice's, renamed */</code></pre>
 <p>Two calls give <code>label_1_my_name</code> and <code>label_2_my_name</code>. The isolation runs both ways: a template cannot read or write a caller's scalar it has no port for — writing one opens a local of its own, and reading one is a read of nothing. What it <em>can</em> see beyond its ports is a top-level constant, which is a number rather than storage.</p>
+<p>It covers everything a splice declares, not just scalars — two calls to a template holding <code>scratch is 8 bytes</code> give <code>fill_1_scratch</code> and <code>fill_2_scratch</code> — and it nests: a template calling a template keeps both sets of locals apart. Inside one splice the ordinary rule applies again, so a scope there assigns the template's local exactly as a scope in the program assigns the program's.</p>
+<p><strong>So the rule is one sentence: the program body is a flat set of names, each splice is another, and scopes divide neither.</strong></p>
 <p>So the habit is narrower than the flat set makes it sound: <strong>inside a program, a scalar opened in a scope is not private — name it as though it were not. Inside a template, it is.</strong></p>
 <h3>Names in a scope, against C and C++</h3>
 <p>A scope here controls <strong>when things happen and when they are released</strong>. It does not control what a name means. C and C++ use the same braces for both; mereo separates them, and the difference shows up in five places.</p>

@@ -165,6 +165,15 @@ writing one opens a local of its own, and reading one is a read of nothing. What
 it *can* see beyond its ports is a top-level constant, which is a number rather
 than storage.
 
+It covers everything a splice declares, not just scalars — two calls to a
+template holding `scratch is 8 bytes` give `fill_1_scratch` and `fill_2_scratch`
+— and it nests: a template calling a template keeps both sets of locals apart.
+Inside one splice the ordinary rule applies again, so a scope there assigns the
+template's local exactly as a scope in the program assigns the program's.
+
+**So the rule is one sentence: the program body is a flat set of names, each
+splice is another, and scopes divide neither.**
+
 So the habit is narrower than the flat set makes it sound: **inside a program, a
 scalar opened in a scope is not private — name it as though it were not. Inside
 a template, it is.**
