@@ -1579,3 +1579,69 @@ and whichever it is should be written down.
 name a sibling scope already opened is almost always two people wanting a
 temporary, and a note naming both lines would cost nothing and read like the
 `check_shadowed_counters` message that already exists for the sharper case.
+
+## `NAME is VALUE` is declaration AND assignment, with nothing saying which
+
+Scanned thoroughly 2026-08-22, because this is the core spelling and the same
+shape as every inconsistency found this week: one form, two meanings, something
+invisible choosing. Here the chooser is whether the name already exists -- and
+for a scalar that means anywhere in the program, since scalars are one flat set.
+
+**There is no second spelling.** `new v is 5`, `let v is 5`, `v is new 5` and
+`v is fresh 5` are all refused; the language offers no way to say "I mean a new
+one" or "I mean the existing one".
+
+### What is already caught
+
+| | |
+| --- | --- |
+| reading a name nothing opens | refused -- `unknown name 'ghost'` |
+| a name written but never read | refused -- which catches a misspelled assignment TARGET, since the misspelling is what nothing reads |
+| nested loops counted by one scalar, inner RESETS it | refused -- `check_shadowed_counters` |
+
+That is a better safety net than it first looks: the common typo is
+`cuont is 5` where `count` was meant, and the new name is then written and never
+read, so it is refused. It escapes only if the misspelling is ALSO read
+somewhere, which means misspelling it twice consistently.
+
+### What is not caught, with the numbers
+
+**A scope meaning a fresh temp when the name exists.** Accepted, and it assigns
+the outer one. `n is 1` then `n is 2` inside a scope leaves n as 2; the same
+program in C++ leaves it 1.
+
+**A scope reading what a sibling left.** Measured:
+
+```
+  one goes
+    v is 7
+    t is t + v
+  end
+  two goes
+    t is t + v      -- v is 7 here
+    v is 100
+  end
+```
+
+mereo prints **14**. The C++ shape prints 7 and **warns**, `'v' is used
+uninitialized`. mereo cannot warn the same way, because the read is not
+uninitialised -- every scalar has a value -- it is simply the wrong one.
+
+### The check worth considering, and what to measure first
+
+A scope that READS a scalar it has not written, where the writes that reach it
+come from a SIBLING scope rather than an enclosing one, is the suspicious shape.
+Reading an enclosing scope's scalar is the whole point of the flat set and must
+stay silent; reading a sibling's leftover almost never is.
+
+`classify_accesses` already computes reaching definitions with kills, so the
+machinery exists. **What has not been measured is whether such a check would be
+quiet on the corpus**, and that is the thing to establish before building it --
+a diagnostic that fires on `field.mereo` or the TLS stack every build is worse
+than none, and this file already records `wants a run-time guard` going unread
+for weeks for exactly that reason.
+
+A first attempt at counting this by regex was abandoned: it cannot tell an
+ordinary reassignment (`i is i + 1` inside a loop) from a fresh-temp collision,
+and it counted 527 of the former. The count has to come from the planner's own
+step list and scope stack, not from indentation.

@@ -249,6 +249,27 @@ release_server:
 <p>The first row runs to three marks and starts a second. The <code>leave rows</code> in the inner scope then ends <strong>both</strong> — had it said <code>leave cols</code>, only the inner one would have ended and the outer would have gone round again. The two are the same jump, differing only in the name they give.</p>
 <p>Either would also have released whatever the scopes it leaves were holding.</p>
 <p><strong>A jump may only target a scope it sits inside</strong> — an ancestor, never a sibling and never one already closed. That rule is what keeps the releases derivable: the live set where the jump lands is that scope's entry set, which is a subset of the live set at the jump by construction, so the difference is exactly what to let go of. A jump anywhere else could arrive with a live set that depends on the path taken, and recording that is a drop flag.</p>
+<h3><code>NAME is VALUE</code> declares and assigns, and which one is not written</h3>
+<p>This is the spelling to understand before the rest of the page. <code>NAME is VALUE</code> <strong>opens</strong> the name if nothing has opened it, and <strong>assigns</strong> it if something has. Nothing in the line says which, and there is no second spelling that does — no <code>new</code>, no <code>let</code>. What decides is whether the name exists, and for a scalar that means <em>anywhere in the program</em>, since scalars are one flat set.</p>
+<p>Two of the three ways this can go wrong are caught:</p>
+<table><thead><tr><th></th><th></th></tr></thead><tbody><tr><td>reading a name nothing ever opens</td><td><strong>refused</strong> — <code>unknown name 'ghost'</code></td></tr><tr><td>a name opened and written but never read</td><td><strong>refused</strong> — so a misspelled assignment target is caught, because the misspelling is what nothing reads</td></tr><tr><td>meaning a fresh temp when the name already exists</td><td><strong>accepted</strong>, and it assigns the existing one</td></tr></tbody></table>
+<p>The third is the one to know about. Inside a scope, a line that reads like a declaration is an assignment to whatever that name already is:</p>
+<pre><code>  <span class="t-plain">n</span> <span class="t-bind">is</span> <span class="t-number">1</span>
+  <span class="t-decl">s</span> <span class="t-structure">goes</span>
+    <span class="t-plain">n</span> <span class="t-bind">is</span> <span class="t-number">2</span>          <span class="t-comment">-- the outer n, assigned</span>
+  <span class="t-structure">end</span>
+                    <span class="t-comment">-- mereo: n is 2.   C++: n is 1.</span></code></pre>
+<p>And because a scalar's value is whatever anyone last wrote, a scope can read one a <strong>sibling</strong> left behind:</p>
+<pre><code>  <span class="t-decl">one</span> <span class="t-structure">goes</span>
+    <span class="t-plain">v</span> <span class="t-bind">is</span> <span class="t-number">7</span>
+    <span class="t-plain">t</span> <span class="t-bind">is</span> <span class="t-plain">t</span> <span class="t-operator">+</span> <span class="t-plain">v</span>
+  <span class="t-structure">end</span>
+  <span class="t-decl">two</span> <span class="t-structure">goes</span>
+    <span class="t-plain">t</span> <span class="t-bind">is</span> <span class="t-plain">t</span> <span class="t-operator">+</span> <span class="t-plain">v</span>      <span class="t-comment">-- v is 7 here, from `one`</span>
+    <span class="t-plain">v</span> <span class="t-bind">is</span> <span class="t-number">100</span>
+  <span class="t-structure">end</span>
+                    <span class="t-comment">-- mereo prints 14. C++ warns `v is used uninitialized`.</span></code></pre>
+<p>That is the cost of the flat set, and it buys something real: a scope reads its surroundings without plumbing anything through ports. The sharpest case — two nested loops counted by the same scalar, where the inner one <strong>resets</strong> it — is refused outright (<a href="#safety">Safety</a> has it). The rest is a habit: a scalar opened inside a scope is not private, so name it as though it were not.</p>
 <h3>Names in a scope, against C and C++</h3>
 <p>A scope here controls <strong>when things happen and when they are released</strong>. It does not control what a name means. C and C++ use the same braces for both; mereo separates them, and the difference shows up in five places.</p>
 <p><strong>A scalar declared in a scope is visible outside it.</strong> There is one flat set of scalars per program, so <code>NAME is VALUE</code> opens a name wherever it is written and that name is live everywhere. This is what lets a scope read its surroundings without plumbing anything through ports.</p>

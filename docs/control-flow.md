@@ -84,6 +84,54 @@ of the live set at the jump by construction, so the difference is exactly what
 to let go of. A jump anywhere else could arrive with a live set that depends on
 the path taken, and recording that is a drop flag.
 
+## `NAME is VALUE` declares and assigns, and which one is not written
+
+This is the spelling to understand before the rest of the page. `NAME is VALUE`
+**opens** the name if nothing has opened it, and **assigns** it if something
+has. Nothing in the line says which, and there is no second spelling that does —
+no `new`, no `let`. What decides is whether the name exists, and for a scalar
+that means *anywhere in the program*, since scalars are one flat set.
+
+Two of the three ways this can go wrong are caught:
+
+| | |
+| --- | --- |
+| reading a name nothing ever opens | **refused** — `unknown name 'ghost'` |
+| a name opened and written but never read | **refused** — so a misspelled assignment target is caught, because the misspelling is what nothing reads |
+| meaning a fresh temp when the name already exists | **accepted**, and it assigns the existing one |
+
+The third is the one to know about. Inside a scope, a line that reads like a
+declaration is an assignment to whatever that name already is:
+
+```
+  n is 1
+  s goes
+    n is 2          -- the outer n, assigned
+  end
+                    -- mereo: n is 2.   C++: n is 1.
+```
+
+And because a scalar's value is whatever anyone last wrote, a scope can read one
+a **sibling** left behind:
+
+```
+  one goes
+    v is 7
+    t is t + v
+  end
+  two goes
+    t is t + v      -- v is 7 here, from `one`
+    v is 100
+  end
+                    -- mereo prints 14. C++ warns `v is used uninitialized`.
+```
+
+That is the cost of the flat set, and it buys something real: a scope reads its
+surroundings without plumbing anything through ports. The sharpest case — two
+nested loops counted by the same scalar, where the inner one **resets** it — is
+refused outright ([Safety](safety.md) has it). The rest is a habit: a scalar
+opened inside a scope is not private, so name it as though it were not.
+
 ## Names in a scope, against C and C++
 
 A scope here controls **when things happen and when they are released**. It does
