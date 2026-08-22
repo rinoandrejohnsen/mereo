@@ -1938,7 +1938,8 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                 # record`, `x as signed`). A field declaration is that same act,
                 # a width with a reading baked in, so it uses the same word.
                 m = re.match(r"^(\w+) is (\d+) bytes( as)?"
-                             r"(?: (signed|unsigned))?(?: (big|little))?$", s)
+                             r"(?: (signed|unsigned))?(?: (big|little))?"
+                             r"(?: in (stack|register))?$", s)
                 if m:                        # a packed byte field -> this is a
                     if m.group(3) and not (m.group(4) or m.group(5)):
                         fail(f"line {n}: `{m.group(1)} is {m.group(2)} bytes as` "
@@ -1953,6 +1954,18 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                              f" or lays a view (`buf as record`). Write "
                              f"`{m.group(1)} is {m.group(2)} bytes as {_v}`.")
                     name_ok(m.group(1), n, "field")   # byte layout (fields in a row)
+                    # `in stack` / `in register` say which side of the width rule
+                    # this field wants, in the words a program body already uses
+                    # for the same choice. A field narrower than a register is a
+                    # NUMBER by default and `[field + ...]` reads it as an
+                    # address; `in stack` makes it a run of bytes instead, which
+                    # is what `[field + ...]` then addresses.
+                    if m.group(6) == "register" and int(m.group(2)) not in (1, 2, 4, 8):
+                        fail(f"line {n}: `{m.group(1)} is {m.group(2)} bytes in "
+                             "register` -- a register holds 1, 2, 4 or 8 bytes, "
+                             "so this width can only be `in stack`.")
+                    if m.group(6) == "stack":
+                        defn.setdefault("stackfields", set()).add(m.group(1))
                     defn["packed"].append((m.group(1), int(m.group(2)),
                                           m.group(4) == "signed",
                                           m.group(5) == "big", n))
@@ -3124,6 +3137,7 @@ def elaborate_classes(definitions):
                     fail(f"line {fl}: field '{fname}' redefined")
                 playout[fname] = (off, width, signed, big)
                 off += width
+            arrays |= set(defn.get("stackfields") or ())
             defn["playout"] = playout
             defn["psize"] = off
             defn["arrays"] = arrays
@@ -3437,7 +3451,8 @@ def check_slots(definitions, slots):
                 # borrows buf's bytes -- its address IS buf, it allocates nothing.
                 entry = {"kind": "buffer", "name": slot["name"],
                          "size": str(defn["psize"]), "layout": slot["definition"],
-                         "playout": defn["playout"], "line": slot["line"]}
+                         "playout": defn["playout"], "line": slot["line"],
+                         "stackfields": set(defn.get("stackfields") or ())}
                 if slot.get("lens"):
                     _t = lens_target(slot, definitions, buffers, defn["psize"],
                                      scalars)
@@ -3551,6 +3566,7 @@ def check_slots(definitions, slots):
                              "addr": slot["backing"], "line": slot["line"]}
                     if defn.get("playout"):
                         entry["playout"] = defn["playout"]
+                        entry["stackfields"] = set(defn.get("stackfields") or ())
                     if defn.get("bitfields"):
                         entry["bitfields"] = defn["bitfields"]
                         entry["bitwidth"] = defn["bitwidth"]
@@ -4048,9 +4064,12 @@ def layout_field_c(actual, buffers, ln):
                 off, width, signed, big)
     base = buffers[inst].get("addr", f"(long){inst}")   # a lens -> its backing
     addr = f"({base} + {off})"
-    if width not in (1, 2, 4, 8):
+    if width not in (1, 2, 4, 8) or field in (buffers[inst].get("stackfields") or ()):
         # a RUN of bytes: there is no load of that width, and the useful answer
         # is where it starts -- hand back the address, as a buffer's name does.
+        # `in stack` puts a register-width field on this side deliberately, so
+        # `[field + ...]` offsets into its bytes rather than reading it as an
+        # address it was never given.
         return (addr, off, width, signed, big)
     cexpr = load_c(addr, width, signed, big, ln)        # the field's baked view
     return (cexpr, off, width, signed, big)
@@ -5052,6 +5071,22 @@ def inline_procedure(meth, st, cid, definitions, slots, prims):
                         # re-parsed as mereo -- so substitute a mereo access, not
                         # the C cell (which would not parse).
                         _off, _w, _sg, _big = _pl[path]
+                        if path in (idefn.get("stackfields") or ()):
+                            # ...unless the field said `in stack`, which puts it
+                            # on the storage side of the width rule. Then the
+                            # useful substitution is WHERE it is, not what it
+                            # holds -- so `[field + k : w]` in the body offsets
+                            # into its bytes instead of dereferencing them.
+                            _base = (inst["lens"] if inst.get("lens")
+                                     else inst["name"])
+                            _parts = [_base]
+                            if inst.get("lens") and str(
+                                    inst.get("lens_off", "0")) != "0":
+                                _parts.append(str(inst["lens_off"]))
+                            if _off:
+                                _parts.append(str(_off))
+                            rmap[path] = " + ".join(_parts)
+                            continue
                         _at = [inst["lens"] if inst.get("lens")
                                else inst["name"]]      # owning: the name IS the
                         if inst.get("lens") and str(               # block address

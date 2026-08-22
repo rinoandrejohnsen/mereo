@@ -412,6 +412,13 @@ release_server:
   <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>
 <span class="t-structure">end</span></code></pre>
 <p><code>host.nodename</code> is where that string starts, ready for a span or the byte layer. Assigning a number to one is refused, since there is no store of that width either.</p>
+<p>Below that width the default is the other way round: a field of 1, 2, 4 or 8 bytes is a <strong>number</strong>, so <code>[field + k : w]</code> reads it as an <strong>address</strong>. That is what <code>span</code>'s own <code>data</code> field wants — it holds where the bytes are, and <code>[data + offset]</code> follows it.</p>
+<p>A field can say which side it wants, in the words a program body already uses for the same choice:</p>
+<pre><code><span class="t-decl">holder</span> <span class="t-structure">is</span>
+  <span class="t-plain">pair</span> <span class="t-bind">is</span> <span class="t-number">8</span> <span class="t-inside">bytes</span> <span class="t-inside">in</span> <span class="t-inside">stack</span>    <span class="t-comment">-- storage: `[pair + 0 : 4]` is its own bytes</span>
+  <span class="t-plain">cursor</span> <span class="t-bind">is</span> <span class="t-number">8</span> <span class="t-inside">bytes</span>           <span class="t-comment">-- a number, as the width alone would make it</span>
+<span class="t-structure">end</span></code></pre>
+<p><code>in stack</code> is the one to reach for when eight bytes are a <strong>record</strong> rather than a number — a poll entry, a pair of descriptors, a small header. Without it the store goes through whatever the field holds, which is nothing. <code>in register</code> states the default, and is refused on a width a register cannot hold.</p>
 <p>A <strong>flag view</strong> names the individual bits of a word, which is what a mode or a set of options is:</p>
 <pre><code><span class="t-decl">local_mode</span> <span class="t-structure">is</span>
   <span class="t-plain">echo</span> <span class="t-bind">is</span> <span class="t-inside">bit</span> <span class="t-number">3</span>

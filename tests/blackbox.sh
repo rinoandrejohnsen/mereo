@@ -349,6 +349,12 @@ bb   views/add-past-end  views_add_past_end  "" 1 ""
 # compile. Both shapes, both ways, one line.
 bb   adopt/plain-values   adopt_plain "" 0  "1000 70000 1000 71000 1 2 1"
 
+# `N bytes` on a resource field means a NUMBER at register width and STORAGE
+# above it, and `in stack` is how a field of register width asks for the second.
+# Both are in one resource here: without the words, `[pair + 0 : 4] is 7` stores
+# through the zero the field holds, which segfaulted in silence.
+bb   field/in-stack       field_in_stack "" 0 "7 9 16"
+
 # `crypto.server_hello` builds every offset it uses out of bytes the peer sent,
 # so the checks bounding them against the record's own length are the only thing
 # between a hostile ServerHello and a walk far past a 512-byte record. Both
@@ -460,6 +466,7 @@ rejects port/needs-value  port_needs_value  "reads 'a', so it needs a VALUE"
 rejects port/needs-slot   port_needs_slot   "so it needs a SCALAR SLOT"
 
 rejects access/past-end   access_past_end   "reads 101 bytes into"
+rejects field/bad-register field_bad_register "a register holds 1, 2, 4 or 8 bytes"
 # ...and the DERIVED cases, which no literal gives away. The bound is read off
 # the loop, the index is an induction variable, the size is the array's. GCC
 # reports neither, even at -Warray-bounds=2 -Wstringop-overflow=4 -fanalyzer.

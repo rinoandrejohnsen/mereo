@@ -1,0 +1,69 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- `N bytes` on a resource field means two things, and `in stack` is how a field
+-- says which. A field of register width is a NUMBER: `[field + k : w]` reads it
+-- as an ADDRESS, which is what a span's `data` wants and needs. `in stack` puts
+-- the same width on the storage side instead, so `[field + k : w]` offsets into
+-- the field's own bytes.
+--
+-- Both are here, in one resource, so the difference is the test:
+--
+--   pair    8 bytes IN STACK  -- two 4-byte numbers written into its own bytes
+--   cursor  8 bytes           -- a register word, holding a number
+--
+-- Without `in stack`, `[pair + 0 : 4] is 7` stores through whatever `pair`
+-- holds, which is zero -- a segfault, silently, and it was one until this line
+-- existed.
+--
+--   prints:  7 9 16
+
+holder is
+  pair is 8 bytes in stack
+  cursor is 8 bytes
+
+  set (a, b) goes
+    [pair + 0 : 4] is a
+    [pair + 4 : 4] is b
+    cursor is a + b
+  end
+
+  first (value) goes
+    v is [pair + 0 : 4]
+    value is v
+  end
+
+  second (value) goes
+    v is [pair + 4 : 4]
+    value is v
+  end
+
+  total (value) goes
+    value is cursor
+  end
+end
+
+program goes
+  room is 64 bytes
+  a is 0
+  b is 0
+  c is 0
+
+  page is already builder (data is room, count is 0, limit is 64)
+  h is already holder ()
+  screen is already linux.file (descriptor is 1)
+
+  h.set (a is 7, b is 9)
+  h.first (value is a)
+  h.second (value is b)
+  h.total (value is c)
+
+  page.number (value is a)
+  page.byte (value is 32)
+  page.number (value is b)
+  page.byte (value is 32)
+  page.number (value is c)
+  page.byte (value is 10)
+
+  screen.write (buffer is page.data, count is page.count)
+end

@@ -176,6 +176,27 @@ end
 layer. Assigning a number to one is refused, since there is no store of
 that width either.
 
+Below that width the default is the other way round: a field of 1, 2, 4 or 8
+bytes is a **number**, so `[field + k : w]` reads it as an **address**. That is
+what `span`'s own `data` field wants — it holds where the bytes are, and
+`[data + offset]` follows it.
+
+A field can say which side it wants, in the words a program body already uses
+for the same choice:
+
+```
+holder is
+  pair is 8 bytes in stack    -- storage: `[pair + 0 : 4]` is its own bytes
+  cursor is 8 bytes           -- a number, as the width alone would make it
+end
+```
+
+`in stack` is the one to reach for when eight bytes are a **record** rather than
+a number — a poll entry, a pair of descriptors, a small header. Without it the
+store goes through whatever the field holds, which is nothing.
+`in register` states the default, and is refused on a width a register cannot
+hold.
+
 A **flag view** names the individual bits of a word, which is what a mode or a
 set of options is:
 

@@ -27,10 +27,12 @@ include "../../core.mereo"
 
 watcher is
   descriptor is 4 bytes as signed
-  slot is 16 bytes                     -- its own poll entry, not the caller's.
-                                       -- 16 and not 8 because a resource field
-                                       -- of register width IS a register word;
-                                       -- only a wider one is a run of bytes.
+  slot is 8 bytes in stack             -- its own poll entry, not the caller's.
+                                       -- `in stack` because a poll entry is 8
+                                       -- bytes of STORAGE, and a field of
+                                       -- register width would otherwise be a
+                                       -- register word -- which `[slot + 0 : 4]`
+                                       -- would then read as an address.
 
   acquire (path) goes
     linux.open (path is path, flags is 0, mode is 0, descriptor is descriptor)

@@ -1,0 +1,18 @@
+include "../../linux.mereo"
+
+-- `in register` says a field is a NUMBER, and a register holds 1, 2, 4 or 8
+-- bytes. Twelve is not one of them, so the words contradict the width and the
+-- only thing that width can be is `in stack`. Refused rather than quietly
+-- rounded, because the two spellings mean genuinely different things.
+
+holder is
+  wide is 12 bytes in register
+  poke goes
+    wide is 1
+  end
+end
+
+program goes
+  h is already holder ()
+  h.poke ()
+end

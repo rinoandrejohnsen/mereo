@@ -125,72 +125,59 @@ opt-in in `build.sh` (`STRIP_SECTIONS=1`), not as the default.
 
 ---
 
-## `N bytes` means two different things, silently
+## `N bytes`: fixed with `in stack`, and one diagnostic still open
 
-**Status:** open. A real miscompile, worked around in
-`tests/progs/method_syscall` by picking a wider field.
+**Status:** the surface question is settled and shipped. `slot is 8 bytes in
+stack` is storage; a bare `N bytes` keeps its meaning, so nothing in the corpus
+moved -- all 90 binaries byte-identical. `in register` states the default and is
+refused on a width a register cannot hold.
 
-In a program body, `slot is 8 bytes` is storage — `char slot[8]`. As a resource
-STATE field, the same eight words are a register word, because a state field is
-a run of bytes only when it is wider than a register:
+The problem was that `N bytes` on a resource field meant two things and the
+width chose between them silently. A field of 1, 2, 4 or 8 bytes is a NUMBER, so
+`[field + k : w]` reads it as an ADDRESS; only a wider one is a run of bytes.
+Both meanings are needed and neither is wrong:
 
 ```
-watcher is
-  slot is 8 bytes            -- a register word, holding 0
-  arm goes
-    [slot + 0 : 4] is 1      -- ...so this stores through a null pointer
-  end
-end
+span is
+  data is 8 bytes             -- holds where the bytes are; `[data + i]` FOLLOWS it
+holder is
+  pair is 8 bytes in stack    -- IS eight bytes; `[pair + 0 : 4]` offsets into them
 ```
 
-That is not a wrong rule — `descriptor is 4 bytes as signed` is the library's
-idiom everywhere, and a register field must be a register. The problem is that
-the two meanings share a spelling, and the collision is silent: it compiles, and
-it segfaults. `tests/progs/method_syscall.mereo` sidesteps it with `16 bytes`
-and says why in a comment, which is a workaround and not a fix.
+Without the words, the second stores through the zero the field holds. It
+compiled and it segfaulted, and `tests/progs/method_syscall.mereo` sidestepped it
+with `16 bytes` and a comment explaining why -- which is now `8 bytes in stack`,
+an honest poll entry.
 
-**A better fix than syntax: stop choosing.** The `in register` / `in stack`
-route below would make the intent explicit, but it asks the programmer to encode
-a decision the compiler already makes better. Emit a state field as STORAGE
-always -- `char slot[8]` -- and let GCC's scalar replacement of aggregates put
-it back in a register wherever it is only ever read and written as a whole
-value. That is decided by USE, which is the right basis, and it is the same
-decision C++ gets for free when a `string_view` never touches memory.
+Gated by `bb field/in-stack`, which prints `7 9 16` with the words and exits 139
+without them, and by `rejects field/bad-register`.
 
-Measured 2026-08-22, by rewriting every register-width state field in the corpus
-to storage by hand and rebuilding:
+### The measurement that did NOT work, and why it is worth recording
 
-| | |
-| --- | --- |
-| state fields rewritten | 84, across 24 programs |
-| byte-identical binaries | **22 of 24** |
-| the two that moved | `jsontest` +64 B, `showcase` +16 B |
-| corpus total | 116648 -> 116728 bytes, **+80, or +0.07%** |
-| the exam, 84 MB | identical output, ratio 0.991 median / 0.995 min |
+The attractive idea was to stop choosing: emit every field as storage and let
+GCC's scalar replacement of aggregates put it back in a register wherever it is
+only read and written whole. That part is true and measured -- 84 fields
+rewritten by hand, 22 of 24 binaries byte-identical, +80 bytes across the corpus,
+and the boundary behaves, with a field whose address reaches a syscall keeping
+its stack slot and one used as a value keeping none.
 
-And the boundary behaves. A field whose address is passed to a syscall keeps 4
-stack references, because there it genuinely IS storage; one used purely as a
-64-bit value keeps 0 and never leaves a register. GCC decides from use, exactly
-as wanted, and clang agrees.
+It is still the wrong fix, because the ambiguity is not about WHERE the field
+lives. `span.at` writes `[data + offset]` and `watcher.arm` writes
+`[slot + 0 : 4]`; both are bare 8-byte fields inside a method, and one must load
+while the other must address. Storage-for-everything would silently turn every
+span in the corpus into a read of its own header. Representation was never the
+question; meaning was.
 
-So the fix is 80 bytes across the whole corpus, and it buys: one meaning for `N
-bytes` instead of two, the miscompile gone rather than diagnosed, no new surface
-syntax, and `tests/progs/method_syscall.mereo` drops the `16 bytes` workaround
-and its explaining comment.
+### Still open: refusing the silent case
 
-What still needs checking before doing it: `as signed` / `as unsigned` on a
-state field, which today reinterprets a REGISTER and would have to reinterpret a
-load instead; and whether any field is read as a whole word in one method and
-indexed in another, which the rewrite makes legal where it is currently a
-segfault -- probably a feature, but it should be a decision rather than a
-side effect.
-
-**The syntax route, kept for the record.** `in register` and `in stack` are how
-a program body already says which side of this line it wants; letting a state
-field take the same words would make the intent explicit where it is currently
-inferred from a width. Cheaper still, if both design halves wait: refuse
-`[FIELD + ...]` when FIELD is a register-width state field, naming the width
-rule, which turns a segfault into a message without settling anything.
+`in stack` gives the programmer a way to say it, but a bare `N bytes` field
+dereferenced without ever being assigned an address is still a segfault rather
+than a message. The sound rule is there -- a register-width field used as an
+access base, never written by any method and never given a value at adoption,
+cannot hold an address -- but it needs proper scoping to apply. A first pass by
+regex could not tell a resource FIELD from a program-body buffer of the same
+spelling, and refusing wrongly here would break `span`. Worth doing with the
+definition's own tables rather than a pattern.
 
 ## An array view -- a span that counts elements?
 
