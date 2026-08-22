@@ -1550,6 +1550,334 @@ kind: something composes everywhere except one place, with no reason recorded.
 
 ## Scalars are the only kind whose name is not checked for reuse
 
+**Answered 2026-08-22, and the answer was that it cannot be the same check.**
+The uniqueness check is already uniform across kinds -- what differs is the
+PARSER. A second `NAME is N bytes` makes a second slot and is caught; a second
+`NAME is VALUE` makes an assignment STEP, so there is only ever one slot to
+compare and nothing for uniqueness to see. The asymmetry is in what a repeated
+line MEANS, not in what is checked.
+
+So the hazard was closed from the other side, by refusing the case where the
+sharing is invisible: a scope that reads a scalar a sibling opened and then
+writes it itself. See the `NAME is VALUE` entry below.
+
+What remains unwritten is the reason a buffer may not reuse a sibling's name
+while a scalar may. Both rules are defensible -- a buffer is storage and two of
+them under one name would be a genuine collision, while scalars are one flat set
+by design -- but neither is stated anywhere a reader would look.
+
+## `NAME is VALUE` is declaration AND assignment, with nothing saying which
+
+Scanned thoroughly 2026-08-22, because this is the core spelling and the same
+shape as every inconsistency found this week: one form, two meanings, something
+invisible choosing. Here the chooser is whether the name already exists -- and
+for a scalar that means anywhere in the program, since scalars are one flat set.
+
+**There is no second spelling.** `new v is 5`, `let v is 5`, `v is new 5` and
+`v is fresh 5` are all refused; the language offers no way to say "I mean a new
+one" or "I mean the existing one".
+
+### What is already caught
+
+| | |
+| --- | --- |
+| reading a name nothing opens | refused -- `unknown name 'ghost'` |
+| a name written but never read | refused -- which catches a misspelled assignment TARGET, since the misspelling is what nothing reads |
+| nested loops counted by one scalar, inner RESETS it | refused -- `check_shadowed_counters` |
+
+That is a better safety net than it first looks: the common typo is
+`cuont is 5` where `count` was meant, and the new name is then written and never
+read, so it is refused. It escapes only if the misspelling is ALSO read
+somewhere, which means misspelling it twice consistently.
+
+### What is not caught, with the numbers
+
+**A scope meaning a fresh temp when the name exists.** Accepted, and it assigns
+the outer one. `n is 1` then `n is 2` inside a scope leaves n as 2; the same
+program in C++ leaves it 1.
+
+**A scope reading what a sibling left.** Measured:
+
+```
+  one goes
+    v is 7
+    t is t + v
+  end
+  two goes
+    t is t + v      -- v is 7 here
+    v is 100
+  end
+```
+
+mereo prints **14**. The C++ shape prints 7 and **warns**, `'v' is used
+uninitialized`. mereo cannot warn the same way, because the read is not
+uninitialised -- every scalar has a value -- it is simply the wrong one.
+
+### The flat set stops at a template, which narrows all of the above
+
+Verified 2026-08-22. A template's locals are NOT in the caller's flat set: each
+splice gets its own, renamed per CALL SITE. The same template used twice has two
+of everything -- `label_1_my_name` and `label_2_my_name` in the emitted C.
+
+The isolation runs both ways. A template cannot read a caller's scalar it has no
+port for (the read is a read of nothing, and the caller's scalar then reports as
+written-but-never-read), and it cannot write one (that opens a local of its own,
+which then reports as unused). The only thing it sees beyond its ports is a
+top-level CONSTANT, which is a number rather than storage.
+
+So the hazards above are bounded by the unit of reuse. Within one program body a
+scalar opened in a scope is not private; within a template it is. That is worth
+stating before any check is built, because it means the sibling-read shape can
+only happen between two scopes of the SAME body -- which is a much smaller
+surface than "anywhere in the program", and makes a check correspondingly more
+affordable.
+
+### DONE 2026-08-22: the sibling-temp read is refused
+
+A scope that READS a scalar a sibling opened, and WRITES it later, is refused --
+the write later is what says the scope meant a temp of its own, and the read
+before it is what got someone else's:
+
+```
+line 10: 'two' reads 'v' before writing it, and 'v' was opened in 'one' -- so
+this reads what 'one' left rather than a fresh value. Scalars are one flat set
+per body, so `v is ...` in 'two' assigns that same name. Give this one its own
+name.
+```
+
+Reading a scalar an earlier scope computed stays silent, because that is the
+flat namespace working as intended -- a first attempt without the write-later
+condition flagged 55 of those across the corpus, every one legitimate.
+
+**Two things had to be got right, and the first was nearly a wasted build.** A
+scalar's home scope comes from its declaration LINE against the scopes' line
+ranges, because the IR has no "declared in scope X" -- every scalar is a flat
+slot whether it was opened at the top or inside a loop. A detector that seeded
+every scalar as program-level instead reported 0 on the corpus AND 0 on the
+known-bad case, which is the shape of a check that would have shipped vacuous.
+
+And spliced names have to be skipped: a template's line numbers are its own, so
+a spliced scalar's declaration line falls inside whatever unrelated scope of the
+caller happens to span it. That is `<template>_<n>_<local>` for a name and
+`<template>_<n>` for a scope -- the second has no trailing underscore, and a
+pattern requiring one left `x25519` refusing to build.
+
+Measured quiet on all 90 programs and byte-identical binaries; gated by
+`rejects scope/sibling-temp`.
+
+### What is still not caught
+
+Two shapes remain, both narrower than the one now refused.
+
+**A fresh temp colliding with an ENCLOSING scope's name.** `n is 1` at the top
+and `n is 2` inside a scope is an assignment, and always will be -- there is no
+way to tell it from a deliberate update, which is the common and correct
+reading. Nothing to do here beyond what `docs/control-flow.md` now says.
+
+**A misspelled assignment target that is also read.** `cuont is 5` for `count`
+is refused when nothing reads `cuont`, which is the usual case; it survives only
+if the misspelling appears in a read as well, meaning it was written twice the
+same wrong way.
+
+## Scanning the language for more inconsistencies of the `N bytes` kind
+
+Done 2026-08-22, after `N bytes` was closed. The shape to look for is what made
+that one bad: **one spelling, more than one meaning, and something invisible
+choosing between them.** Five turned up. None of them miscompiles -- that is the
+first thing worth saying, because `N bytes` did, and these all either do the
+right thing or refuse. They are consistency and diagnostic faults, not
+correctness ones, and they are ranked here by how much they cost a reader.
+
+### 1. DONE 2026-08-22: `already` borrows, `blank` zeroes
+
+`already` was doing two jobs, and sharing the word made one of them silent:
+
+```
+t is already linux.file            -- descriptor omitted
+t.write (buffer is msg, count is msg.size)
+```
+
+Accepted, because a field defaults to zero -- and zero is standard input. With
+fd 0 opened read-write, which a shell does with `0<>`, it **exited 0 and wrote
+the text into the wrong file**, no diagnostic at all. Caught only when fd 0
+happened not to be writable, and then as a run-time `-9`.
+
+Split. `already` borrows a thing that already exists, so it names every field;
+`blank CLASS` is a fresh zeroed block of that shape and takes no values, since
+zero is the whole of what it says. The refusal points from one to the other:
+
+```
+line 4: 't' is `already linux.file`, which borrows a thing that already exists,
+so it must name every field -- missing descriptor. For a fresh zeroed one, write
+`blank linux.file`.
+```
+
+**Lenses are excluded, and finding that out was the useful part.** `X is BACKING
+as CLASS` gets `mode: "adopted"` internally, so the first strict rule refused
+six corpus programs -- `ls`, `server`, `showcase`, `socket`, `uname` -- which
+all read like `already CLASS` in the error and are nothing of the kind. A lens
+borrows the BACKING's bytes and its fields ARE those bytes; there is nothing to
+name. Once excluded, every one of the 90 built unchanged, which says the corpus
+never wanted the loose form: the only two programs using it were two of this
+week's own tests.
+
+All 90 binaries byte-identical. Gated by `rejects adopt/already-bare`. Docs in
+`resources.md` and `syntax-summary.md` -- the latter also had
+`linux.file.already (descriptor is 1)`, which is not the syntax and never was,
+and the stale "there is no named constant yet".
+
+### 2-5 DONE 2026-08-22: all four were messages, and all four now explain
+
+Every one fell through to a generic line, so a semantic limit on a keyword the
+language plainly has arrived at the reader as a syntax error.
+
+| was | now says |
+| --- | --- |
+| `ensure a <= b` in a definition -> "unrecognized definition line" | that an `ensure` there is an INVARIANT holding one shape, `FIELD <op> FIELD.size`, and that a check over values belongs in a method |
+| `ensure` first in a method -> "`ensure` before the method's body" | that the first line declares a CONTRACT on a primitive body, that this body is a procedure, and that `span.at` writes `b is 0` before its check |
+| `a is 8 bytes in static` -> "unrecognized definition line" | the field grammar in order, and that staticness belongs to the INSTANCE rather than one field |
+| assigning to an `in stack` field -> "'h' is not a scalar slot" | that it is a run of bytes with no single value, and to write a store |
+
+The last still names the address the field resolves to rather than the field,
+because the splice has substituted one for the other by then; the sentence says
+what happened, which is what the reader needed. Threading the original name
+through the rename is more machinery than the message is worth.
+
+Gated by four `rejects` cases, one per message, each matching on the clause that
+carries the explanation rather than on the whole text -- so a reworded message
+stays green and a message that stops explaining does not.
+
+**Number 4 needed no code.** `NAME is NUMBER` does mean three things by
+position, but its one real collision -- a scalar taking a constant's name -- is
+already refused where it is written, with a message that names the pattern
+outright: "two meanings, chosen by context". The gap was that nothing SAID so
+where a reader would look, and `docs/memory.md` now carries the three in a
+table. All 90 binaries byte-identical, as they should be for a pass over
+diagnostics.
+
+### The pattern across all five
+
+Four of them are diagnostics rather than semantics: the language does the right
+thing and describes it badly, usually by falling through to a generic
+"unrecognized" line. The next pass over those belongs on the messages, not the
+grammar.
+
+The first is not in that group, and the correction to it is worth keeping as a
+method note. The entry originally read as an ergonomic wart -- a default that
+has to be repeated -- and was written from the shape of the rule rather than
+from trying it. Asking what `already` MEANS turned it around: the state side is
+right, the field side is wrong, and the wrong side writes to the wrong file and
+exits 0. One of these is a real bug and the other four are wording, and the
+first draft had them the other way up.
+
+## Second scan: the messages were still speaking the old surface
+
+Done 2026-08-22. The first scan looked for one spelling with two meanings; this
+one looked at what the compiler SAYS, and found a different fault running
+through it. The surface changed on 2026-08-14 -- parens for arguments, `.` for
+members, `end` closing blocks -- and the diagnostics did not. **Eleven places
+told the reader to write syntax the compiler rejects.**
+
+The worst of them is the one anybody meets first:
+
+```
+mereoc: error: no `program is` -- this file declares things but never uses them
+```
+
+`program is` has its own refusal saying a program RUNS, so it opens with `goes`.
+So the message for a missing program recommended a form the next message
+forbids. I hit it myself earlier this week and read straight past it.
+
+| said | should have said |
+| --- | --- |
+| ``no `program is` `` | ``no `program goes` `` |
+| ``bad parameter list (expected `with a and b`)`` | a parameter list is `(a, b)` |
+| ``declare the syscall as `... assembly "syscall" where ...` `` | ports bound on the lines below |
+| ``Call it where you need it: `NAME where ...` `` | `NAME (...)` |
+| ``construct with `X is CLASS where ...` `` | `X is CLASS (...)` |
+| ``the call names the template in it: `TEMPLATE X where` `` | `X.TEMPLATE (...)` |
+| the top-level list, offering ``program is`` and ``NAME (PORTS) is`` | both open with `goes` |
+
+Plus four comments in `mereoc.py` naming `with A and B`, `program is` and
+`helper CFUNC where ...`, which mislead a reader of the source the same way.
+
+### Gated, because it rotted silently for eight days
+
+`bb surface/no-dead-syntax` greps `mereoc.py` for the dead spellings and fails
+if any comes back, excluding the one deliberate refusal that QUOTES `program is`
+in order to reject it. Planting `with a and b` back into one message turns it
+red.
+
+### Three more, found on the way
+
+**`leave` and `repeat` with no scope name** said `unknown primitive 'leave'`, as
+though the word did not exist rather than as though it were missing its scope.
+Both now name the shape and say why a jump carries the name it lands on.
+
+**A call to something undeclared** said `unknown primitive 'triple'` -- the word
+"primitive" for what the reader wrote as a template call. It now says what the
+three callable things are and how each is spelled.
+
+**`in register` is accepted on a buffer** and the error for an unknown storage
+word listed only `stack` and `static`. All three are named now.
+
+### One asymmetry left, recorded and not fixed
+
+`when` composes with an assign, a store, a `leave`, a `repeat` and a declaration
+-- but not with `ensure`, where it gives `trailing tokens in expression 'n > 0
+when c'`. A conditional check is meaningful and the workaround is an enclosing
+scope, so this is a small gap rather than a wrong answer, but the message should
+say the word is not accepted there rather than blame the expression.
+
+The other one left is its own entry below, because it turned out to be a real
+restriction rather than a wording fault.
+
+
+## A top-level template must have at least one port, and should not have to
+
+Found in the second scan, 2026-08-22, and worth its own entry because the first
+explanation for it was wrong.
+
+A METHOD inside a definition may take no ports -- `bump goes` is fine, because
+it has the instance's state to reach. A TEMPLATE at the left margin may not:
+
+| written | |
+| --- | --- |
+| `bump goes` | not a template at all; falls to the top-level line list |
+| `bump () goes` | refused: the port list is empty |
+| `bump (v) goes` | accepted |
+
+The regexes say it plainly: a method is `^(\w+)(?: \((.*)\))? goes$` with the
+list optional, a template is `^(\w+) \((.*)\) goes$` with it required.
+
+**The tempting justification is false.** A template with no state might look
+like work nothing can reach, since its locals are private to the splice -- that
+is what the refusal said until this was checked. But a template reaches the
+world through calls, not only through ports:
+
+```
+shout (unused) goes                       -- `unused` is never read
+  msg is "hi\n"
+  screen is already linux.file (descriptor is 1)
+  screen.write (buffer is msg, count is msg.size)
+end
+```
+
+Accepted, and it prints. The port is pure ceremony: the template does real work
+and the only reason it carries a parameter is that the grammar demands one. So
+the restriction does not prevent anything -- it just makes people invent a fake
+name, which is the shape a rule takes when it is arbitrary.
+
+**Two ways out, and the first is nearly free:** let a top-level `NAME goes`
+parse as a portless template, which is the method spelling already, so the two
+stop differing for no reason. Or keep the requirement and say why -- but the why
+would have to be better than the one that was there, since that one was wrong.
+
+Worth doing with the `when`-on-`ensure` gap, which is the same size and the same
+kind: something composes everywhere except one place, with no reason recorded.
+
+## Scalars are the only kind whose name is not checked for reuse
+
 Found 2026-08-22, comparing mereo's scopes against C and C++ (the result is in
 `docs/control-flow.md`). Most of the differences are deliberate and stated: one
 flat set of scalars, no shadowing, declaration order irrelevant. This one is not
