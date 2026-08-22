@@ -84,6 +84,64 @@ of the live set at the jump by construction, so the difference is exactly what
 to let go of. A jump anywhere else could arrive with a live set that depends on
 the path taken, and recording that is a drop flag.
 
+## Names in a scope, against C and C++
+
+A scope here controls **when things happen and when they are released**. It does
+not control what a name means. C and C++ use the same braces for both; mereo
+separates them, and the difference shows up in five places.
+
+**A scalar declared in a scope is visible outside it.** There is one flat set of
+scalars per program, so `NAME is VALUE` opens a name wherever it is written and
+that name is live everywhere. This is what lets a scope read its surroundings
+without plumbing anything through ports.
+
+**So there is no shadowing.** Inside a scope, `n is 2` where `n` already exists
+is an *assignment*, not a new declaration:
+
+```
+  n is 1
+  s goes
+    n is 2          -- the outer n, assigned
+  end
+                    -- mereo: n is 2.   C++: n is 1.
+```
+
+Both programs compile and the same-looking code gives different answers. C++
+would warn at `-Wshadow`; mereo cannot, because the name really is the same
+name.
+
+**Sibling scopes share a scalar's storage.** Two scopes each opening `v` compile
+to one `long v`, and the second can read what the first left — including without
+declaring it at all. The one shape of this that bites in practice is guarded:
+two nested loops counted by the same scalar, where the inner **resets** it, is
+refused ([Safety](safety.md) has the case).
+
+**Order of declaration does not matter.** A scalar is live above the line that
+opens it, initialiser included, so `n is m + 1` written before `m is 5` reads 5.
+In C that is an error; here the text is a set of declarations and a sequence of
+steps, and only the steps are ordered.
+
+**Buffers, instances and template locals are not like this.** A buffer or an
+instance may not reuse a name a sibling scope used — that is refused as *not
+unique* — and a template's locals are private to its splice, so no caller sees
+them. An owned resource used after the scope that acquired it is refused by
+name, since its release already ran.
+
+| | mereo | C / C++ |
+| --- | --- | --- |
+| scalar declared in a block | visible after it | block-scoped |
+| same name in a block | assigns the outer one | shadows it |
+| two sibling blocks, same scalar | one variable | two variables |
+| use before the declaration line | reads the value | an error |
+| buffer or instance reusing a name | refused | shadows |
+| template / function locals | private | private |
+| namespaces | as C++, checked against it | — |
+
+The last row is not a hedge: `tests/namespaces` builds the same nine cases in
+both languages — nested and sibling namespaces, outward lookup, shadowing,
+reopening, qualified access at every depth — and requires identical output, with
+answers chosen so a wrong resolution gives a different number.
+
 ## Conditionals
 
 An `if` is a scope with a condition where the name would be. It is anonymous

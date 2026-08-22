@@ -1547,3 +1547,35 @@ would have to be better than the one that was there, since that one was wrong.
 
 Worth doing with the `when`-on-`ensure` gap, which is the same size and the same
 kind: something composes everywhere except one place, with no reason recorded.
+
+## Scalars are the only kind whose name is not checked for reuse
+
+Found 2026-08-22, comparing mereo's scopes against C and C++ (the result is in
+`docs/control-flow.md`). Most of the differences are deliberate and stated: one
+flat set of scalars, no shadowing, declaration order irrelevant. This one is not
+stated anywhere and looks like an omission.
+
+| two sibling scopes both open the name | |
+| --- | --- |
+| a scalar (`v is 1`) | **accepted** -- one variable, silently shared |
+| a buffer (`tmp is 8 bytes`) | refused: "name 'tmp' is not unique" |
+| an instance (`t is already linux.file`) | refused: "name 't' is not unique" |
+
+So two of the three kinds get a uniqueness check and the third does not. And the
+scalar case is the one where sharing is invisible: a buffer reused would at
+least be the same bytes, while two scopes using `v` for unrelated purposes are
+one `long v`, and a scope can read a name a sibling opened without opening it
+itself. Measured: `one` sets `v is 10`, `two` adds `v` without declaring it, and
+the program prints 20.
+
+**Not obviously a bug.** The flat namespace is the design, and it is what lets a
+scope reach its surroundings without ports -- refusing reuse outright would break
+the accumulator pattern that nested loops rely on, which `check_shadowed_counters`
+was written to permit while refusing the reset. But the ASYMMETRY wants a reason:
+either scalars should be checked the way buffers are, or buffers should not be,
+and whichever it is should be written down.
+
+**Cheapest useful version:** report, do not refuse. A scope that opens a scalar
+name a sibling scope already opened is almost always two people wanting a
+temporary, and a note naming both lines would cost nothing and read like the
+`check_shadowed_counters` message that already exists for the sharper case.
