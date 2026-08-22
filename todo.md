@@ -1360,28 +1360,48 @@ first thing worth saying, because `N bytes` did, and these all either do the
 right thing or refuse. They are consistency and diagnostic faults, not
 correctness ones, and they are ranked here by how much they cost a reader.
 
-### 1. Adoption ignores a default the declaration already wrote
+### 1. `already` does two jobs, and one of them writes to the wrong file
 
-A **state slot** carries a default and adoption must restate it anyway. A
-**field** carries no default and may be omitted. So the thing that says what it
-starts as is mandatory, and the thing that says nothing is optional -- exactly
-backwards.
+**Corrected 2026-08-22** -- the first draft of this entry had it backwards. It
+said a state slot's default should stand at adoption the way it does at
+acquisition. That is wrong: `already` BORROWS something that already exists, so
+naming its state is the point, and defaulting it would be inventing a fact about
+a real thing. Requiring it is right.
 
-| definition has | `already X` | `already X ()` | `already X (a is 1)` |
-| --- | --- | --- | --- |
-| fields | ok | ok | ok |
-| state | **refused** | **refused** | ok |
-| neither | refused | refused | refused |
+The fault is on the FIELD side, and it is worse than untidy:
 
-And the default is not decorative: an ACQUIRED instance uses it.
-`examples/socket.mereo` writes `descriptor is -1` once and gets
-`_descriptor = -1`; the same declaration adopted demands the value again. The
-check at `mereoc.py` carries no comment saying why, unlike almost everything
-around it, which suggests it was never decided so much as arrived at.
+```
+t is already linux.file            -- descriptor omitted
+t.write (buffer is msg, count is msg.size)
+```
 
-**Fix:** let a state slot's default stand at adoption, as it already does at
-acquisition, and keep the refusal only for slots with no default. One rule,
-stated where the reader is looking.
+Accepted. `descriptor` defaults to zero, zero is standard input, and with fd 0
+opened read-write -- which a shell does with `0<>` -- this **exits 0 and writes
+the text into the wrong file**. No diagnostic, no failure. It is only caught
+when fd 0 happens not to be writable, and then as a run-time `-9`.
+
+The cause is that `already` is two things at once:
+
+| written | means |
+| --- | --- |
+| `already linux.file (descriptor is 1)` | borrow this existing thing, here is its handle |
+| `already linux.sockaddr_in` | give me a fresh zeroed block of this shape |
+
+Both are in the corpus and both are legitimate. `examples/ls` writes `entry is
+already linux.dirent` for a record the KERNEL fills; `examples/server` writes
+`bound is already linux.sockaddr_in` and fills it field by field; `showcase` has
+`totals is already tally` for a zeroed accumulator. Requiring every field was
+tried and refuses all six, so that is not the fix.
+
+**What to decide:** the two jobs want different words. A fresh zeroed block is a
+declaration of storage and reads like one -- something in the family of `NAME is
+CLASS bytes` or a `new`/`blank` word -- while `already` keeps its meaning of
+borrowing a thing that exists, and then may require every field, since a handle
+nobody named is not a handle.
+
+Until then the hazard is narrow and worth stating plainly: **`already` on a
+definition whose fields are HANDLES, with a field omitted, is a silent zero.**
+`linux.file` is the one that matters, and `descriptor is 0` is standard input.
 
 ### 2. `ensure` at a definition's top level accepts exactly one shape
 
@@ -1433,8 +1453,15 @@ than the field and explaining neither.
 
 ### The pattern across all five
 
-Four of them are diagnostics rather than semantics: the language already does
-the right thing and describes it badly, usually by falling through to a generic
-"unrecognized" line. Only the first is a rule worth changing. That is a better
-place to be than `N bytes` was, and it suggests the next pass should be over the
-error messages rather than the grammar.
+Four of them are diagnostics rather than semantics: the language does the right
+thing and describes it badly, usually by falling through to a generic
+"unrecognized" line. The next pass over those belongs on the messages, not the
+grammar.
+
+The first is not in that group, and the correction to it is worth keeping as a
+method note. The entry originally read as an ergonomic wart -- a default that
+has to be repeated -- and was written from the shape of the rule rather than
+from trying it. Asking what `already` MEANS turned it around: the state side is
+right, the field side is wrong, and the wrong side writes to the wrong file and
+exits 0. One of these is a real bug and the other four are wording, and the
+first draft had them the other way up.
