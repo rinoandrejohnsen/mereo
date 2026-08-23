@@ -1764,6 +1764,42 @@ the whole of `plen` in front of `qoff` without the analysis having to relate the
 two. With that, **`equals` in mereo compiles, proves, and produces byte-identical
 output on the 84 MB log.**
 
+### Tracing is not the problem, and here is what is
+
+"Why can't we trace the code?" We can. Traced through the TLS client, where the
+extent change refused a correct program:
+
+| | interval | |
+| --- | --- | --- |
+| `chlen is 162 + host.size` | **(171, 171)** | exact |
+| `chmsg_len is chlen - 5` | **(166, 166)** | exact |
+| `shlen is [sh_rec + 3 : 2] as big` | **(0, 65535)** | a two-byte field OFF THE WIRE |
+
+The arithmetic is followed exactly. The one loose value is a length a peer
+supplied, and 0..65535 is the truth about it until something narrows it.
+
+**And the program already narrows it.** `read_record` ends with
+`ensure total <= capacity`, and its comment says why: *"It is also the fact that
+makes every `[rec + off]` after it decidable: the bound now ends in a
+constant."* `total is length + 5`, so that is `shlen <= 507`.
+
+**The analysis uses it -- sometimes.** Tracing the same name at three later
+points gives `(0, 65535)`, `(0, 65535)`, and **`(0, 507)`**. Five hundred and
+seven is 512 minus 5: the fact travelled through the port binding, back through
+`total is length + 5`, and landed on a constant. The machinery works end to end.
+
+So the gap is not tracing, not the splice, and not ports. It is
+**FLOW-SENSITIVITY**: one fact, one value, live at one use and dead at two
+others. A fact dies when anything it mentions is written, and with several
+`read_record` calls in a session the subject is rewritten between uses -- so a
+bound the programmer stated once has to be re-derivable at every point that
+needs it, and is not.
+
+That is the thing to fix, and it is worth more than any of the three ports: it
+would tighten `tlen` from 16384 to about seven hundred, which is what made the
+extent-as-access change unusable, and it is the same shape as the `equals`
+reports -- a bound that exists somewhere the analysis is not looking.
+
 ### `check_call_fit` has a real hole, and closing it is not free
 
 "Why is there a call_fit check if analysis only runs on the expanded layout?"
