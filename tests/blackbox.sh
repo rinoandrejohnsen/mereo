@@ -515,6 +515,13 @@ silent  access/views-silent  views
 # first must be silent, and the second must be REFUSED rather than merely
 # reported, which is only possible because the floor makes the range known.
 silent  access/descending-load  descending_load
+# An index the KERNEL chose. `read` promises only `count <= capacity`, so this
+# is 0..64 into sixteen bytes, and the analysis says so with the number. Its
+# twin `store_outport_past_end.mereo` is the same program with the access
+# written to instead of read from, and is accepted in SILENCE -- a hole that is
+# recorded in todo.md and deliberately not wired in here, because a red test
+# that never goes green is a broken gate rather than a finding.
+rejects access/load-outport-past-end load_outport_past_end "reaches 65 bytes into 'small'"
 rejects access/descending-load-past-end descending_load_past_end "reaches 34 bytes into"
 rejects access/store-past-end store_past_end "writes 101 bytes into"
 # A syscall cannot be caught downstream: the kernel never sees where the buffer

@@ -1421,6 +1421,69 @@ blocks over 98 programs. 91 of the 98 binaries are byte-identical -- only the
 seven with spliced arrays move. The TLS stack is where it lands: `https` alone
 is -8.5% frame and -5.7% `.text`.
 
+### Tried and REVERTED: dropping a `leave` whose condition can never hold
+
+The idea is right in the abstract -- a check that provably never fires is not
+worth paying for -- and `drop_proved_checks` already does exactly this for a
+method's guard. Extending it to `leave X when COND` is a small change: a guard
+goes when its condition is always TRUE, a `leave` goes when its condition is
+always FALSE, and `i >= 20` is the negation of `i < 20`, so one interval test
+decides both.
+
+It was written, and it is **unsound**. On the exam it dropped exactly one check:
+
+    if ((plen > 255)) goto parse_done;      -- `leave parse when plen > path_max`
+
+A log line with a 301-byte path then comes out as a REQUEST rather than
+malformed. The 84 MB corpus never showed it because the longest path in it is 23
+bytes. Reverted.
+
+**Why it fired.** The probe reported `left_hi=0` for `plen` -- the analysis
+believes a value that is `pe - ps`, where `pe` is `ps + rel` and `rel` is the
+out-port of a `find`, cannot exceed zero. It is not circularity: `skip_guard`
+was extended to the bounds derivation first, and simple subtraction resolves
+correctly in isolation (`n is a - 20` at index 80 is refused, naming the 80).
+Something in that specific chain -- an out-port through an addition and then a
+cancelling subtraction -- collapses to the initialiser. **That is a live
+soundness bug independent of any of this**, and it is the thing to fix before
+the idea is worth trying again.
+
+**And the premise does not survive measurement anyway.** A guard that never
+fires is not only a cost -- it is a RANGE FACT the C compiler uses. Deleting
+`leave digits when i >= 20` from `format` costs **2,348 bytes and 561
+instructions**, because without `i < 20` GCC cannot prove the store stays inside
+a twenty-byte scratch and goes conservative on aliasing across the whole
+expansion (stack spills 9 -> 16). The extension measured **+20 bytes** on the
+exam, not less. The check earns its 68 bytes about thirty times over.
+
+The original motivation -- recovering the 68 bytes `format` pays -- could never
+have worked: that guard is load-bearing. Without it the analysis cannot bound
+`i` at all, so `skip_guard` correctly refuses to drop it. A guard is droppable
+only when something ELSE already bounds the variable, and then it was doing no
+work in the first place.
+
+### Open, and serious: a STORE indexed from outside is not checked
+
+Found while chasing the above. `tests/progs/load_outport_past_end.mereo` and
+`store_outport_past_end.mereo` are the same program, one character apart:
+
+    d is [small + n : 1]        -- READ:  refused, "reaches 65 bytes into 'small'"
+    [small + n : 1] is 65       -- WRITE: accepted in SILENCE
+
+`n` is a count the kernel returned, so `read`'s contract puts it at 0..64 and
+every index above 15 is past the end of a sixteen-byte buffer. The read is
+caught with the exact number. The write is not caught at all -- not refused, not
+even reported unproved.
+
+This is the mirror of the descending-index bug fixed earlier, where a LOAD was
+under-analysed and the store was fine. Loads and stores travel different paths
+and each has had a hole. The write side is the worse one to have: it is the
+direction that corrupts.
+
+The load case is a blackbox gate now. The store case is deliberately NOT wired
+in -- a red test that never goes green is a broken gate rather than a finding --
+but the reproduction sits beside it, ready to be turned on by whoever fixes it.
+
 ### Landed: itoa is written in mereo, and `_decimal` is gone
 
 One of the three C helpers is out of the compiler. `text.format` is now mereo --
