@@ -1811,9 +1811,37 @@ loop bounds it has no way to see, let alone fix.
 
 So the ledger on `equals` is now three separate things, and only the first is
 settled: it costs +0.11% (fine), it no longer refuses anything (fixed), and it
-makes every caller noisy (open). The third needs a way for a primitive to say
-*my bounds are my caller's business* -- the precondition spelling that does not
-exist, and the same gap that stops a constant bound being a promise.
+makes every caller noisy (open). The third is NOT what it first looked like, and "my bounds are my caller's
+business" was the wrong description twice over -- the same mistake as the
+"splice boundary" earlier on this page. Nothing is unexpanded. The reports name
+CONCRETE bases:
+
+    line 34: `["world" + equals_116_i : 8]` not proved in range
+
+A five-byte literal and an EIGHT-byte load. That access really would be out of
+range -- if it were reached. It is not: the eight-byte path runs only when
+`length >= 8`, and here the length is five.
+
+**So the gap is reachability, not bounds.** Every report is on the wide path
+(lines 33/34 are the word loop, 41/42 the overlap), and proving it away needs
+the analysis to see that the path cannot execute. The facts to do it are almost
+all there now: `leave equals when length != other_length` gives `length == 5`,
+and `leave narrow when length >= 8` guards a body that ends `leave equals` --
+nothing falls through, so `length >= 8` holds past its end. Together those are
+CONTRADICTORY, and a contradiction means dead code.
+
+An attempt at the second half -- record a `leave`'s condition at the scope end
+when it is the SOLE exit and the body cannot fall through -- is written and
+reverted: it fires, and it changes nothing, because `length >= 8` is a LOWER
+bound and the access needs an upper one. What it actually establishes is
+unreachability, and the interval domain has no way to say that. Making an
+inverted interval (`lo > hi`) mean *this cannot execute* is the missing piece,
+and it is sound only if every fact feeding it is -- which is a heavier claim
+than anything else on this page, and not one to make while three separate
+soundness bugs on this branch were found by hand-written cases rather than the
+suite.
+
+`mereoc_soleexit_attempt.py` holds it.
 
 `core_equals_final.mereo` and `exam_masked.mereo` hold the work.
 
