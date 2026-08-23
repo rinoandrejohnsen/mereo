@@ -1,0 +1,19 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- The twin, and the reason the rule is about WRITES rather than mentions: here
+-- `read` writes `n` through its out port, so the bound stated above it is gone
+-- and `n` is whatever the kernel returned -- 0..64, past sixteen bytes.
+program goes
+  small is 16 bytes
+  data is 64 bytes
+  n is 0
+  d is 0
+  input is already linux.file (descriptor is 0)
+  terminal is already linux.file (descriptor is 1)
+  leave program when n > 10
+  input.read (buffer is data, capacity is 64, count is n)
+  d is d + [small + n : 1]
+  [small : 1] is d
+  terminal.write (buffer is small, count is 1)
+end

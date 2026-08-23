@@ -1,0 +1,25 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- A call kills what it WRITES, not everything it touches. `write` READS `n`;
+-- the bound stated just above it still holds afterwards, and the access is in
+-- range. Until this was narrowed, handing a scalar to any call as an input
+-- threw away every bound the programmer had stated about it -- which is why a
+-- length bounded by `ensure total <= capacity` in the TLS stack came back as
+-- 0..65535 at one use and 0..507 at another.
+program goes
+  small is 16 bytes
+  data is 64 bytes
+  n is 0
+  got is 0
+  d is 0
+  input is already linux.file (descriptor is 0)
+  terminal is already linux.file (descriptor is 1)
+  input.read (buffer is data, capacity is 64, count is got)
+  n is got
+  leave program when n > 10
+  terminal.write (buffer is data, count is n)
+  d is d + [small + n : 1]
+  [small : 1] is d
+  terminal.write (buffer is small, count is 1)
+end

@@ -6211,34 +6211,40 @@ def call_prim(st, definitions, slots):
     return PRIMITIVES.get(meth.get("prim")) or {}, (meth.get("bind") or {})
 
 
-def annotate_calls(definitions, slots, steps):
-    """Resolve every call's primitive ONCE, after the splice, and hang the
-    answer on the step.
+def lower_primitives(definitions, slots, steps):
+    """Say what a surviving call DOES, in ordinary steps, once -- so that the
+    analysis after this point never asks a call anything.
 
-    The analysis should not know that ports exist. It asks questions about
-    steps -- what does this write, what is known about the value, did it come
-    from outside -- and "which port of which primitive does this step happen to
-    write" is a question for the code that BUILT the step, asked once, here.
+    A procedure body is already gone: `expand_procedures` spliced it. What is
+    left is the method that delegates straight to a primitive, and it has to
+    STAY a call, because a syscall must reach the output as one. But a call
+    surviving as CODE is not a reason for it to survive as a QUESTION. Its
+    effects are ordinary and can be written down as ordinary steps beside it:
 
-    That this was asked three times inside the analysis instead is the whole
-    reason for a two-day run of bugs: the three copies had drifted, two of them
-    could not see a method reached through a namespace, and each missing answer
-    produced a different symptom -- a promise that never arrived, a name that
-    was never killed, a value off the wire that was never marked as such.
+      `read (buffer is data, capacity is 64, count is n)`
+          assign  n         <- unknown, and from outside
+          assign  data      <- unknown bytes, and from outside
+          guard   n <= 64                     (its promise, at the call site)
 
-    Anything with a procedure BODY is already gone by now: `expand_procedures`
-    spliced it, and its writes are ordinary assignments that need none of this.
-    What is left is the method that delegates straight to a primitive, which
-    stays a call because the syscall has to survive to the output.
+    Everything downstream then works the way it works everywhere else. The
+    out-port write kills facts because it is an ASSIGNMENT, not because
+    something looked up a port. The promise is believed because it is a GUARD,
+    the same one `ensure` emits. Nothing consults `out`, `bind`, or `conns`.
 
-    Each such step gets, once:
-      `_writes`   the call-site name its out port writes, or None
-      `_bounds`   its out-port contract, resolved to call-site expressions
-      `_wired`    primitive port -> the expression written at the call site
-      `_inports`  the in ports, which is the out port's complement
-    """
+    This replaces an annotator that resolved the same ports one phase later and
+    hung `_writes`/`_bounds`/`_wired`/`_inports` on the step. That moved the
+    port knowledge; it did not remove it, and the analysis went on needing a
+    special case per question -- which is why a fact could survive a call that
+    overwrote it, and why a bound stated by the programmer could be discarded
+    by the next call that merely READ the name.
+
+    Order is load-bearing: the assignments come first and the guards after, so
+    a promise about the value is not killed by the write that produced it."""
+    bufs = {s["name"] for s in slots if s.get("kind") in ("buffer", "instance")}
+    out_steps = []
     for st in steps:
         if st.get("type") not in ("call", "bare"):
+            out_steps.append(st)
             continue
         prim, bind = call_prim(st, definitions, slots)
         conns = {c[0]: c[1] for c in (st.get("conns") or ()) if len(c) >= 2}
@@ -6249,12 +6255,23 @@ def annotate_calls(definitions, slots, steps):
                 port = b[0] if isinstance(b, (list, tuple)) else (b or port)
             return conns.get(port)
 
-        out = prim.get("out")
+        outp = prim.get("out")
         ports = {p for _k, p in (prim.get("args") or ())}
-        st["_writes"] = wired(out) if out else None
-        st["_wired"] = {p: wired(p) for p in ports | ({out} if out else set())}
-        st["_inports"] = ports - ({out} if out else set())
-        bounds = []
+        inports = ports - ({outp} if outp else set())
+        ln = st.get("line")
+        out_steps.append(st)                       # the call itself: codegen
+
+        # ---- what it promises, BEFORE what it writes. Only a clause on the
+        # OUT port says anything about a value; one on an in port is a
+        # REQUIREMENT on the call, a different job.
+        #
+        # The order is load-bearing and it is not the obvious one. A promise
+        # bounds the result by the ARGUMENTS -- `count <= capacity` is about
+        # the capacity handed in -- so its right-hand side must be read where
+        # the call is, before the write lands. Emitting it after cost 38
+        # seconds and then everything: evaluating `rel <= q2 - q1 - 1` past
+        # `rel`'s own opaque write sends the walk back through `q2`, which is
+        # built from `rel`.
         for cl in (prim.get("contract") or ()):
             if isinstance(cl, (list, tuple)) and len(cl) >= 3:
                 lhs, op, rhs = (str(cl[0]).strip(), str(cl[1]).strip(),
@@ -6266,18 +6283,54 @@ def annotate_calls(definitions, slots, steps):
                 lhs, op, rhs = (m.group(1).replace(" as signed", "").strip(),
                                 m.group(2),
                                 m.group(3).replace(" as signed", "").strip())
-            # only a clause on the OUT port says anything about a VALUE; one on
-            # an in port is a requirement on the call, decided when the program
-            # is read, and it bounds an argument rather than a result
-            if lhs != out:
+            if lhs != outp:
                 continue
             tgt = wired(lhs)
             if not tgt:
                 continue
             val = wired(rhs)
-            bounds.append((tgt, op, rhs if val is None else val))
-        st["_bounds"] = bounds
-    return steps
+            # its OWN type, not `guard`. A guard is a thing the program
+            # states and every guard reader is entitled to act on -- as a loop
+            # bound, as evidence an index is checked. A promise is narrower:
+            # it holds from the call onward and only the reader below wants
+            # it. Emitting it as a guard put it in front of readers that were
+            # never written for it, and loglyze stopped terminating.
+            out_steps.append({"type": "promise", "cond":
+                              f"{tgt} {op} {rhs if val is None else val}",
+                              "ref": None, "ghost": True, "line": ln})
+
+        # ---- what it writes. A syscall's result is unknown and comes from
+        # outside the program, which is both of the things the walk needs and
+        # neither of them is a port question once it is written down.
+        written = []
+        w = str(wired(outp) or "").strip() if outp else ""
+        if re.fullmatch(r"[A-Za-z_]\w*", w):
+            written.append({"type": "assign", "name": w, "expr": None,
+                            "outside": True, "ghost": True, "line": ln})
+        # A primitive with a `buffer` port writes into it UNLESS it also takes
+        # a `count` in-port -- that is `write`, which reads from it instead.
+        fills = "buffer" in inports and "count" not in inports
+        for p in sorted(ports):
+            a = str(wired(p) or "").strip()
+            if not a:
+                continue
+            for nm in set(re.findall(r"[A-Za-z_]\w*", a)):
+                if nm in bufs and nm != w:
+                    written.append({"type": "assign", "name": nm, "expr": None,
+                                    "outside_bytes": (p == "buffer" and fills),
+                                    "addr": a, "ghost": True, "line": ln})
+        # dedupe, keeping the strongest claim about each name
+        seen = {}
+        for s in written:
+            k = s["name"]
+            if k in seen:
+                seen[k]["outside"] = seen[k].get("outside") or s.get("outside")
+                seen[k]["outside_bytes"] = (seen[k].get("outside_bytes")
+                                            or s.get("outside_bytes"))
+            else:
+                seen[k] = s
+        out_steps.extend(seen.values())
+    return out_steps
 
 
 def classify_accesses(definitions, slots, steps, skip_guard=None,
@@ -6314,20 +6367,25 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
         d = definitions.get(inst[n]["definition"]) if n in inst else None
         return d.get("psize") if d else None
 
-    # ---------- contract bounds, from the primitive behind the method
-    # A clause names the PRIMITIVE's ports (`count as signed <= capacity`).
-    # A method reaches it through `prim` + `bind`, and the call site supplies
-    # the arguments through `conns` -- so all three hops are needed.
-    # What a call PROMISES about the value it leaves behind, already resolved
-    # to call-site expressions by `annotate_calls`. The bound may still be a
-    # name whose value is only knowable here, so `iv` finishes the job.
+    # ---------- what a call PROMISED about the value it left behind.
+    # Not resolved here: `lower_primitives` already wrote each promise down as
+    # an ordinary guard beside the call, in call-site names. This only sorts
+    # them by direction. The bound may still be a name whose value is knowable
+    # only here, so `iv` finishes the job.
     cbound, clow = {}, {}
     for idx, st in enumerate(steps):
-        for tgt, op, val in st.get("_bounds") or ():
-            if op in ("<=", "<"):
-                cbound.setdefault(tgt, []).append((val, op == "<", idx))
-            elif op in (">=", ">"):
-                clow.setdefault(tgt, []).append((val, op == ">", idx))
+        if st.get("type") != "promise":
+            continue
+        m = _CMPX.match(str(st.get("cond") or ""))
+        if not m:
+            continue
+        tgt, op, val = (m.group(1).replace(" as signed", "").strip(),
+                        m.group(2),
+                        m.group(3).replace(" as signed", "").strip())
+        if op in ("<=", "<"):
+            cbound.setdefault(tgt, []).append((val, op == "<", idx))
+        elif op in (">=", ">"):
+            clow.setdefault(tgt, []).append((val, op == ">", idx))
 
     copy = {}
     for i, st in enumerate(steps):
@@ -6345,21 +6403,21 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
         # `cbound`/`clow`, so a kernel count keeps its bound while a `find`
         # offset, which promises nothing, correctly has none.
         #
-        # A method with a PROCEDURE body is not here: `expand_procedures` has
-        # already spliced it, so its writes are ordinary assignments. What is
-        # left is the method that delegates to a primitive, and it is found
-        # under `definitions` when the receiver is a NAMESPACE (`text.find`) and
-        # under the instance's definition when it is an instance (`input.read`).
-        if t in ("call", "bare"):
-            tgt = str(st.get("_writes") or "").strip()
-            if re.fullmatch(r"[A-Za-z_]\w*", tgt):
-                copy.setdefault(tgt, []).append((i, None))
-            continue
+        # No call appears here at all. `lower_primitives` put an ordinary
+        # assignment next to each surviving one, so what a syscall writes is
+        # recorded by the rule below like any other write.
         if t != "assign":
             continue
         if isinstance(st.get("expr"), str):
             copy.setdefault(st["name"], []).append((i, st["expr"].strip()))
-        elif st.get("clauses"):
+        elif not st.get("clauses"):
+            # WRITTEN, VALUE UNKNOWN. Recording nothing here would let
+            # `reaching` walk past it to an older definition and believe that
+            # instead -- which is how `rel is 0` stayed believed after
+            # `find (... offset is rel)`, and how indexing sixteen bytes with a
+            # `find` offset over a 512-byte line passed in silence.
+            copy.setdefault(st["name"], []).append((i, None))
+        else:
             # `X is V when C` is a definition like any other, but which value it
             # leaves behind depends on the branch. Kept whole; `iv` splits it.
             copy.setdefault(st["name"], []).append(
@@ -6520,13 +6578,13 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
                 live.pop(k, None)
             if inherit: live[tgt] = list(inherit)
             lastdef[tgt] = ex if isinstance(st.get("expr"), str) else None
-        elif t in ("call", "bare"):
-            outs = set()
-            for c in st.get("conns", []):
-                if len(c) >= 2: outs |= names_in(c[1])
-            for k in [k for k, v in live.items()
-                      if outs & (names_in(k) | set().union(*(names_in(f[1]) for f in v)))]:
-                live.pop(k, None)
+        # A call has no case here. It kills what it WRITES, not everything it
+        # touches, and what it writes is the ordinary assignment beside it that
+        # the branch above handles. Taking every connected name -- which is
+        # what the special case did -- meant handing a scalar to a call as an
+        # INPUT threw away every bound the programmer had stated about it: that
+        # is why a length the TLS stack bounds with `ensure total <= capacity`
+        # read back as 0..65535 at two uses and 0..507 at a third.
         elif (t in ("guard", "loop_exit") and st.get("cond")
               and i != skip_guard):
             m = _CMPX.match(str(st["cond"]))
@@ -6639,28 +6697,51 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
         v = iv(fexpr, at, seen)[0]
         return None if v is None else v + adj + extra
 
+    _lo_scan, _lo_val = {}, {}
+
     def loop_lo(n, lp, seen=()):
         """the floor of a counting-up variable: the value it entered with.
         `ii is 1` before the loop makes `poff is ii * 8 - 8` non-negative --
-        assuming 0 is sound but too loose to prove anything."""
-        s_, e_ = lp
-        for i in range(s_, e_):
-            st = steps[i]
-            if st.get("type") == "assign" and st.get("name") == n:
-                ex = str(st.get("expr", "")).strip()
-                if _acc_const(ex) is not None and _acc_const(ex) >= 0: continue
-                if _INC.match(ex) and _INC.match(ex).group(1) == n: continue
-                if re.fullmatch(r"[\w.]+\s*-\s*[\w.]+", ex):
-                    a, b = [x.strip() for x in ex.split("-")]
-                    if a == b: continue          # `mj is mj - mj`, a zeroing
-                return None
-        entry = [(j, steps[j].get("expr")) for j in range(s_)
-                 if steps[j].get("type") == "assign" and steps[j].get("name") == n]
+        assuming 0 is sound but too loose to prove anything.
+
+        The two scans are over the step list and depend only on the name and
+        the loop, so they are done once per pair. They used to run on every
+        call, and `iv` calls this millions of times on a program the size of
+        loglyze: that alone took its compile from 6.9 seconds to 38."""
+        key = (n, lp)
+        got = _lo_scan.get(key)
+        if got is None:
+            s_, e_ = lp
+            entry, ok = None, True
+            for i in range(s_, e_):
+                st = steps[i]
+                if st.get("type") == "assign" and st.get("name") == n:
+                    ex = str(st.get("expr", "")).strip()
+                    if _acc_const(ex) is not None and _acc_const(ex) >= 0: continue
+                    if _INC.match(ex) and _INC.match(ex).group(1) == n: continue
+                    if re.fullmatch(r"[\w.]+\s*-\s*[\w.]+", ex):
+                        a, b = [x.strip() for x in ex.split("-")]
+                        if a == b: continue      # `mj is mj - mj`, a zeroing
+                    ok = False
+                    break
+            if ok:
+                for j in range(s_):
+                    if (steps[j].get("type") == "assign"
+                            and steps[j].get("name") == n):
+                        entry = (j, steps[j].get("expr"))
+            got = _lo_scan[key] = (ok, entry)
+        ok, entry = got
+        if not ok:
+            return None
         if entry:
-            j, ex = entry[-1]
-            if (n, j) not in seen:
-                v = iv(str(ex), j, seen + ((n, j),))[0]
-                if v is not None and v >= 0: return v
+            j, ex = entry
+            if (n, j) in seen:
+                return 0             # a cycle: fall back to the loose floor
+            if key in _lo_val:
+                return _lo_val[key]
+            v = iv(str(ex), j, seen + ((n, j),))[0]
+            _lo_val[key] = v if (v is not None and v >= 0) else 0
+            return _lo_val[key]
         return 0
 
     ASSUME = {}
@@ -6815,11 +6896,36 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
             acc = join(acc, q)
         return acc
 
+    _iv_memo = {}
+
     def iv(e, at, seen=()):
+        """What range can this expression hold at this point.
+
+        Memoised, because it is asked the same question millions of times: on
+        loglyze, `n`, `got` and `read_buf` alone accounted for nine hundred
+        thousand calls each.
+
+        Two things make the key what it is. `ASSUME` is part of it because an
+        assumption in force genuinely changes the answer. `seen` is NOT, and
+        that is sound rather than convenient: `seen` only ever cuts a cycle by
+        returning the widest interval, so every answer computed under it is an
+        over-approximation of the true one, and reusing an over-approximation
+        somewhere else is always allowed. It can cost precision, never
+        correctness -- and the corpus says it costs neither here, byte for
+        byte."""
         if e is None:
             return UNK              # an out port: written, value unknown
         if isinstance(e, tuple):
             return iv_cond(e, at, seen)
+        _mk = (str(e), at, tuple(sorted(ASSUME.items())) if ASSUME else ())
+        _hit = _iv_memo.get(_mk)
+        if _hit is not None:
+            return _hit
+        _r = _iv_uncached(e, at, seen)
+        _iv_memo[_mk] = _r
+        return _r
+
+    def _iv_uncached(e, at, seen=()):
         e = str(e).strip()
         if not e: return UNK
         # A load that reads an adopted field is worth resolving BEFORE the
@@ -7101,22 +7207,22 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
                 return got
         return None
 
+    # Which values came from outside the program. A real question about a
+    # value, and asked as one: `lower_primitives` marked the writes it emitted,
+    # so nothing here needs to know that a primitive has a `buffer` port and
+    # what it means that it has no `count` beside it.
     tainted, tainted_buf = set(), set()
     for _si, st in enumerate(steps):
-        if st.get("type") not in ("call", "bare"):
+        if st.get("type") != "assign":
             continue
-        # the IN ports only: `read`'s result is called `count`, and folding it
-        # in here made every read look like a write
-        inports = st.get("_inports") or set()
-        if st.get("_writes"):
-            tainted.add(st["_writes"])
-        if "buffer" in inports and "count" not in inports:
-            b = (st.get("_wired") or {}).get("buffer")
-            if b:
-                # the argument is often a SCALAR HOLDING AN ADDRESS into the
-                # real backing -- `read_record` receives into `at`, which is
-                # `rec + n`. What the kernel wrote is `rec`, so taint that.
-                tainted_buf.add(backing_of(b, _si) or b)
+        if st.get("outside"):
+            tainted.add(st["name"])
+        if st.get("outside_bytes"):
+            # the argument is often a SCALAR HOLDING AN ADDRESS into the real
+            # backing -- `read_record` receives into `at`, which is `rec + n`.
+            # What the kernel wrote is `rec`, so taint that.
+            a = st.get("addr") or st["name"]
+            tainted_buf.add(backing_of(a, _si) or st["name"])
 
     def from_input(e, at, seen=()):
         """does this expression carry anything that came from outside?"""
@@ -7655,7 +7761,7 @@ def plan(definitions, slots, steps, overrides):
     # procedure body has been spliced flat; what remains is one stream of
     # steps under `_start`. Resolve each surviving call's ports ONCE here,
     # so nothing downstream has to know a port is a thing.
-    steps = annotate_calls(definitions, slots, steps)
+    steps = lower_primitives(definitions, slots, steps)
     check_adoption_fit(definitions, slots)
     check_call_fit(definitions, slots, steps)
     # Classify every access. Nothing acts on the verdicts yet -- refusing the
@@ -7838,6 +7944,11 @@ def plan(definitions, slots, steps, overrides):
 
     def plan_one(st, into, cold=False):
         nonlocal n_resume, loop_id
+        # A step `lower_primitives` wrote down so the analysis could read what a
+        # surviving call does. It says what the CALL already does; emitting it
+        # would be saying it twice.
+        if st.get("ghost"):
+            return
         check_released(st)
         if st["type"] == "assign":           # `X is EXPR` -- recompute a scalar
             if st["name"] not in scalars:

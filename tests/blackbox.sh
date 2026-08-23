@@ -530,6 +530,13 @@ silent  access/field-equality-bounds  field_equality_bounds
 # cannot be told apart from one reading BEFORE its buffer -- the first of these
 # was reported for that reason alone. The second must still be refused.
 silent  access/loop-floor-bounds  loop_floor_bounds
+# A call kills what it WRITES, not everything it mentions. The first hands `n`
+# to `write`, which only READS it, so the bound above survives; the second hands
+# it to `read`, which writes it back, so the bound is gone and 0..64 into
+# sixteen bytes is refused. Taking every connected name was why a length the TLS
+# stack bounds with `ensure total <= capacity` read back as 0..65535.
+silent  access/call-reads-keeps-fact  call_reads_keeps_fact
+rejects access/call-writes-kills-fact call_writes_kills_fact "reaches 65 bytes into 'small'"
 rejects access/loop-floor-past-end loop_floor_past_end "reaches 64 bytes into 'buf'"
 rejects access/field-equality-past-end field_equality_past_end "reaches 21 bytes into 'buf'"
 rejects access/leave-bounds-too-loose leave_bounds_too_loose "reaches 101 bytes into 'buf'"
