@@ -1764,6 +1764,47 @@ the whole of `plen` in front of `qoff` without the analysis having to relate the
 two. With that, **`equals` in mereo compiles, proves, and produces byte-identical
 output on the 84 MB log.**
 
+### `check_call_fit` should not exist, and the hole it left proves it
+
+"Why is there a call_fit check if analysis only runs on the expanded layout?"
+It should not be, and it was hiding a silent overrun.
+
+A syscall's write is not an ACCESS in the IR -- the emitted C cannot show it,
+because inline assembly with a `"memory"` clobber says *something changed*, not
+*this buffer and that many bytes*. So a separate port-level checker grew for it,
+and its own docstring admits the limit: *only decided where both sides are
+known*. Which means:
+
+    small is 16 bytes
+    read (buffer is small, capacity is 4096)      -- REFUSED
+    ...
+    cap is n * 512
+    leave program when cap > 4096
+    read (buffer is small, capacity is cap)       -- SILENT
+
+The same overrun, and the kernel writes up to 4096 bytes into sixteen without a
+word, because the capacity is a scalar rather than a literal. The general
+analysis would have bounded `cap` at 4096 without effort -- it just never saw
+the write.
+
+**Fixed by saying it as an access.** `annotate_calls` now records the extent a
+call writes -- `[small + 0 : cap]` -- from the same `ensure capacity <=
+buffer.size` clause `check_call_fit` reads, and the ordinary walk takes it from
+there. One correction went with it: an access was set aside for the literal
+checker when its INDEX was literal, and a synthetic extent has a literal index
+(`+ 0`) with a named width, so standing aside meant standing aside for nobody.
+
+**Corpus unproved 36 -> 32, 99 generated files byte-identical, all 44 planted
+violations still refused, blackbox 189 -> 191.** Both directions gated:
+`syscall_extent_scalar` is refused as *reaches 4096 bytes into 'small'*, and
+`syscall_extent_fits` -- the same shape over 8192 bytes -- stays silent, because
+an extent said this way must not become a false positive on every read.
+
+`check_call_fit` still runs and still owns the literal case, where its message is
+better. That it can now be deleted without losing coverage is the point, and the
+right follow-up: **one analysis, on one expanded layout, is not a slogan -- the
+second one had a hole in it.**
+
 ### A loop counter now has a floor, and that is 6 of the 40
 
 Chasing the `equals` noise found a real gap. `loop_lo` knows a counter's floor

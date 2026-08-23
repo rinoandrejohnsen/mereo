@@ -555,6 +555,13 @@ rejects access/store-past-end store_past_end "writes 101 bytes into"
 # ends, and inline asm with a "memory" clobber tells GCC nothing about which
 # bytes moved. Both numbers are one line apart in the source.
 rejects access/syscall-fit syscall_fit "is given capacity 4096, but 'small' is 16 bytes"
+# The same overrun with the capacity in a SCALAR. check_call_fit decides the
+# literal case only -- it says so -- and this passed in silence until the
+# extent a call writes was stated as an ordinary access, where intervals
+# apply. The fitting twin must stay silent: an extent said this way must not
+# become a false positive on every read in the corpus.
+rejects access/syscall-extent-scalar syscall_extent_scalar "reaches 4096 bytes into 'small'"
+silent  access/syscall-extent-fits  syscall_extent_fits
 # ...and the same question one level out: a resource stating an invariant over
 # its own fields, checked where an instance is adopted rather than declared.
 rejects access/span-fit   span_fit    "adopted with length 17, but 'line' is 5 bytes"

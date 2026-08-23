@@ -6277,6 +6277,24 @@ def annotate_calls(definitions, slots, steps):
             val = wired(rhs)
             bounds.append((tgt, op, rhs if val is None else val))
         st["_bounds"] = bounds
+        # THE EXTENT A CALL WRITES, written as an ordinary access so the ordinary
+        # analysis sees it. `read (buffer is small, capacity is cap)` hands the
+        # kernel `cap` bytes of `small`, and nothing in the emitted C can catch
+        # an overrun -- inline assembly with a "memory" clobber says SOMETHING
+        # changed, not this buffer and that many bytes.
+        #
+        # `check_call_fit` has always caught the literal case. It cannot catch
+        # any other: with `capacity is cap` where a guard bounds `cap` at 4096,
+        # a sixteen-byte buffer took 4096 bytes in SILENCE. Saying it as an
+        # access instead means intervals apply, which is the whole point of
+        # analysing after the splice -- one analysis, not a second one that only
+        # works on constants.
+        for _p, _cmp, _v, _ln, _rd in (prim.get("contract") or ()):
+            if _p == out or _cmp not in ("<=", "<") or not _v.endswith(".size"):
+                continue
+            buf, ext = wired(_v[:-5]), wired(_p)
+            if buf and ext and not is_str(str(buf)):
+                st["_extent"] = f"[{buf} + 0 : {ext}]"
     return steps
 
 
@@ -7279,13 +7297,24 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
         for s in _acc_strings(st):
             for inner in _accesses(s):
                 body, w = _split_width(inner)
-                width = _acc_const(w) or 1
+                width = _acc_const(w)
+                if width is None:
+                    # a synthetic extent: `capacity` is a name, and what matters
+                    # is the most it can be
+                    width = iv(w, i)[1]
+                if width is None:
+                    width = 1
                 lhs, _, idx = body.partition("+")
                 bname, size, off = resolve_base(lhs, i)
                 ln = st.get("line")
                 # a wholly literal index has its own check, later and with a
                 # better message -- this one stands aside for it
-                lit = not idx.strip() or _acc_const(idx) is not None
+                # ...but only when the WIDTH is literal too. A synthetic
+                # extent has a literal index (`+ 0`) and a named width, and
+                # standing aside for the literal checker meant standing aside
+                # for nobody.
+                lit = ((not idx.strip() or _acc_const(idx) is not None)
+                       and _acc_const(w) is not None)
                 # A span's own length bounds the room in front of its pointer,
                 # wherever that pointer has moved to: `offset + length <= size`
                 # is the invariant, so `i < length` puts `data + i` inside the
