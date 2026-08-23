@@ -1421,6 +1421,47 @@ blocks over 98 programs. 91 of the 98 binaries are byte-identical -- only the
 seven with spliced arrays move. The TLS stack is where it lands: `https` alone
 is -8.5% frame and -5.7% `.text`.
 
+### The slot-sharing pass was WRONG, and X25519 is what said so
+
+Shipped and pushed before this was found. The closure checked that nothing
+jumps INTO a span -- entering past the declarations -- and never that something
+inside jumps OUT and falls back in. A loop whose back-edge label sits above the
+span does exactly that:
+
+    format_33_digits:              <- label, ABOVE the block
+        {
+        char format_33_scratch[20];
+        ...
+        goto format_33_digits;     <- leaves the block
+        }
+
+Re-entering re-creates the array, so the digits staged on the previous pass are
+gone. Not a crash: a **wrong answer**. `format` in mereo printed blanks where
+numbers belonged, and X25519 returned
+`21fd59d1...` against RFC 7748 s5.2's `c3da5537...` -- a corrupted shared
+secret, silently.
+
+**Every suite stayed green.** 58 re-entered blocks in the TLS client, 57 in
+`https`, 23 in `x25519`, and nothing noticed, because nothing in the corpus
+EXECUTED those programs. The exam was untouched only because it still calls the
+C `_decimal` helper and so has no spliced array at all.
+
+Three things came out of it:
+
+* the closure now grows a span to contain any label its own jumps target,
+  except the ladder, the tower and `exit`, which are never returned from
+* a fail-safe re-check drops any span that still fails, rather than trusting
+  the closure to be right -- same block counts on every program, so it costs
+  nothing
+* **`x25519` against RFC 7748 s5.2 is now a gate.** A whole crypto primitive
+  against a number someone else published, and it is non-vacuous: run it
+  against the compiler that shipped the bug and it fails.
+
+The lesson is narrower than "test more". A transform that rearranges STORAGE
+cannot be checked by a build gate or by output tests on programs that do not
+run. The corpus had 37 programs and executed a handful; the ones with the most
+to lose -- the TLS stack, the crypto -- were the ones nothing ran.
+
 ### Pushed further, and there is nothing further to get
 
 The reasonable next guess was that RAII was still holding slots back -- the

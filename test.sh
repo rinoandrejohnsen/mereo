@@ -77,6 +77,27 @@ echo "### Build + layout gate"
 "$DIR/build.sh" tests/progs/tmpl_road_nest.mereo >/dev/null 2>&1 \
     && echo "  nested crossroad layout: ok" \
     || { echo "  nested crossroad layout FAIL"; rc=1; }
+# A KNOWN ANSWER, because the corpus had none and paid for it. `x25519` runs the
+# Montgomery ladder over RFC 7748 s5.2 and prints the shared secret, so it is a
+# whole crypto primitive checked against a number someone else published. It
+# earned its place: a stack-slot change once moved this result and left every
+# other suite green, because nothing here executed the TLS stack at all. A
+# transform that rearranges storage cannot be trusted to a build gate.
+X25519_RFC7748=c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552
+if python3 "$DIR/mereoc.py" "$DIR/programs/tls/x25519.mereo" > "$DIR/.x25519.c" 2>/dev/null \
+   && gcc -O2 -fwrapv -nostdlib -static -fno-stack-protector \
+          -fno-tree-loop-distribute-patterns -fwhole-program -fno-strict-aliasing \
+          -fno-asynchronous-unwind-tables -fno-ident \
+          -Wl,-T,"$DIR/mereo.lds" -s -o "$DIR/.x25519" "$DIR/.x25519.c" 2>/dev/null; then
+    got=$("$DIR/.x25519" | od -An -tx1 | tr -d ' \n')
+    [ "$got" = "$X25519_RFC7748" ] \
+        && echo "  x25519 against RFC 7748 s5.2: ok" \
+        || { echo "  x25519 against RFC 7748 s5.2 FAIL"; echo "    got  $got";
+             echo "    want $X25519_RFC7748"; rc=1; }
+else
+    echo "  x25519 build FAIL"; rc=1
+fi
+rm -f "$DIR/.x25519" "$DIR/.x25519.c"
 # A wrong syscall NUMBER is the one mistake in linux.mereo that reading does not
 # catch: the neighbouring call usually exists and fails like something else.
 python3 "$DIR/tools/check_syscalls.py" "$DIR/linux.mereo" || rc=1

@@ -5820,11 +5820,26 @@ def scope_spliced_arrays(body):
             continue
         for _ in range(64):
             grew = False
+            # nothing may jump INTO the span: that would enter past the
+            # declarations
             for n, j in lbl_at.items():
                 if lo <= j <= hi:
                     for src in by_label.get(n, ()):
                         if not (lo <= src <= hi):
                             lo, hi, grew = min(lo, src), max(hi, src), True
+            # ...and nothing inside may jump OUT and come back. A loop whose
+            # back-edge label sits above the span leaves the block and falls
+            # into it again, and re-entering re-creates the array -- the digits
+            # staged on the last pass are gone. Jumps to the ladder, the tower
+            # or `exit` are exempt: control never returns from those.
+            for j in range(lo, hi + 1):
+                for g in goto_at.get(j, ()):
+                    t = lbl_at.get(g)
+                    if t is None or lo <= t <= hi:
+                        continue
+                    if g.startswith(("error_", "release_")) or g == "exit":
+                        continue
+                    lo, hi, grew = min(lo, t), max(hi, t), True
             if not grew:
                 break
         else:
@@ -5854,6 +5869,26 @@ def scope_spliced_arrays(body):
                or (c[0] <= k[0] and k[1] <= c[1])
                for k in kept):
             kept.append(c)
+    # Belt and braces over the closure above. A block that control LEAVES and
+    # falls back into re-creates its array, and the bytes staged on the last
+    # pass are gone -- which is not a crash but a wrong answer: it moved
+    # X25519 off its RFC 7748 vector while every suite stayed green. The
+    # closure is supposed to make this impossible; verify it rather than trust
+    # it, and drop any span that still fails.
+    safe = []
+    for c in kept:
+        lo, hi = c[0], c[1]
+        inner = {n for n, j in lbl_at.items() if lo <= j <= hi}
+        out_jump = any(
+            g not in inner
+            and lbl_at.get(g) is not None
+            and not (g.startswith(("error_", "release_")) or g == "exit")
+            for j in range(lo, hi + 1) for g in goto_at.get(j, ()))
+        in_jump = any(src < lo or src > hi
+                      for n in inner for src in by_label.get(n, ()))
+        if not out_jump and not in_jump:
+            safe.append(c)
+    kept = safe
     if not kept:
         return body
     drop = {c[2] for c in kept}
