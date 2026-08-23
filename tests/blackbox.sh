@@ -525,6 +525,12 @@ silent  access/leave-bounds-index  leave_bounds_index
 # never reached `tighten`, so the first of these was REFUSED -- correct code that
 # would not compile. The second must still be caught.
 silent  access/field-equality-bounds  field_equality_bounds
+# A loop counter has a FLOOR even when the ceiling is keyed on `i + 4` rather
+# than on `i`. Without it the index has no lower end, and an access under it
+# cannot be told apart from one reading BEFORE its buffer -- the first of these
+# was reported for that reason alone. The second must still be refused.
+silent  access/loop-floor-bounds  loop_floor_bounds
+rejects access/loop-floor-past-end loop_floor_past_end "reaches 64 bytes into 'buf'"
 rejects access/field-equality-past-end field_equality_past_end "reaches 21 bytes into 'buf'"
 rejects access/leave-bounds-too-loose leave_bounds_too_loose "reaches 101 bytes into 'buf'"
 # ...and the SCOPE of that fact. `leave check when n > 40` bounds n only

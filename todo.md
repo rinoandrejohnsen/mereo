@@ -1764,6 +1764,55 @@ the whole of `plen` in front of `qoff` without the analysis having to relate the
 two. With that, **`equals` in mereo compiles, proves, and produces byte-identical
 output on the 84 MB log.**
 
+### A loop counter now has a floor, and that is 6 of the 40
+
+Chasing the `equals` noise found a real gap. `loop_lo` knows a counter's floor
+is the value it entered with, and it was only ever ASKED when the ceiling was
+already bound to the same name. A guard reading `leave words when i + 8 > len`
+keys the bound on `i + 8`, so `i` gets no ceiling -- and therefore no floor
+either, and an access under it cannot be told apart from one reading BEFORE its
+buffer.
+
+**Corpus unproved 42 -> 36, and 102 generated files byte-identical.** Gated both
+ways, non-vacuous: `loop_floor_bounds.mereo` was reported before the fix and is
+silent after; `loop_floor_past_end.mereo` is the same shape against a
+thirty-two byte buffer and is still refused. All 43 planted violations still
+fire. Blackbox 187 -> 189.
+
+### What `equals` still needs, and it is not a bug
+
+With the floor, `views.mereo` goes from 40 reports to 29. The rest are four
+different things, and none is a defect:
+
+| | |
+| --- | ---: |
+| a computed base (`search_N_at`, `ends_N_tail`) that `resolve_base` cannot follow | 20 |
+| a constant-negative index on a path that cannot run (`["world" + 5 - 8 : 8]`) | 7 |
+| no bound in scope at all | 2 |
+
+The middle group is the interesting one and it is REACHABILITY, not bounds. The
+eight-byte path runs only when the length is eight or more; spliced against a
+five-byte literal its index is `5 - 8`, and the access is not there to prove.
+The interval domain cannot say "this cannot run".
+
+**Two attempts at that are written and reverted.** A general contradiction test
+-- if the facts standing at a point cannot all hold, skip the access -- marked
+the exam's line-assembly copy dead, which certainly runs; it is kept as
+`mereoc_contradiction_unsound.py` as a warning. A narrow version asking only
+whether the INDEX's own range is empty is sound but fires nowhere, because the
+indices here are negative constants rather than empty ranges.
+
+**The clean fix is a precondition, and mereo already has the shape for it.**
+`check_call_fit` refuses `read (buffer is small, capacity is 4096)` at compile
+time from `ensure capacity <= buffer.size` on the primitive -- a clause on an IN
+port is a requirement on the CALL, checked where the call is written, with no
+run-time cost. A procedure-body template cannot carry one: the parser says so
+explicitly, and points at `span.at` for the run-time kind instead. Give
+`equals` `ensure length <= data.size` in that sense -- verified at each call
+site, assumed inside -- and every one of its accesses proves, with no
+reachability reasoning at all. That is the feature, and it is the same one that
+would let `same <= 1` be a promise and the arena guard be an assumption.
+
 ### Tried to land `equals` and could not: it REFUSES three correct programs
 
 The cost question is settled -- the port is +0.11%, about 0.6 instructions per

@@ -6904,6 +6904,17 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
                     acc = vals[0]
                     for v in vals[1:]: acc = join(acc, v)
                     best = acc
+                # A loop counter has a FLOOR even when its ceiling is unknown:
+                # the value it entered with, if it only ever grows from there.
+                # `loop_lo` knew this and was asked only when the ceiling was
+                # already bound, so a counter whose guard reads `i + 8 > len`
+                # -- keyed on the sum, not on `i` -- came back with no floor at
+                # all. That matters because a floor is what separates "this
+                # cannot run" from "this reads before the buffer".
+                if best[0] is None and inner_loop.get(at):
+                    fl = loop_lo(n, inner_loop[at], sn)
+                    if fl is not None:
+                        best = (fl, best[1])
             best = tighten(n, best, at, sn)
             a = ASSUME.get(n)
             if a:
