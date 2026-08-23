@@ -6928,6 +6928,23 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
     def _iv_uncached(e, at, seen=()):
         e = str(e).strip()
         if not e: return UNK
+        # A DEPTH CAP, not a repeat check. `seen` was consulted only inside
+        # the branches that resolve a NAME, so anything reached another way
+        # went round unchecked -- and `tighten` reaches plenty, because it
+        # evaluates the right-hand side of every fact about the key it was
+        # given. Two facts that bound each other are then a loop with no exit,
+        # which is what an `equals` written in mereo produces and nothing in
+        # the corpus did.
+        #
+        # Cutting on the first REPEAT was tried and costs real precision:
+        # equality is deliberately recorded as two facts that bound each other
+        # (`field_equality_bounds` is the gate), so the first re-entry is the
+        # useful case, not the runaway one. Bounding the DEPTH keeps that and
+        # still terminates. The widest interval is the sound answer.
+        # The depth cap is the same answer one step out: a chain that never
+        # repeats an expression because each step BUILDS a longer one still has
+        # to stop, and `from_input` and `backing_of` already stop theirs so.
+        if len(seen) > 64: return UNK
         # A load that reads an adopted field is worth resolving BEFORE the
         # generic handling below, which knows only the field's WIDTH and so
         # reports 0 as the lower bound. `v.length` adopted from `text.size` is
@@ -6940,8 +6957,13 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
         # without this the loop kept the field's own width instead.
         _sn = seen + ((e, at),)
         af0 = adopted_field(e)
-        if af0 is not None and (af0, at) not in seen:
-            got = iv(af0, at, seen + ((af0, at),))
+        if af0 is not None and (af0, at) not in seen and (e, at) not in seen:
+            # BOTH ends go into `seen`. Marking only the field left the
+            # expression that reached it unmarked, so a chain that came back
+            # round to `e` was not recognised as one and recursed until the
+            # interpreter gave up. Nothing in the corpus was deep enough to
+            # show it; an `equals` written in mereo is.
+            got = iv(af0, at, _sn + ((af0, at),))
             if got[0] is not None or got[1] is not None:
                 return tighten(e, got, at, _sn)
         # `b is [block + i : 1]` makes b a BYTE. A skilled reader uses that
@@ -7116,7 +7138,13 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
                     return (0, (1 << top.bit_length()) - 1)
             return UNK
         try:
-            return tighten(e, walk(node), at, seen)
+            # `_sn`, not `seen`, as at every other call: it carries `(e, at)`,
+            # which is what tells the walk this expression is already being
+            # answered. Without it `tighten` -- which evaluates the right-hand
+            # side of every fact about `e` -- could arrive back at `e` with the
+            # set unchanged, and neither the repeat check nor the depth cap
+            # could see a cycle that never grew.
+            return tighten(e, walk(node), at, _sn)
         finally:
             for nm in stand:
                 ASSUME.pop(nm, None)
