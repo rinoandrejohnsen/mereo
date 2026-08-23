@@ -6746,31 +6746,6 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
 
     ASSUME = {}
 
-    def as_compare(nd, at, seen):
-        """this node, or the definition behind it, as a comparison"""
-        if isinstance(nd, ast.Compare): return nd
-        if isinstance(nd, ast.Name):
-            for d, ex in reaching(nd.id, at):
-                try: n2 = ast.parse(str(ex), mode="eval").body
-                except SyntaxError: continue
-                if isinstance(n2, ast.Compare): return n2
-        return None
-
-    def assuming(cnode, at, seen):
-        """the interval a comparison forces on its left operand, when true"""
-        if len(cnode.ops) != 1 or not isinstance(cnode.left, ast.Name): return None, None
-        try: rhs = ast.unparse(cnode.comparators[0])
-        except Exception: return None, None
-        r = iv(rhs, at, seen)
-        op = cnode.ops[0]
-        if isinstance(op, ast.Lt)  and r[1] is not None: return cnode.left.id, (None, r[1] - 1)
-        if isinstance(op, ast.LtE) and r[1] is not None: return cnode.left.id, (None, r[1])
-        if isinstance(op, ast.Gt)  and r[0] is not None: return cnode.left.id, (r[0] + 1, None)
-        if isinstance(op, ast.GtE) and r[0] is not None: return cnode.left.id, (r[0], None)
-        if isinstance(op, ast.Eq)  and r[0] == r[1] is not None: return cnode.left.id, r
-        return None, None
-
-    LOAD = re.compile(r"^\[[^\[\]]*?(?::\s*(\d+)\s*)?\]$")
 
     def tighten(key, cur, at, sn):
         lo, hi = cur
@@ -6817,7 +6792,6 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
 
     LOAD = re.compile(r"^\[[^\[\]]*?(?::\s*(\d+)\s*)?\]$")
 
-    LOAD = re.compile(r"^\[[^\[\]]*?(?::\s*(\d+)\s*)?\]$")
 
     _NEG = {"<": ">=", "<=": ">", ">": "<=", ">=": "<"}
 
