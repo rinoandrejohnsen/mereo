@@ -93,6 +93,12 @@ scan is helper _scan
   length in
   byte in
   offset out
+  -- A PROMISE, the same shape as the kernel's: a scan stops at the byte or at
+  -- the end, so the offset it reports is never past the length it was given.
+  -- True of the implementation and now stated, because an unstated promise is
+  -- one the analysis cannot use -- `until` narrows a span through this port,
+  -- and without the clause the narrowed length is simply unknown.
+  ensure offset <= length
 end
 
 same is helper _same

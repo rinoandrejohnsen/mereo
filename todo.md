@@ -1523,7 +1523,41 @@ have worked: that guard is load-bearing. Without it the analysis cannot bound
 only when something ELSE already bounds the variable, and then it was doing no
 work in the first place.
 
-### Open, and serious: a STORE indexed from outside is not checked
+### FIXED: a call now kills what its out port held
+
+`copy`, the reaching-definition map, was built from `assign` steps alone, so a
+call that WRITES its out port never killed the name. `rel is 0` was still
+believed after `find (... offset is rel)`; every index built on it looked like
+the constant zero; and the access looked proved. That is why indexing sixteen
+bytes with a find offset over a 512-byte line passed in SILENCE, and why `plen`
+came back with a ceiling of 0 in the exam and took a real check down with it.
+
+Three parts, and the second two are the reason the first attempt was inert:
+
+**A call records an OPAQUE definition of its out port.** Written, value unknown.
+A contract promising more still arrives through `cbound`/`clow`, so a kernel
+count keeps its bound while a find offset, which promised nothing, correctly has
+none. Methods with a PROCEDURE body are not involved -- `expand_procedures` has
+already spliced them, so their writes are ordinary assignments.
+
+**The receiver may be a NAMESPACE, not an instance.** `text.find` is found under
+`definitions["text"]`; `input.read` under the instance's definition. Both the
+new code and the EXISTING `cbound` loop looked only for the instance, which is
+why a promise on `scan` had never reached anything calling it through `text`.
+That was a second, older bug sitting in the same shape.
+
+**`scan` had no contract, so `until` produced an unknown length.** A scan stops
+at the byte or at the end, so its offset is never past the length it was given
+-- true of the implementation, and now stated. `until` narrows a span through
+that port, and `views.mereo` went noisy without it. Helper declarations now take
+`ensure` the way assembly declarations always have.
+
+**Result:** unproved across the corpus 39 -> 42, and the three new ones are real
+-- accesses whose bound traces to a value the analysis had been inventing.
+`.text` +0.02% for the promise, exam byte-identical on the 84 MB log, all suites
+green, blackbox 181 -> 182 with the find case now a gate.
+
+### Still open: a STORE indexed from outside is not checked
 
 Found while chasing the above. `tests/progs/load_outport_past_end.mereo` and
 `store_outport_past_end.mereo` are the same program, one character apart:

@@ -1995,12 +1995,24 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     continue
                 fail(f"line {n}: unrecognized assembly-declaration line: {s!r}")
             if ind == 2:
+                # A helper can PROMISE something about its result, exactly as a
+                # syscall does. `scan` stops at the byte or at the end, so its
+                # offset is never past the length it was given -- and `until`
+                # narrows a span through that port, so without the clause the
+                # narrowed length is simply unknown to everything downstream.
+                # Same shape and same meaning as the assembly path above.
+                m = re.match(r"^ensure (\w+)(?: as (signed|unsigned))? "
+                             r"(<=|>=|==|!=|<|>) (-?\w+(?:\.size)?)$", s)
+                if m:
+                    section["contract"].append(
+                        (m.group(1), m.group(3), m.group(4), n, m.group(2)))
+                    continue
                 # `PORT in` = an argument (a value; a buffer name is its own
                 # address); `PORT out` = the caught return
                 m = re.match(r"^(\w+) (in|out)$", s)
                 if not m:
-                    fail(f"line {n}: expected `PORT in` or `PORT out` in a "
-                         "call declaration")
+                    fail(f"line {n}: expected `PORT in`, `PORT out`, or "
+                         "`ensure PORT CMP VALUE` in a call declaration")
                 if m.group(2) == "out":
                     if section["out"] is not None:
                         fail(f"line {n}: the call already has an `out` "
@@ -6211,8 +6223,17 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
         if t == "bare":
             prim, bind = PRIMITIVES.get(st.get("op"), {}), None
         else:
-            dname = (inst.get(st.get("inst")) or {}).get("definition")
-            meth = ((definitions.get(dname) or {}).get("methods") or {}).get(st.get("method")) or {}
+            # the receiver is either a NAMESPACE, which is a definition by that
+            # name (`text.find`), or an INSTANCE, whose definition has to be
+            # looked up through it (`input.read`). Trying only the second is
+            # why a promise on `scan` never reached anything calling it through
+            # `text`.
+            d = definitions.get(st.get("inst"))
+            if d is None:
+                d = definitions.get(
+                    (inst.get(st.get("inst")) or {}).get("definition"))
+            meth = (((d or {}).get("methods") or {})
+                    .get(st.get("method")) or {})
             prim = PRIMITIVES.get(meth.get("prim"), {})
             bind = meth.get("bind") or {}
         def arg(port):
@@ -6247,7 +6268,48 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
 
     copy = {}
     for i, st in enumerate(steps):
-        if st.get("type") != "assign":
+        t = st.get("type")
+        # A CALL WRITES ITS OUT PORT, and that KILLS whatever the name held.
+        # Without this the analysis keeps the declaration: `rel is 0` is still
+        # believed after `find (... offset is rel)`, so an index built on it
+        # looks like the constant zero and every access reached through it is
+        # "proved". That is how indexing sixteen bytes with a `find` offset over
+        # a 512-byte line passed in silence, and how `plen` -- `pe - ps` where
+        # `pe` is `ps + rel` -- came out with a ceiling of 0 in the exam.
+        #
+        # Recorded as OPAQUE: written, value unknown. A contract that promises
+        # more (`read` giving `count <= capacity`) still arrives through
+        # `cbound`/`clow`, so a kernel count keeps its bound while a `find`
+        # offset, which promises nothing, correctly has none.
+        #
+        # A method with a PROCEDURE body is not here: `expand_procedures` has
+        # already spliced it, so its writes are ordinary assignments. What is
+        # left is the method that delegates to a primitive, and it is found
+        # under `definitions` when the receiver is a NAMESPACE (`text.find`) and
+        # under the instance's definition when it is an instance (`input.read`).
+        if t in ("call", "bare"):
+            conns = dict((c[0], c[1]) for c in st.get("conns", []) if len(c) >= 2)
+            if t == "bare":
+                prim, bind = PRIMITIVES.get(st.get("op"), {}), None
+            else:
+                d = definitions.get(st.get("inst"))
+                if d is None:
+                    d = definitions.get(
+                        (inst.get(st.get("inst")) or {}).get("definition"))
+                meth = (((d or {}).get("methods") or {})
+                        .get(st.get("method")) or {})
+                prim = PRIMITIVES.get(meth.get("prim"), {})
+                bind = meth.get("bind") or {}
+            port = prim.get("out")
+            if port:
+                if bind is not None:
+                    b = bind.get(port)
+                    port = b[0] if isinstance(b, (list, tuple)) else (b or port)
+                tgt = str(conns.get(port) or "").strip()
+                if re.fullmatch(r"[A-Za-z_]\w*", tgt):
+                    copy.setdefault(tgt, []).append((i, None))
+            continue
+        if t != "assign":
             continue
         if isinstance(st.get("expr"), str):
             copy.setdefault(st["name"], []).append((i, st["expr"].strip()))
@@ -6668,6 +6730,8 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
         return acc
 
     def iv(e, at, seen=()):
+        if e is None:
+            return UNK              # an out port: written, value unknown
         if isinstance(e, tuple):
             return iv_cond(e, at, seen)
         e = str(e).strip()

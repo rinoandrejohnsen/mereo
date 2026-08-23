@@ -522,6 +522,11 @@ silent  access/descending-load  descending_load
 # recorded in todo.md and deliberately not wired in here, because a red test
 # that never goes green is a broken gate rather than a finding.
 rejects access/load-outport-past-end load_outport_past_end "reaches 65 bytes into 'small'"
+# The same index reached through a `find` offset rather than a kernel count.
+# This was SILENT until the reaching-definition map learned that a call writes
+# its out port: `rel is 0` was still believed after `find (... offset is rel)`,
+# so the index looked like the constant zero and the access looked proved.
+reports access/find-offset-past-end find_offset_past_end "not proved in range"
 rejects access/descending-load-past-end descending_load_past_end "reaches 34 bytes into"
 rejects access/store-past-end store_past_end "writes 101 bytes into"
 # A syscall cannot be caught downstream: the kernel never sees where the buffer
