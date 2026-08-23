@@ -1,0 +1,24 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+program goes
+  buf is 20 bytes
+  i is 0
+  d is 0
+  terminal is already linux.file (descriptor is 1)
+  up goes
+    leave up when i >= 20
+    [buf + i : 1] is 65          -- STORE, guard immediately above
+    i is i + 1
+    repeat up
+  end
+  down goes
+    leave down when i <= 0
+    i is i - 1
+    leave down when i >= 20
+    d is d + [buf + i : 1]       -- LOAD, same guard shape
+    repeat down
+  end
+  terminal.write (buffer is buf, count is 1)
+  [buf : 1] is d
+end

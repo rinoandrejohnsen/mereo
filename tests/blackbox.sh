@@ -508,6 +508,14 @@ reports access/slide-unpaired span_slide_unpaired "\`[w.data + copy_3_i : 1]\` n
 # a conditional store. If any of that machinery breaks, this goes noisy rather
 # than wrong, and nothing else would catch it.
 silent  access/views-silent  views
+# A descending index is as provable as an ascending one. `leave X when i <= 0`
+# is a FLOOR under everything after it, the mirror of the ceiling a `>=` exit
+# states -- and until that was read as one, a counting-down LOAD proved nothing
+# while the same loop's STORE proved fine. The pair below is the gate: the
+# first must be silent, and the second must be REFUSED rather than merely
+# reported, which is only possible because the floor makes the range known.
+silent  access/descending-load  descending_load
+rejects access/descending-load-past-end descending_load_past_end "reaches 34 bytes into"
 rejects access/store-past-end store_past_end "writes 101 bytes into"
 # A syscall cannot be caught downstream: the kernel never sees where the buffer
 # ends, and inline asm with a "memory" clobber tells GCC nothing about which

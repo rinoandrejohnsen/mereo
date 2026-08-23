@@ -1,0 +1,21 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- The planted violation for the descending-index floor. `i` is guarded above
+-- and below, so the analysis can now follow it -- and following it is what
+-- makes the `+ 15` provably past the end rather than merely unproved.
+program goes
+  buf is 20 bytes
+  d is 0
+  i is 19
+  terminal is already linux.file (descriptor is 1)
+  lp goes
+    leave lp when i <= 0
+    leave lp when i >= 20
+    i is i - 1
+    d is d + [buf + i + 15 : 1]
+    repeat lp
+  end
+  [buf : 1] is d
+  terminal.write (buffer is buf, count is 1)
+end

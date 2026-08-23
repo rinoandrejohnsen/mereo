@@ -5649,6 +5649,20 @@ _CMPX = re.compile(r"^\s*(.+?)\s*(<=|>=|==|!=|<|>)\s*(.+?)\s*$")
 _STR = re.compile(r'^"(.*)"$', re.S)
 _TOK = re.compile(r"[A-Za-z_][\w.]*|\d+|<<|>>|[-+*/%&|^()]")
 _INC = re.compile(r"^\s*([\w.]+)\s*\+\s*(\d+)\s*$")
+# `i is i - 1` is a step of -1, not an opaque write. Counting DOWN was
+# invisible to the bound machinery until this existed, which is why a
+# descending index proved nothing -- see todo.md.
+_STEP = re.compile(r"^\s*([\w.]+)\s*([+-])\s*(\d+)\s*$")
+
+
+def step_of(expr, name):
+    """signed change this assignment makes to `name`, or None if it is
+    not a literal step of that name."""
+    m = _STEP.match(str(expr))
+    if not m or m.group(1) != name:
+        return None
+    k = int(m.group(3))
+    return k if m.group(2) == "+" else -k
 
 def _acc_const(e):
     if e is None: return None
@@ -6089,9 +6103,9 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
         elif t == "loop_end" and stack:
             s = stack.pop()
             loops.append((s, i, st.get("cond"), st.get("back", False)))
-    binding, desc = {}, {}
+    binding, desc, floor_binding = {}, {}, {}
     for s, e, endcond, back in loops:
-        bounds, lows = {}, {}
+        bounds, lows, floors = {}, {}, {}
         # a COUNTING-DOWN loop: `i is 254` before it, `i is i - 1` inside, and
         # `repeat when i >= 0`. The ceiling is the value it started at.
         if back and endcond:
@@ -6111,6 +6125,16 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
                 m = _CMPX.match(str(steps[i]["cond"]))
                 if m and m.group(2) in (">=", ">"):
                     bounds[m.group(1).strip()] = (m.group(3).strip(), i, (s, e))
+                # ...and the mirror. `leave X when i <= 0` says the body only
+                # runs while `i > 0`, which is a FLOOR under everything after
+                # it -- the same fact the line above records as a ceiling, read
+                # the other way. Without this a counting-down index has no
+                # lower bound, `lo` comes back None, and the access is reported
+                # unproved however plainly the guard is written.
+                if m and m.group(2) in ("<=", "<"):
+                    floors[m.group(1).strip()] = (
+                        m.group(3).strip(), 1 if m.group(2) == "<=" else 0,
+                        i, (s, e))
         for name, (loexpr, from_i) in lows.items():
             decs, ok = [], True
             for i in range(s + 1, e):
@@ -6135,9 +6159,8 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
             for i in range(s + 1, e):
                 st = steps[i]
                 if st.get("type") == "assign" and st.get("name") == name:
-                    m = _INC.match(str(st.get("expr", "")))
-                    if m and m.group(1) == name: incs.append((i, int(m.group(2))))
-                    else: incs.append((i, None))     # opaque write: give up
+                    # a step either way; anything else is an opaque write
+                    incs.append((i, step_of(st.get("expr", ""), name)))
             for i in range(from_i, e):
                 extra, ok = 0, True
                 for pos, k in incs:
@@ -6145,6 +6168,23 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
                         if k is None: ok = False; break
                         extra += k
                 if ok: binding.setdefault(i, {})[name] = (bexpr, extra, lp)
+
+        # the same walk for the floors, so a guarded descending index has a
+        # lower bound as solid as an ascending one's upper bound
+        for name, (fexpr, adj, from_i, lp) in floors.items():
+            moves = []
+            for i in range(s + 1, e):
+                st = steps[i]
+                if st.get("type") == "assign" and st.get("name") == name:
+                    moves.append((i, step_of(st.get("expr", ""), name)))
+            for i in range(from_i, e):
+                extra, ok = 0, True
+                for pos, k in moves:
+                    if pos < i:
+                        if k is None: ok = False; break
+                        extra += k
+                if ok:
+                    floor_binding.setdefault(i, {})[name] = (fexpr, adj, extra, lp)
 
     inner_loop = {}
     for s_, e_, _c, _b in sorted(loops, key=lambda L: L[1] - L[0]):
@@ -6276,6 +6316,16 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
         lo = None if a[0] is None or b[0] is None else min(a[0], b[0])
         hi = None if a[1] is None or b[1] is None else max(a[1], b[1])
         return (lo, hi)
+
+    def floor_at(n, at, seen=()):
+        """the floor a `leave ... when n <= K` guard puts under `n`, carried
+        forward through the literal steps between that guard and here."""
+        fb = floor_binding.get(at, {}).get(n)
+        if fb is None:
+            return None
+        fexpr, adj, extra, _lp = fb
+        v = iv(fexpr, at, seen)[0]
+        return None if v is None else v + adj + extra
 
     def loop_lo(n, lp, seen=()):
         """the floor of a counting-up variable: the value it entered with.
@@ -6506,7 +6556,12 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
             elif n in bnd:
                 bexpr, extra, lp = bnd[n]
                 b = iv(bexpr, at, sn)[1]
-                best = (loop_lo(n, lp, sn), None if b is None else b - 1 + extra)
+                # a guard states the floor outright; `loop_lo` only infers one
+                # for a variable that counts up, and answers None for the rest
+                lo_ = floor_at(n, at, sn)
+                if lo_ is None:
+                    lo_ = loop_lo(n, lp, sn)
+                best = (lo_, None if b is None else b - 1 + extra)
             elif n in cbound or n in clow:
                 hi = lo = None
                 for val, strict, idx in cbound.get(n, []):

@@ -1394,6 +1394,62 @@ languages. Given the same scan:
 Parity with the AVX2 twin -- 0.991 median, 0.997 min -- which is the bar, and
 **4.6% behind glibc's memchr**, which is the remaining headroom.
 
+### Fixed: a descending index proved nothing, and it was two missing mirrors
+
+Found while trying to write `format` in mereo instead of keeping it as a C
+helper. The minimal shape:
+
+| loop shape | before | after |
+| --- | --- | --- |
+| ascending index, LOAD | proved | proved |
+| descending index, STORE | proved | proved |
+| **descending index, LOAD** | **not proved** | **proved** |
+
+Neither half alone was the problem -- it was the combination, which is what made
+it hard to see. Two causes, both mirrors that had never been written:
+
+**`_INC` only matched `name + K`.** So `i is i - 1` fell into the `else` branch
+marked *"opaque write: give up"*, and the whole loop binding was discarded. The
+index then had no ceiling either, which is why `iv` answered `(None, None)`
+rather than something merely loose. Now `step_of` reads a signed step and the
+net change accumulates the same way in both directions.
+
+**`loop_lo` is documented as "the floor of a counting-UP variable"** -- it infers
+the value the loop entered with, and answers `None` for anything else. A
+descending index therefore had no floor, and an access with `lo is None` is
+reported however tight its ceiling. The mirror was already half-written: the
+scan that reads `leave X when i >= K` as a CEILING now also reads
+`leave X when i <= K` as a FLOOR under everything after it, carried forward
+through the literal steps between the guard and the access.
+
+**Why the store proved and the load did not**, which is the part worth keeping:
+a store never reaches that code path. Only the load is put through `iv`, so only
+the load could be defeated by `iv` failing. The asymmetry was never about loads.
+
+**Verification.** Four adversarial shapes: a floor guard then a jump past the
+end, a floor and ceiling with an offset that overruns, a floor guard naming a
+different variable than the index, and an eight-byte load whose last byte falls
+off. Two are reported unproved and **two are REFUSED** -- and being refused is
+new: the analysis could not previously make the range concrete enough to say so.
+97 corpus binaries byte-identical. All six suites green, blackbox 178 -> 180.
+
+The new pair in `tests/blackbox.sh` is non-vacuous in both directions: before the
+fix the planted violation was only *"not proved"* and the clean case was equally
+noisy; after it, the violation is refused as *"reaches 34 bytes into 'buf'"* and
+the clean case is silent.
+
+**It changes nothing already written** -- the corpus has 39 unproved accesses
+before and after, because no program here counts down through a load. That is
+the point rather than a disappointment: the pattern was avoided because it did
+not prove.
+
+**What it unblocks.** `format` written in mereo with the same algorithm the C
+helper used -- stage the digits, copy them back reversed -- goes from **23
+unproved accesses and +36% of `.text`** to **0 unproved and +2.4%** (5896 bytes
+against the helper's 5759). The array-free formulation only existed to dodge the
+descending load. See the helper entry below for what still blocks `equals` and
+`scan`.
+
 ### Reading the profile per instruction, which found what guessing did not
 
 After the unroll came out flat, the exam was profiled **per instruction** --
