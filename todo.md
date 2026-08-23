@@ -1764,16 +1764,16 @@ the whole of `plen` in front of `qoff` without the analysis having to relate the
 two. With that, **`equals` in mereo compiles, proves, and produces byte-identical
 output on the 84 MB log.**
 
-### `check_call_fit` should not exist, and the hole it left proves it
+### `check_call_fit` has a real hole, and closing it is not free
 
 "Why is there a call_fit check if analysis only runs on the expanded layout?"
-It should not be, and it was hiding a silent overrun.
+It should not be, and it hides a silent overrun.
 
 A syscall's write is not an ACCESS in the IR -- the emitted C cannot show it,
 because inline assembly with a `"memory"` clobber says *something changed*, not
 *this buffer and that many bytes*. So a separate port-level checker grew for it,
 and its own docstring admits the limit: *only decided where both sides are
-known*. Which means:
+known*:
 
     small is 16 bytes
     read (buffer is small, capacity is 4096)      -- REFUSED
@@ -1782,28 +1782,31 @@ known*. Which means:
     leave program when cap > 4096
     read (buffer is small, capacity is cap)       -- SILENT
 
-The same overrun, and the kernel writes up to 4096 bytes into sixteen without a
-word, because the capacity is a scalar rather than a literal. The general
-analysis would have bounded `cap` at 4096 without effort -- it just never saw
-the write.
+The same overrun, unseen because the capacity is a scalar rather than a literal.
+`tests/progs/syscall_extent_scalar.mereo` is the reproduction, deliberately not
+gated.
 
-**Fixed by saying it as an access.** `annotate_calls` now records the extent a
-call writes -- `[small + 0 : cap]` -- from the same `ensure capacity <=
-buffer.size` clause `check_call_fit` reads, and the ordinary walk takes it from
-there. One correction went with it: an access was set aside for the literal
-checker when its INDEX was literal, and a synthetic extent has a literal index
-(`+ 0`) with a named width, so standing aside meant standing aside for nobody.
+**The fix is obvious and it was measured as worse.** Recording the extent as an
+ordinary access -- `[small + 0 : cap]`, from the same `ensure capacity <=
+buffer.size` clause -- works, and it costs too much:
 
-**Corpus unproved 36 -> 32, 99 generated files byte-identical, all 44 planted
-violations still refused, blackbox 189 -> 191.** Both directions gated:
-`syscall_extent_scalar` is refused as *reaches 4096 bytes into 'small'*, and
-`syscall_extent_fits` -- the same shape over 8192 bytes -- stays silent, because
-an extent said this way must not become a false positive on every read.
+* as a REFUSAL it broke the build. It refused the TLS client, where `tlen` is
+  about seven hundred against `tr`'s 16384 and the analysis says 32746. A
+  capacity is the most a call MAY touch, not what it does, so refusing on it
+  turns a loose bound into a verdict.
+* as a REPORT it takes the corpus from **32 unproved to 68** -- one new line at
+  every syscall site whose capacity is not provably inside its buffer, and the
+  TLS ones are precisely the false alarms above.
 
-`check_call_fit` still runs and still owns the literal case, where its message is
-better. That it can now be deleted without losing coverage is the point, and the
-right follow-up: **one analysis, on one expanded layout, is not a slogan -- the
-second one had a hole in it.**
+So the architecture is right and the arithmetic is not there yet: the domain
+cannot bound `shlen + chmsg_len` tightly enough to keep quiet about a program
+that is fine. Kept as `mereoc_extent_attempt.py`.
+
+**And a smaller thing found underneath it, worth keeping in mind.** An access was
+set aside for the literal checker whenever its INDEX was literal -- but a
+synthetic extent has a literal index (`+ 0`) and a named width, so standing
+aside meant standing aside for nobody. Any future access with a literal index
+and a computed width falls in the same hole.
 
 ### A loop counter now has a floor, and that is 6 of the 40
 

@@ -6,9 +6,9 @@ include "../../core.mereo"
 -- so -- and this one passed in SILENCE: the kernel writing up to 4096 bytes
 -- into sixteen.
 --
--- It is caught now because the extent a call writes is stated as an ORDINARY
--- ACCESS after the splice, so intervals apply to it like anything else. One
--- analysis rather than a second one that only works on constants.
+-- NOT wired into blackbox.sh: it does not pass. The reproduction is here
+-- because the hole is real, and because the obvious fix was tried and measured
+-- as worse -- see todo.md.
 program goes
   small is 16 bytes
   seed is 8 bytes
