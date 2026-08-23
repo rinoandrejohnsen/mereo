@@ -1764,6 +1764,40 @@ the whole of `plen` in front of `qoff` without the analysis having to relate the
 two. With that, **`equals` in mereo compiles, proves, and produces byte-identical
 output on the 84 MB log.**
 
+### Why the last 1% is there: mereo has no `if`
+
+Same algorithm, byte-identical output, and still 505,145 instructions apart. It
+is not the C boundary and it is not codegen luck. Count the control structure of
+the two bodies:
+
+| | |
+| --- | --- |
+| C `_same` | 6 `if`, 2 `while`, 6 `return` -- **0 labels, 0 gotos** |
+| mereo `equals` | **8 labels, 15 gotos**, 11 `if` |
+
+`docs/control-flow.md` opens with it: *mereo has no `while`, no `if` and no
+`switch`. It has scopes and two jumps.* So a conditional REGION costs a label, a
+conditional jump in, and usually an unconditional jump out. C's
+`if (_pl >= 4) { ... }` is one conditional branch; `quad goes / leave quad when
+length < 4 / ... / end` is a label and two jumps.
+
+At ~95,000 calls that is the whole difference, and the branch mix says so
+exactly: `jg` +380,435, `jle` +297,838, `jmp` +135,925 against `jne` -407,988
+and `jge` -188,092 -- plus ~95,000 extra alignment nops, one padded loop head
+per call.
+
+**And the shape of it is not what it looks like.** Adding scopes made it FASTER,
+not slower: 54.3M with two, 52.7M with three, 51.9M with four. Each new scope
+replaced a byte loop with a wider compare, and the loop it removed cost far more
+than the jumps it added. The per-scope cost is real but small; it only becomes
+visible once the algorithm is right.
+
+So the 1% is the price of the control-flow model, paid per call, by any
+primitive with several cases. It is a property of the language rather than a
+defect in the port -- which makes it a thing to decide about rather than a thing
+to fix. Nothing here is going to remove it short of giving mereo an `if`, and
+that is a much larger conversation than one memcmp.
+
 ### And then it is a 1% loss, so it does not land
 
 | | instructions | clock |
