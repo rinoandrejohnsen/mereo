@@ -1394,6 +1394,109 @@ languages. Given the same scan:
 Parity with the AVX2 twin -- 0.991 median, 0.997 min -- which is the bar, and
 **4.6% behind glibc's memchr**, which is the remaining headroom.
 
+### Done: one stack slot per template, not one per expansion
+
+mereo has no functions, so a template is spliced: nine calls to `format` are
+nine copies and nine `char scratch[20]` at function scope. GCC will not overlap
+those -- their live ranges span the whole function as far as it can tell -- so
+nine expansions reserved nine slots. C++ inlines the same routine nine times and
+shares one, which is the comparison that mattered:
+
+| nine call sites, each needing a private 20-byte scratch | frame |
+| --- | ---: |
+| C++, nine `always_inline` expansions | 344 B |
+| **mereo, before** | **520 B** -- 51% WORSE than C++ |
+| **mereo, after** | **232 B** -- 33% better |
+
+Values come from stdin in both, so nothing folds; nine distinct call sites in
+the source, not a loop the compiler might unroll.
+
+`scope_spliced_arrays` wraps each expansion's array in a `{ }` around the
+statements that use it. GCC's slot colouring is already there and only needed
+to be told the lifetimes -- a three-array test goes from a 216-byte frame to 88
+on that alone. No liveness analysis in mereoc, no renaming.
+
+**Corpus: -9.1% of stack (73,776 bytes) and -2.9% of `.text` (9,265),** 449
+blocks over 98 programs. 91 of the 98 binaries are byte-identical -- only the
+seven with spliced arrays move. The TLS stack is where it lands: `https` alone
+is -8.5% frame and -5.7% `.text`.
+
+### Pushed further, and there is nothing further to get
+
+The reasonable next guess was that RAII was still holding slots back -- the
+release ladder is LIFO, so the live sets are nested rather than arbitrary, and
+a handle read from the tower ought to be shareable with a sibling expansion's
+local. Two measurements say the ceiling is already reached, and neither says
+what the guess expected.
+
+**RAII refuses nothing.** Classifying every spliced array by why the pass would
+turn it down -- read from the ladder or tower, span grown into the tail, brace
+shape, overlap -- gives **660 of 660 MOVED, none refused**. The tower does read
+556 spliced locals, but never an *array*: it reads counts and handles, which
+are scalars. The safety condition that exists for RAII costs nothing in
+practice, which is the good case, not a missed one.
+
+**Scalars are already optimal, and blocks cannot improve them.** Scoping them
+too was implemented and measured: **1,662 blocks in the TLS client against 98,
+and a BYTE-IDENTICAL binary.** A scalar lives in a register, and when it spills
+the register allocator picks the slot by live range -- which owes nothing to C
+block scope. Only aggregates are laid out by declaration, so only aggregates
+have anything to gain. The line in mereoc.py says so, with the numbers.
+
+A false start worth recording, because it read as a real regression: the first
+scalar attempt made the corpus **worse** (-0.9% of stack against -9.4%, and 7.2
+KB more `.text`). That was not scalars being harmful -- it was the greedy
+selection. Spans can both be kept only if disjoint or nested, and a scalar span
+that merely OVERLAPS an array span was being taken first and locking the array
+out. Sorting arrays ahead of scalars restored the exact arrays-only binary,
+which is what proved the scalar blocks inert rather than damaging.
+
+**Where the stack actually is now**, by declared bytes across the corpus:
+
+| | bytes |
+| --- | ---: |
+| `in static` -- never on the stack | 1,400,832 |
+| the program's OWN buffers | 601,111 |
+| spliced arrays -- all moved | 186,584 |
+| spliced scalars -- register-allocated | 87,976 |
+| spliced arrays with `= {0}` -- excluded | 1,704 |
+
+Nothing left in that table is both large and movable. The program's own buffers
+are program-scope and live for its duration, which is what the programmer asked
+for.
+
+### What made it delicate, which is the RAII half of the question
+
+A generated function is: locals at the top, body with expansions spliced, the
+**release ladder**, then the **cold tower**. Both tail regions read the locals of
+the expansion that failed -- measured, **556 spliced locals are read from tower
+bodies**, and the ladder is named per instance (`release_aead_101_op`) so it
+holds that instance's handle. In `https.c` a local declared on line 774 is read
+on line 19602. Wrap that expansion in a block and neither region compiles.
+
+So every move is refused unless it is provably safe:
+
+* **the name appears nowhere outside the span** -- this is what keeps the ladder
+  and the tower working, and it is why only arrays private to one expansion move
+* **the span is CLOSED under labels and jumps.** The first attempt inserted 59
+  blocks where the finished pass inserts 449, because a span that begins at the
+  first line mentioning the array usually begins *inside* a loop whose header is
+  above it -- so the loop's own `goto` jumps in from outside. Growing the span
+  until every label in it is reached only from within is what found the other
+  390.
+* **brace depth nets to zero and never dips below it**, so a block cannot split
+  an `if` from its body
+* **spans overlap only by nesting**, never partially
+* it gives up if the span reaches the ladder or the tower
+
+**Arrays only, and only ones with no initialiser.** `long i = 20;` runs once at
+entry today; inside a block that sits in a loop it would run every iteration --
+a change in behaviour, not in layout. Uninitialised arrays carry no such meaning
+and hold the bytes anyway: 334,040 against 1,704 in the `= {0}` forms.
+
+Verified: all six suites green, the strace-checked release sequences included,
+which is the evidence that the ladder still runs in order after the change.
+
 ### Fixed: a descending index proved nothing, and it was two missing mirrors
 
 Found while trying to write `format` in mereo instead of keeping it as a C

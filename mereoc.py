@@ -5733,6 +5733,147 @@ def drop_proved_checks(definitions, slots, steps):
     return [st for i, st in enumerate(steps) if i not in dropped], len(dropped)
 
 
+_SPLICED = re.compile(r"^[A-Za-z_]\w*?_\d+_\w+$")
+_ARRDECL = re.compile(r"^(\s*)(?:unsigned )?char (\w+)\[(\d+)\]"
+                      r"((?: __attribute__\(\(aligned\(\d+\)\)\))?);\s*$")
+# ARRAYS ONLY, and this was measured rather than assumed. Scoping the spliced
+# SCALARS too was tried: 1,662 blocks in the TLS client against 98, and a
+# BYTE-IDENTICAL binary. A scalar lives in a register, and when it spills the
+# register allocator picks the slot by live range -- which owes nothing to C
+# block scope. Only aggregates are laid out by declaration, so only aggregates
+# have anything to gain. See todo.md.
+
+
+def scope_spliced_arrays(body):
+    """Put a template expansion's private locals inside a `{ }` around the
+    statements that use them, so GCC gives two expansions ONE stack slot
+    instead of one apiece.
+
+    mereo has no functions, so a template is spliced: nine calls to `format`
+    are nine copies and nine `char scratch[20]` at function scope. GCC will not
+    overlap those -- as far as it can tell each is live for the whole function
+    -- so nine expansions reserve nine slots where C++ inlining the same
+    routine shares one. Blocks are all GCC needs: slot colouring is already
+    there, waiting to be told the lifetimes.
+
+    Every move is refused unless it is provably safe:
+      * the name is used nowhere outside the span -- the RELEASE LADDER and the
+        cold tower sit at the end of the function and read the locals of the
+        expansion that failed, which is exactly what a block would hide
+      * the span is CLOSED under labels and jumps, so nothing can enter the
+        block past its declarations. A span that starts at the first line
+        mentioning the name usually starts INSIDE a loop whose header is above
+        it, so the loop's own `goto` comes from outside; growing the span until
+        every label in it is reached only from within is what makes most of
+        these movable at all
+      * brace depth nets to zero and never dips below it, so a block cannot
+        split an `if` from its body
+      * spans overlap only by nesting, never partially
+      * it gives up if the span reaches the ladder or the tower
+
+    A scalar's initialiser rides along. It is belt-and-braces: the expansion
+    assigns every local at its start, a hundred lines below the declaration, so
+    re-running `= 0` on a second entry to the block changes nothing.
+    """
+    ident = re.compile(r"[A-Za-z_]\w*")
+    label = re.compile(r"^\s*([A-Za-z_]\w*):\s*$")
+    goto = re.compile(r"goto\s+(\w+)\s*;")
+    decl = re.compile(r"^\s*(?:static )?(?:const )?(?:unsigned )?(?:char|long|int) \w+")
+
+    first_stmt = 0
+    for i, l in enumerate(body):
+        if decl.match(l):
+            first_stmt = i + 1
+
+    # one pass: where every name is mentioned, where labels sit, what jumps
+    uses = {}
+    lbl_at, goto_at = {}, {}
+    for j in range(first_stmt, len(body)):
+        l = body[j]
+        m = label.match(l)
+        if m:
+            lbl_at[m.group(1)] = j
+        g = goto.findall(l)
+        if g:
+            goto_at[j] = g
+        for n in ident.findall(l):
+            uses.setdefault(n, []).append(j)
+    by_label = {}
+    for j, gs in goto_at.items():
+        for g in gs:
+            by_label.setdefault(g, []).append(j)
+    edge = min([j for n, j in lbl_at.items()
+                if n.startswith(("error_", "release_")) or n == "exit"]
+               or [len(body)])
+
+    cands = []
+    for i in range(first_stmt):
+        m = _ARRDECL.match(body[i])
+        if not m or not _SPLICED.match(m.group(2)):
+            continue
+        name = m.group(2)
+        u = uses.get(name)
+        if not u:
+            continue
+        lo, hi = u[0], u[-1]
+        if hi >= edge:                       # read by the ladder or the tower
+            continue
+        for _ in range(64):
+            grew = False
+            for n, j in lbl_at.items():
+                if lo <= j <= hi:
+                    for src in by_label.get(n, ()):
+                        if not (lo <= src <= hi):
+                            lo, hi, grew = min(lo, src), max(hi, src), True
+            if not grew:
+                break
+        else:
+            continue
+        if hi >= edge:
+            continue
+        if u[0] < lo or u[-1] > hi:
+            continue
+        depth, ok = 0, True
+        for j in range(lo, hi + 1):
+            depth += body[j].count("{") - body[j].count("}")
+            if depth < 0:
+                ok = False
+                break
+        if not ok or depth != 0:
+            continue
+        cands.append((lo, hi, i, body[i].strip(),
+                      0 if _ARRDECL.match(body[i]) else 1))
+
+    kept = []
+    # arrays first: they are the bytes. A scalar span that merely OVERLAPS an
+    # array span would otherwise be taken first and lock the array out, since
+    # only nested or disjoint spans can both be kept.
+    for c in sorted(cands, key=lambda c: (c[4], c[0], -c[1])):
+        if all(c[1] < k[0] or c[0] > k[1]
+               or (k[0] <= c[0] and c[1] <= k[1])
+               or (c[0] <= k[0] and k[1] <= c[1])
+               for k in kept):
+            kept.append(c)
+    if not kept:
+        return body
+    drop = {c[2] for c in kept}
+    opens, closes = {}, {}
+    for lo, hi, _di, d, _k in kept:
+        opens.setdefault(lo, []).append(d)
+        closes[hi] = closes.get(hi, 0) + 1
+    out = []
+    for i, l in enumerate(body):
+        if i in drop:
+            continue
+        for d in opens.get(i, ()):
+            out.append("    {")
+            out.append("    " + d)
+        out.append(l)
+        for _ in range(closes.get(i, 0)):
+            out.append("    }")
+    return out
+
+
 ACCESS_VERDICTS = []
 
 
@@ -8870,6 +9011,7 @@ def transpile(sources, prog):
         for tgt, val in r["assigns"]:
             body.append(f"    {tgt} = {val};")
         body.append(f"    goto {r['resume']};")
+    body = scope_spliced_arrays(body)
     body.append("}")
 
     out.append("\n".join(body))
