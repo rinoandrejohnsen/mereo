@@ -6510,10 +6510,19 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
             for k in [k for k, v in live.items()
                       if outs & (names_in(k) | set().union(*(names_in(f[1]) for f in v)))]:
                 live.pop(k, None)
-        elif t == "guard" and st.get("cond") and i != skip_guard:
+        elif (t in ("guard", "loop_exit") and st.get("cond")
+              and i != skip_guard):
             m = _CMPX.match(str(st["cond"]))
             if m and m.group(2) in ("<=", "<", ">=", ">"):
                 lhs, op, rhs = m.group(1).strip(), m.group(2), m.group(3).strip()
+                # An `ensure` states what HOLDS. A `leave ... when` states what
+                # would have made it jump -- so what holds after it is the
+                # NEGATION, and it is exactly as strong. Without this a
+                # `leave hit when qoff + plen > arena_max` bounded nothing,
+                # because a `leave` only ever fed the loop-bound machinery and
+                # the general fact set never saw it.
+                if t == "loop_exit":
+                    op = {">": "<=", ">=": "<", "<": ">=", "<=": ">"}[op]
                 terms = [x.strip() for x in lhs.split("+")] if "-" not in lhs else []
                 live.setdefault(lhs, []).append((op, rhs, []))
                 # A bound on a NAME is a bound on what it was defined as.

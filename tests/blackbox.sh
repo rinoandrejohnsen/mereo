@@ -515,6 +515,13 @@ silent  access/views-silent  views
 # first must be silent, and the second must be REFUSED rather than merely
 # reported, which is only possible because the floor makes the range known.
 silent  access/descending-load  descending_load
+# A `leave ... when` is a FACT -- if the jump did not happen its condition is
+# false -- and the fact set only ever read `ensure`. The first program was
+# REFUSED before it did: correct code that would not compile, which is a worse
+# failure than an unproved warning. The second is the same shape with the buffer
+# too small, and must still be refused.
+silent  access/leave-bounds-index  leave_bounds_index
+rejects access/leave-bounds-too-loose leave_bounds_too_loose "reaches 101 bytes into 'buf'"
 # An index the KERNEL chose. `read` promises only `count <= capacity`, so this
 # is 0..64 into sixteen bytes, and the analysis says so with the number. Its
 # twin `store_outport_past_end.mereo` is the same program with the access

@@ -1683,6 +1683,55 @@ cannot be checked by a build gate or by output tests on programs that do not
 run. The corpus had 37 programs and executed a handful; the ones with the most
 to lose -- the TLS stack, the crypto -- were the ones nothing ran.
 
+### A `leave` is a fact, and not reading it was REFUSING correct programs
+
+Found while trying `equals` in mereo again. `ensure A <= B` states what holds;
+`leave X when A > B` states what would have made it jump, so what holds after it
+is the negation -- exactly as strong. The fact set only ever read `ensure`.
+
+The cost was not a missed proof. It was a **false refusal**:
+
+    buf is 200 bytes
+    input.read (buffer is buf, capacity is 200, count is got)
+    n is got
+    leave program when n > 100
+    d is [buf + n : 1]        <- "reaches 201 bytes into 'buf'" -- REFUSED
+
+`read`'s promise of `count <= 200` was visible and the guard bounding `n` at 100
+was not, so the analysis proved an overrun that cannot happen and rejected a
+correct program. That is worse than an unproved warning: this is code that would
+not compile, and the author's only recourse is to delete a guard that is doing
+its job.
+
+Both directions are gated now -- the program above must be SILENT, and the same
+shape against a fifty-byte buffer must still be refused. Corpus unproved 42
+before and after and 100 generated files byte-identical, which is why it went
+unnoticed: no program here happens to bound an index with a `leave` and then use
+it, presumably because anyone who tried had to work around it.
+
+### `equals` in mereo: closer, and still blocked on the same thing
+
+The hard error that stopped it last time is gone -- that was `plen` believed to
+be zero, which the out-port fix corrected. It now transpiles and runs correctly
+on the 84 MB log. Two problems remain:
+
+**Written simply it is +5.6% instructions** (54,331,875 against the helper's
+51,440,443). The C helper finishes with one OVERLAPPING word compare; the simple
+mereo version falls into a byte loop, and paths are median 13 bytes, so the tail
+IS the work.
+
+**Written with the overlap it hits the splice boundary.** `[qp + i : 1]` where
+`qp` is `arena` plus a four-byte offset field: the analysis says 4294967302
+bytes into a 1 MB arena, correctly, because nothing bounds that field. Bounding
+it at the call site does not help -- and neither `leave hit when qoff + plen >
+arena_max` NOR `ensure qoff + plen <= arena_max` reaches the accesses inside the
+spliced `equals`. A caller's guard still does not cross into a template.
+
+So the blocker is unchanged and precise: **a general byte primitive's bounds
+belong to its caller, and a caller's fact does not reach a spliced body.** That
+is the one thing to fix before trying again, and it is the same wall `find` sits
+behind.
+
 ### One resolver instead of three, and the third copy had the bug too
 
 The analysis was resolving "which primitive does this step call, and which port

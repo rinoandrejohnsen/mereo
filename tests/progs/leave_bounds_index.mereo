@@ -1,0 +1,25 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- `leave ... when` is a FACT, the same as `ensure` upside down: if the jump did
+-- not happen, its condition is false. Here that bounds `n` at 100, and the
+-- access is well inside 200 bytes.
+--
+-- Until the fact set learned to read a `leave`, this program was REFUSED --
+-- "reaches 201 bytes into 'buf'" -- because only `read`'s promise of 200 was
+-- visible and the guard was not. A false refusal, which is worse than an
+-- unproved warning: correct code that will not compile.
+program goes
+  buf is 200 bytes
+  n is 0
+  got is 0
+  d is 0
+  input is already linux.file (descriptor is 0)
+  terminal is already linux.file (descriptor is 1)
+  input.read (buffer is buf, capacity is 200, count is got)
+  n is got
+  leave program when n > 100
+  d is [buf + n : 1]
+  [buf : 1] is d
+  terminal.write (buffer is buf, count is 1)
+end
