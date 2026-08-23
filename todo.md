@@ -1784,13 +1784,38 @@ compiles. With `equals` in mereo they are visible, and the analysis REFUSES:
 A false refusal, on a program written to exercise exactly this case. `views`,
 `jsondemo` and `json/demo` all fail. That is a harder blocker than a cost.
 
-**What is missing is narrow.** The early-out `leave equals when length !=
-other_length` means the two ARE equal inside, so each bounds the other. The
-fact set only read `<= < >= >`, so `!=` yielded nothing -- adding it, so an
-equality contributes a pair of bounds, is right and is kept in the scratch copy.
-It is not sufficient: at this call the length is a FIELD LOAD (`[v + 8 : 8]`,
-17) rather than a scalar, and the loop bound does not pick up the equality
-through it. That is where the next attempt starts.
+**Both halves of that are now FIXED, and the refusal is gone.** Two changes,
+each removing a false refusal on its own:
+
+* **`!=` on a `leave` yields a pair of bounds.** `leave X when A != B` says
+  `A == B` afterwards, which is two inequalities and is how a primitive's
+  early-out earns its keep -- `equals` returns before reading when the lengths
+  differ, so inside it a five-byte literal bounds a seventeen-byte view's loop
+  rather than the other way round. The fact set read only `<= < >= >`.
+* **A LOAD now passes through `tighten`.** Every path for a load returned early
+  from `iv` -- the adopted field's value, an instance field, the width -- so
+  nothing ever learned about `[v + 8 : 8]` could narrow it. The equality above
+  is worthless without this, because at the call the length arrives as a field.
+
+Both are gated in both directions, and both are non-vacuous in the strongest
+way: **before the load fix the SAFE case was refused**, so this is correct code
+that would not compile, not merely a missed proof.
+
+### ...and `equals` still does not land, for a third reason
+
+With the refusal gone, `views.mereo` compiles -- and reports **forty-odd
+unproved accesses**, all of them inside `equals`, so `access/views-silent`
+fails. That is not a false refusal any more. It is library internals flooding a
+user's diagnostics: a caller of `equals` gets seven reports per call site about
+loop bounds it has no way to see, let alone fix.
+
+So the ledger on `equals` is now three separate things, and only the first is
+settled: it costs +0.11% (fine), it no longer refuses anything (fixed), and it
+makes every caller noisy (open). The third needs a way for a primitive to say
+*my bounds are my caller's business* -- the precondition spelling that does not
+exist, and the same gap that stops a constant bound being a promise.
+
+`core_equals_final.mereo` and `exam_masked.mereo` hold the work.
 
 **Not landed, and the analysis change is not kept either** -- it proves nothing
 on the corpus, which by the rule this branch has learned three times means it is

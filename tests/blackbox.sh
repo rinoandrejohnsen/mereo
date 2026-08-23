@@ -521,6 +521,11 @@ silent  access/descending-load  descending_load
 # failure than an unproved warning. The second is the same shape with the buffer
 # too small, and must still be refused.
 silent  access/leave-bounds-index  leave_bounds_index
+# ...and the same fact carried on a FIELD. `!=` gave no fact at all, and a load
+# never reached `tighten`, so the first of these was REFUSED -- correct code that
+# would not compile. The second must still be caught.
+silent  access/field-equality-bounds  field_equality_bounds
+rejects access/field-equality-past-end field_equality_past_end "reaches 21 bytes into 'buf'"
 rejects access/leave-bounds-too-loose leave_bounds_too_loose "reaches 101 bytes into 'buf'"
 # ...and the SCOPE of that fact. `leave check when n > 40` bounds n only
 # until `check` ends; past it, control may have arrived through the leave and

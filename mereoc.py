@@ -6530,16 +6530,24 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
         elif (t in ("guard", "loop_exit") and st.get("cond")
               and i != skip_guard):
             m = _CMPX.match(str(st["cond"]))
-            if m and m.group(2) in ("<=", "<", ">=", ">"):
-                lhs, op, rhs = m.group(1).strip(), m.group(2), m.group(3).strip()
-                # An `ensure` states what HOLDS. A `leave ... when` states what
-                # would have made it jump -- so what holds after it is the
-                # NEGATION, and it is exactly as strong. Without this a
-                # `leave hit when qoff + plen > arena_max` bounded nothing,
-                # because a `leave` only ever fed the loop-bound machinery and
-                # the general fact set never saw it.
-                if t == "loop_exit":
-                    op = {">": "<=", ">=": "<", "<": ">=", "<=": ">"}[op]
+            # An `ensure` states what HOLDS; a `leave ... when` states what
+            # would have made it jump, so what survives is the NEGATION --
+            # negated here, so the pairs below are already in final form.
+            pairs = []
+            if m:
+                _l, _o, _r = (m.group(1).strip(), m.group(2), m.group(3).strip())
+                if _o in ("<=", "<", ">=", ">"):
+                    if t == "loop_exit":
+                        _o = {">": "<=", ">=": "<", "<": ">=", "<=": ">"}[_o]
+                    pairs = [(_l, _o, _r)]
+                elif (_o == "!=" and t == "loop_exit") or (_o == "==" and t == "guard"):
+                    # EQUALITY IS TWO BOUNDS, each side bounding the other. This
+                    # is how a primitive's early-out earns its keep: `equals`
+                    # returns before reading when the lengths differ, so inside
+                    # it they ARE equal, and a five-byte literal bounds a
+                    # seventeen-byte view's loop rather than the other way round.
+                    pairs = [(_l, "<=", _r), (_l, ">=", _r)]
+            for lhs, op, rhs in pairs:
                 terms = [x.strip() for x in lhs.split("+")] if "-" not in lhs else []
                 _ent = (op, rhs, [])
                 live.setdefault(lhs, []).append(_ent)
@@ -6818,11 +6826,18 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
         # generic handling below, which knows only the field's WIDTH and so
         # reports 0 as the lower bound. `v.length` adopted from `text.size` is
         # exactly 11, and 11 is what a guard against it needs to be provable.
+        # A LOAD can be narrowed by a fact too, and until this went through
+        # `tighten` it could not: every path below returned early, so anything
+        # known about `[v + 8 : 8]` from a guard was simply never applied. A
+        # primitive's early-out is exactly that shape -- `leave equals when
+        # length != other_length` bounds a length that arrives as a FIELD, and
+        # without this the loop kept the field's own width instead.
+        _sn = seen + ((e, at),)
         af0 = adopted_field(e)
         if af0 is not None and (af0, at) not in seen:
             got = iv(af0, at, seen + ((af0, at),))
             if got[0] is not None or got[1] is not None:
-                return got
+                return tighten(e, got, at, _sn)
         # `b is [block + i : 1]` makes b a BYTE. A skilled reader uses that
         # without thinking; the width is right there in the access.
         m = LOAD.match(e)
@@ -6833,9 +6848,10 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
                 key = (_b.strip(), _acc_const(_o if _sep else _rest),
                        _acc_const(_wd) if _sep else 1)
                 if key in inv_load:
-                    return (0, inv_load[key])
+                    return tighten(e, (0, inv_load[key]), at, _sn)
             w = int(m.group(1) or 1)          # no `: N` means one byte
-            return (0, (1 << (8 * w)) - 1) if w <= 4 else UNK
+            return tighten(e, (0, (1 << (8 * w)) - 1) if w <= 4 else UNK,
+                           at, _sn)
         # a width/sign modifier is not part of the arithmetic
         e = re.sub(r"\s+as\s+(unsigned|signed|big|little)\b", "", e).strip()
         k = _acc_const(e)
