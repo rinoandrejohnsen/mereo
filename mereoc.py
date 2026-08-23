@@ -8926,9 +8926,20 @@ def transpile(sources, prog):
         for k, pred in enumerate(p["clauses"]):
             if (p.get("assume") or [])[k:k + 1] == [True]:
                 # a promise the kernel makes about itself: state it, do not
-                # test it. The branch could never be taken, and GCC gets the
-                # same range either way.
-                body.append(f"    if (!({pred})) __builtin_unreachable();")
+                # test it. `read` cannot return more than the capacity it was
+                # given, and that is the kernel's design rather than a hope --
+                # so the compiler is told, and no branch is emitted.
+                #
+                # The attribute rather than `if (!P) __builtin_unreachable();`
+                # because the attribute does NOT EVALUATE its expression. Both
+                # spellings compile byte-identically today, in GCC and in
+                # clang, since every clause is a comparison between scalars
+                # with nothing to fault or to change. That stops being true the
+                # moment a clause reads memory, and then the `if` form is a
+                # latent bug rather than a slower spelling. Reserved
+                # `__assume__` so a program that defines `assume` cannot
+                # collide with it.
+                body.append(f"    __attribute__((__assume__({pred})));")
                 continue
             body.append(f"    if (__builtin_expect(!({pred}), 0)) "
                         f"goto {p['gtarget']};")

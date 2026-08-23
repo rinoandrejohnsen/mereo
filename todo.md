@@ -1421,6 +1421,49 @@ blocks over 98 programs. 91 of the 98 binaries are byte-identical -- only the
 seven with spliced arrays move. The TLS stack is where it lands: `https` alone
 is -8.5% frame and -5.7% `.text`.
 
+### A kernel promise is now stated with the attribute, not a dead branch
+
+`if (!(count <= capacity)) __builtin_unreachable();` became
+`__attribute__((__assume__(count <= capacity)));` at all 192 promise sites.
+
+**Byte-identical on 100 programs.** GCC lowers both spellings the same way, and
+so does clang -- the generated C compiles under clang 22.1.8 with the attribute
+in it. So this buys nothing today and is not an optimisation.
+
+It is a correctness-by-construction change. The attribute **does not evaluate**
+its expression; the `if` form does. Every clause today is a comparison between
+scalars -- `count <= capacity`, `written <= count` -- with nothing to fault and
+nothing to change, which is exactly why the two coincide. The moment a clause
+reads memory the `if` form becomes a latent bug rather than a slower spelling,
+and nothing in the language stops a contract from growing that way. Reserved
+`__assume__` so a program that defines `assume` cannot collide.
+
+### Four more ways of handing GCC a fact, and none of them paid
+
+Worth collecting, because the shape repeats and each was measured:
+
+| what was stated | result |
+| --- | --- |
+| a bound on an already-PROVED access | byte-identical (8 sites in the exam) |
+| a guard replaced by an assumption | **+709 bytes**, no time saved |
+| every loop bound's sign (`nonneg_loop_bounds`) | **3% SLOWER** -- 458,385 instructions added to save 27,153 compares |
+| the attribute spelling instead of the `if` | byte-identical |
+
+The one category that pays is unchanged: the kernel's promises, which GCC cannot
+derive because the call is inline assembly with a `"memory"` clobber -- and a
+clobber says *something changed*, not *at most this many bytes*.
+
+The pattern behind all four: **GCC will SPEND a fact it is given.** The
+loop-sign experiment is the clearest -- the fact was true, GCC used it, and used
+it to peel and unroll. A true fact is not a free fact.
+
+And the vectorisation question, which was the reason to look again: a second
+loop exit does destroy vectorisation -- `paddq` 9 to 0 on a summation over 64 KB
+-- but only when the exit is DATA-DEPENDENT and therefore carries meaning. A
+redundant bound guard costs nothing, because GCC already deletes it: the two
+binaries are identical to the instruction. There is no check that both blocks
+vectorisation and could be dropped.
+
 ### Tried and REVERTED: dropping a `leave` whose condition can never hold
 
 The idea is right in the abstract -- a check that provably never fires is not
