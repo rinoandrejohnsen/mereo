@@ -1706,18 +1706,28 @@ this wants a run-time guard", which is a job for the programmer. Same facts,
 and the half that matters for safety was being reported as the half that does
 not. 100 binaries byte-identical.
 
-**The deeper point, which this only half-addresses.** The analysis should not be
-resolving ports at all. It asks questions about steps; which port of which
-primitive a step happens to write is a question for the code that BUILT the
-step. Everything with a procedure body is already spliced by
-`expand_procedures`, and its writes are ordinary assignments the analysis reads
-without knowing anything about ports -- which is exactly why `format` never had
-any of these bugs. What is left is the method that delegates straight to a
-primitive, and it stays a call so the syscall survives.
+### ...and then the concept was taken out of the analysis entirely
 
-The right shape is for the splice to RECORD what a call writes, on the step, so
-the analysis reads a field. One resolver is the smaller version of that, and it
-removes the divergence that caused all three.
+One resolver was the small version. The real fix is that the analysis should
+never have known ports exist. It asks questions about STEPS -- what does this
+write, what is known about the value, did it come from outside -- and "which
+port of which primitive does this step happen to write" is a question for the
+code that BUILT the step, asked once.
+
+`annotate_calls` now runs immediately after `expand_procedures`, when everything
+with a procedure body has been spliced flat and there is one stream of steps
+under `_start`. It resolves each surviving call once and hangs the answer on the
+step: `_writes`, `_bounds`, `_wired`, `_inports`. The three sites read fields.
+
+**`classify_accesses` contains zero occurrences of `PRIMITIVES`, `"methods"`,
+`get("out")`, `"bind"` or `call_prim` across 1,022 lines.** 100 generated C
+files byte-identical, corpus unproved 42 before and after, all suites green --
+a refactor that changes nothing, which is the only acceptable kind here.
+
+That anything with a procedure body was already spliced is why `format` never
+had a single one of these bugs while `find` had three: `format`'s writes are
+ordinary assignments, and the analysis reads those without knowing a port is a
+thing. Now every call looks like that to it.
 
 ### Searched for a THIRD fact that pays, and there is not one
 

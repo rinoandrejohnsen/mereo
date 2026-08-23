@@ -6211,19 +6211,73 @@ def call_prim(st, definitions, slots):
     return PRIMITIVES.get(meth.get("prim")) or {}, (meth.get("bind") or {})
 
 
-def call_writes(st, definitions, slots):
-    """The call-site name a step writes through its out port, or None."""
-    prim, bind = call_prim(st, definitions, slots)
-    port = prim.get("out")
-    if not port:
-        return None
-    if bind is not None:
-        b = bind.get(port)
-        port = b[0] if isinstance(b, (list, tuple)) else (b or port)
-    for c in st.get("conns") or ():
-        if len(c) >= 2 and c[0] == port:
-            return str(c[1]).strip()
-    return None
+def annotate_calls(definitions, slots, steps):
+    """Resolve every call's primitive ONCE, after the splice, and hang the
+    answer on the step.
+
+    The analysis should not know that ports exist. It asks questions about
+    steps -- what does this write, what is known about the value, did it come
+    from outside -- and "which port of which primitive does this step happen to
+    write" is a question for the code that BUILT the step, asked once, here.
+
+    That this was asked three times inside the analysis instead is the whole
+    reason for a two-day run of bugs: the three copies had drifted, two of them
+    could not see a method reached through a namespace, and each missing answer
+    produced a different symptom -- a promise that never arrived, a name that
+    was never killed, a value off the wire that was never marked as such.
+
+    Anything with a procedure BODY is already gone by now: `expand_procedures`
+    spliced it, and its writes are ordinary assignments that need none of this.
+    What is left is the method that delegates straight to a primitive, which
+    stays a call because the syscall has to survive to the output.
+
+    Each such step gets, once:
+      `_writes`   the call-site name its out port writes, or None
+      `_bounds`   its out-port contract, resolved to call-site expressions
+      `_wired`    primitive port -> the expression written at the call site
+      `_inports`  the in ports, which is the out port's complement
+    """
+    for st in steps:
+        if st.get("type") not in ("call", "bare"):
+            continue
+        prim, bind = call_prim(st, definitions, slots)
+        conns = {c[0]: c[1] for c in (st.get("conns") or ()) if len(c) >= 2}
+
+        def wired(port):
+            if bind is not None:
+                b = bind.get(port)
+                port = b[0] if isinstance(b, (list, tuple)) else (b or port)
+            return conns.get(port)
+
+        out = prim.get("out")
+        ports = {p for _k, p in (prim.get("args") or ())}
+        st["_writes"] = wired(out) if out else None
+        st["_wired"] = {p: wired(p) for p in ports | ({out} if out else set())}
+        st["_inports"] = ports - ({out} if out else set())
+        bounds = []
+        for cl in (prim.get("contract") or ()):
+            if isinstance(cl, (list, tuple)) and len(cl) >= 3:
+                lhs, op, rhs = (str(cl[0]).strip(), str(cl[1]).strip(),
+                                str(cl[2]).strip())
+            else:
+                m = _CMPX.match(str(cl))
+                if not m:
+                    continue
+                lhs, op, rhs = (m.group(1).replace(" as signed", "").strip(),
+                                m.group(2),
+                                m.group(3).replace(" as signed", "").strip())
+            # only a clause on the OUT port says anything about a VALUE; one on
+            # an in port is a requirement on the call, decided when the program
+            # is read, and it bounds an argument rather than a result
+            if lhs != out:
+                continue
+            tgt = wired(lhs)
+            if not tgt:
+                continue
+            val = wired(rhs)
+            bounds.append((tgt, op, rhs if val is None else val))
+        st["_bounds"] = bounds
+    return steps
 
 
 def classify_accesses(definitions, slots, steps, skip_guard=None,
@@ -6264,37 +6318,12 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
     # A clause names the PRIMITIVE's ports (`count as signed <= capacity`).
     # A method reaches it through `prim` + `bind`, and the call site supplies
     # the arguments through `conns` -- so all three hops are needed.
+    # What a call PROMISES about the value it leaves behind, already resolved
+    # to call-site expressions by `annotate_calls`. The bound may still be a
+    # name whose value is only knowable here, so `iv` finishes the job.
     cbound, clow = {}, {}
     for idx, st in enumerate(steps):
-        t = st.get("type")
-        if t not in ("call", "bare"): continue
-        conns = dict((c[0], c[1]) for c in st.get("conns", []) if len(c) >= 2)
-        prim, bind = call_prim(st, definitions, slots)
-        def arg(port):
-            """primitive port -> the expression written at the call site"""
-            if bind is not None:
-                b = bind.get(port)
-                port = b[0] if isinstance(b, (list, tuple)) else (b or port)
-            return conns.get(port)
-        for cl in (prim.get("contract") or []):
-            # a clause is already split: (lhs, op, rhs, line, mode)
-            if isinstance(cl, (list, tuple)) and len(cl) >= 3:
-                lhs, op, rhs = str(cl[0]).strip(), str(cl[1]).strip(), str(cl[2]).strip()
-            else:
-                m = _CMPX.match(str(cl))
-                if not m: continue
-                lhs, op, rhs = (m.group(1).replace(" as signed", "").strip(),
-                                m.group(2), m.group(3).replace(" as signed", "").strip())
-            # only a clause on the OUT port says anything about a VALUE. One
-            # on an in port is a requirement on the call -- mereoc decides it
-            # when the program is read, and it bounds an argument, not a result.
-            if lhs != prim.get("out"): continue
-            tgt = arg(lhs)
-            if not tgt: continue
-            val = arg(rhs)
-            if val is None: val = rhs
-            # resolved lazily: the bound may be a name whose value is only
-            # knowable at the call site
+        for tgt, op, val in st.get("_bounds") or ():
             if op in ("<=", "<"):
                 cbound.setdefault(tgt, []).append((val, op == "<", idx))
             elif op in (">=", ">"):
@@ -6322,7 +6351,7 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
         # under `definitions` when the receiver is a NAMESPACE (`text.find`) and
         # under the instance's definition when it is an instance (`input.read`).
         if t in ("call", "bare"):
-            tgt = call_writes(st, definitions, slots) or ""
+            tgt = str(st.get("_writes") or "").strip()
             if re.fullmatch(r"[A-Za-z_]\w*", tgt):
                 copy.setdefault(tgt, []).append((i, None))
             continue
@@ -7017,22 +7046,13 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
     for _si, st in enumerate(steps):
         if st.get("type") not in ("call", "bare"):
             continue
-        conns = {p: a for p, a, _ln in st.get("conns", [])}
-        prim, bind = call_prim(st, definitions, slots)
-        if not prim:
-            continue
-        def _wired(port):
-            if bind is not None:
-                b = bind.get(port)
-                port = b[0] if isinstance(b, (list, tuple)) else (b or port)
-            return conns.get(port)
         # the IN ports only: `read`'s result is called `count`, and folding it
         # in here made every read look like a write
-        inports = {p for _k, p in prim.get("args", [])} - {prim.get("out")}
-        if prim.get("out") and _wired(prim["out"]):
-            tainted.add(_wired(prim["out"]))
+        inports = st.get("_inports") or set()
+        if st.get("_writes"):
+            tainted.add(st["_writes"])
         if "buffer" in inports and "count" not in inports:
-            b = _wired("buffer")
+            b = (st.get("_wired") or {}).get("buffer")
             if b:
                 # the argument is often a SCALAR HOLDING AN ADDRESS into the
                 # real backing -- `read_record` receives into `at`, which is
@@ -7572,6 +7592,11 @@ def plan(definitions, slots, steps, overrides):
     derive_port_needs(definitions)
     check_port_needs(definitions, slots, steps)
     steps = expand_procedures(definitions, slots, steps, PRIMITIVES)
+    # ...and only now is there anything to analyse. Everything with a
+    # procedure body has been spliced flat; what remains is one stream of
+    # steps under `_start`. Resolve each surviving call's ports ONCE here,
+    # so nothing downstream has to know a port is a thing.
+    steps = annotate_calls(definitions, slots, steps)
     check_adoption_fit(definitions, slots)
     check_call_fit(definitions, slots, steps)
     # Classify every access. Nothing acts on the verdicts yet -- refusing the
