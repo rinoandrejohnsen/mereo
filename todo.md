@@ -1683,6 +1683,42 @@ cannot be checked by a build gate or by output tests on programs that do not
 run. The corpus had 37 programs and executed a handful; the ones with the most
 to lose -- the TLS stack, the crypto -- were the ones nothing ran.
 
+### One resolver instead of three, and the third copy had the bug too
+
+The analysis was resolving "which primitive does this step call, and which port
+does it write" in THREE places, each written separately, and they had drifted.
+Two looked the receiver up as an INSTANCE only, so a method reached through a
+NAMESPACE -- `text.find`, `text.equals` -- resolved to nothing. That single
+missing branch produced three bugs, found one at a time over two days:
+
+* a promise on `scan` never reached anything calling it through `text`
+* a write through an out port never killed the name, so `rel is 0` stayed 0
+* **and a value off the wire was never marked as coming from OUTSIDE**
+
+The third was still live after the other two were fixed, in the `tainted` scan.
+It is now `call_prim`/`call_writes`, one implementation, used by all three.
+
+**42 unproved before and after -- the same accesses -- but the ones classified
+as input-derived go from 13 to 33.** Twenty accesses move out of "a bound is in
+scope but could not be resolved to a number", which reads as a limit of the
+compiler, and into "the index comes from input and nothing bounds it here --
+this wants a run-time guard", which is a job for the programmer. Same facts,
+and the half that matters for safety was being reported as the half that does
+not. 100 binaries byte-identical.
+
+**The deeper point, which this only half-addresses.** The analysis should not be
+resolving ports at all. It asks questions about steps; which port of which
+primitive a step happens to write is a question for the code that BUILT the
+step. Everything with a procedure body is already spliced by
+`expand_procedures`, and its writes are ordinary assignments the analysis reads
+without knowing anything about ports -- which is exactly why `format` never had
+any of these bugs. What is left is the method that delegates straight to a
+primitive, and it stays a call so the syscall survives.
+
+The right shape is for the splice to RECORD what a call writes, on the step, so
+the analysis reads a field. One resolver is the smaller version of that, and it
+removes the divergence that caused all three.
+
 ### Searched for a THIRD fact that pays, and there is not one
 
 `scan`'s promise was worth -0.37%, so the obvious move was to look for more.

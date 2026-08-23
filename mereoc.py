@@ -6186,6 +6186,46 @@ def refuse_proven_wrong(verdicts):
              f"pass, not merely unproved.")
 
 
+def call_prim(st, definitions, slots):
+    """The primitive behind one `call`/`bare` step, and its port bindings.
+
+    ONE implementation, because there were three and they had drifted. Two
+    looked the receiver up as an INSTANCE only, so a method reached through a
+    NAMESPACE -- `text.find`, `text.equals` -- resolved to nothing: a promise on
+    `scan` never reached a caller, a write through its out port never killed the
+    name, and a value off the wire was never marked as coming from outside.
+    Three bugs, one missing branch, found one at a time.
+
+    The analysis should not be doing this at all. It asks about steps; which
+    port of which primitive a step happens to write is a question for the place
+    that BUILT the step. Until the splice records that directly, at least ask it
+    in one place."""
+    if st.get("type") == "bare":
+        return PRIMITIVES.get(st.get("op")) or {}, None
+    d = definitions.get(st.get("inst"))
+    if d is None:
+        ins = next((x for x in slots if x.get("kind") == "instance"
+                    and x.get("name") == st.get("inst")), None)
+        d = definitions.get(ins["definition"]) if ins else None
+    meth = (((d or {}).get("methods") or {}).get(st.get("method")) or {})
+    return PRIMITIVES.get(meth.get("prim")) or {}, (meth.get("bind") or {})
+
+
+def call_writes(st, definitions, slots):
+    """The call-site name a step writes through its out port, or None."""
+    prim, bind = call_prim(st, definitions, slots)
+    port = prim.get("out")
+    if not port:
+        return None
+    if bind is not None:
+        b = bind.get(port)
+        port = b[0] if isinstance(b, (list, tuple)) else (b or port)
+    for c in st.get("conns") or ():
+        if len(c) >= 2 and c[0] == port:
+            return str(c[1]).strip()
+    return None
+
+
 def classify_accesses(definitions, slots, steps, skip_guard=None,
                       probe=None):
     # `buffer is capacity bytes` gives the size as a NAME. The emitter resolves
@@ -6229,22 +6269,7 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
         t = st.get("type")
         if t not in ("call", "bare"): continue
         conns = dict((c[0], c[1]) for c in st.get("conns", []) if len(c) >= 2)
-        if t == "bare":
-            prim, bind = PRIMITIVES.get(st.get("op"), {}), None
-        else:
-            # the receiver is either a NAMESPACE, which is a definition by that
-            # name (`text.find`), or an INSTANCE, whose definition has to be
-            # looked up through it (`input.read`). Trying only the second is
-            # why a promise on `scan` never reached anything calling it through
-            # `text`.
-            d = definitions.get(st.get("inst"))
-            if d is None:
-                d = definitions.get(
-                    (inst.get(st.get("inst")) or {}).get("definition"))
-            meth = (((d or {}).get("methods") or {})
-                    .get(st.get("method")) or {})
-            prim = PRIMITIVES.get(meth.get("prim"), {})
-            bind = meth.get("bind") or {}
+        prim, bind = call_prim(st, definitions, slots)
         def arg(port):
             """primitive port -> the expression written at the call site"""
             if bind is not None:
@@ -6297,26 +6322,9 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
         # under `definitions` when the receiver is a NAMESPACE (`text.find`) and
         # under the instance's definition when it is an instance (`input.read`).
         if t in ("call", "bare"):
-            conns = dict((c[0], c[1]) for c in st.get("conns", []) if len(c) >= 2)
-            if t == "bare":
-                prim, bind = PRIMITIVES.get(st.get("op"), {}), None
-            else:
-                d = definitions.get(st.get("inst"))
-                if d is None:
-                    d = definitions.get(
-                        (inst.get(st.get("inst")) or {}).get("definition"))
-                meth = (((d or {}).get("methods") or {})
-                        .get(st.get("method")) or {})
-                prim = PRIMITIVES.get(meth.get("prim"), {})
-                bind = meth.get("bind") or {}
-            port = prim.get("out")
-            if port:
-                if bind is not None:
-                    b = bind.get(port)
-                    port = b[0] if isinstance(b, (list, tuple)) else (b or port)
-                tgt = str(conns.get(port) or "").strip()
-                if re.fullmatch(r"[A-Za-z_]\w*", tgt):
-                    copy.setdefault(tgt, []).append((i, None))
+            tgt = call_writes(st, definitions, slots) or ""
+            if re.fullmatch(r"[A-Za-z_]\w*", tgt):
+                copy.setdefault(tgt, []).append((i, None))
             continue
         if t != "assign":
             continue
@@ -7010,14 +7018,7 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
         if st.get("type") not in ("call", "bare"):
             continue
         conns = {p: a for p, a, _ln in st.get("conns", [])}
-        if st["type"] == "bare":
-            prim, bind = PRIMITIVES.get(st.get("op")), None
-        else:
-            ins = next((x for x in slots if x["kind"] == "instance"
-                        and x["name"] == st.get("inst")), None)
-            d = definitions.get(ins["definition"]) if ins else None
-            meth = ((d or {}).get("methods") or {}).get(st.get("method")) or {}
-            prim, bind = PRIMITIVES.get(meth.get("prim")), meth.get("bind") or {}
+        prim, bind = call_prim(st, definitions, slots)
         if not prim:
             continue
         def _wired(port):
