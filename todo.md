@@ -1683,6 +1683,42 @@ cannot be checked by a build gate or by output tests on programs that do not
 run. The corpus had 37 programs and executed a handful; the ones with the most
 to lose -- the TLS stack, the crypto -- were the ones nothing ran.
 
+### Searched for a THIRD fact that pays, and there is not one
+
+`scan`'s promise was worth -0.37%, so the obvious move was to look for more.
+The search is complete and it comes back empty, which is worth recording so the
+ground does not get re-covered.
+
+**`same` is the only other helper, and bounding it buys nothing.** Injecting
+`__attribute__((__assume__(same >= 0 && same <= 1)))` after the call gives
+**51,440,443 instructions -- identical to the digit**. Its result is a flag
+compared against zero (`leave hit when same == 0`); the range is never needed.
+That is the difference from `scan`, whose offset is used as an INDEX, and it is
+probably the rule: a promise pays when the result reaches memory, not when it
+reaches a branch.
+
+**The remaining primitives are not candidates.** `population_count` is used in
+one file, `trailing_zeros` and `random_word` in none. And `bsf` is undefined for
+a zero input, so `result <= 63` would not even be true.
+
+**The syscalls are already covered.** Every out port that is a LENGTH has its
+upper bound stated -- `read`, `write`, `getrandom`. What is left returns a
+status, a descriptor or a pid, none of which has a meaningful ceiling.
+`sendmsg` and `recvmsg` do return lengths, but they take a msghdr, so there is
+no port to bound them against.
+
+**And a constant bound cannot be stated at all.** A clause whose right-hand side
+names another PORT becomes a promise; anything else becomes a runtime check.
+That is deliberate -- it is how `ensure count as signed >= 0` says `read` can
+fail -- but it means "the result is at most N" has no spelling. Adding
+`ensure result <= 1` to `same` emits
+
+    if (__builtin_expect(!(same <= 1), 0)) goto error_7_equals_text;
+
+a check and an error path, which is the opposite of the intent. Fixing that
+needs a second keyword, and since the only candidate measured zero there is
+nothing to spend it on.
+
 ### Every change on this branch, audited on clock first and instructions second
 
 Clock is the metric. Where two builds are within noise of each other, the
