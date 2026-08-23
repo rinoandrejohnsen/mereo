@@ -1438,15 +1438,33 @@ A log line with a 301-byte path then comes out as a REQUEST rather than
 malformed. The 84 MB corpus never showed it because the longest path in it is 23
 bytes. Reverted.
 
-**Why it fired.** The probe reported `left_hi=0` for `plen` -- the analysis
-believes a value that is `pe - ps`, where `pe` is `ps + rel` and `rel` is the
-out-port of a `find`, cannot exceed zero. It is not circularity: `skip_guard`
-was extended to the bounds derivation first, and simple subtraction resolves
-correctly in isolation (`n is a - 20` at index 80 is refused, naming the 80).
-Something in that specific chain -- an out-port through an addition and then a
-cancelling subtraction -- collapses to the initialiser. **That is a live
-soundness bug independent of any of this**, and it is the thing to fix before
-the idea is worth trying again.
+**Why it fired, and it is NOT the idea's fault.** The probe reported
+`left_hi=0` for `plen`. The reason is one line:
+
+    copy = {}
+    for i, st in enumerate(steps):
+        if st.get("type") != "assign":      <- only assignments
+            continue
+
+The reaching-definition map is built from `assign` steps ALONE, so a call that
+writes its out port never kills what the name held. `rel is 0` is still believed
+after `find (... offset is rel)`, `pe is ps + rel` inherits it, `plen is pe - ps`
+comes out as zero, and `plen > 255` is "impossible". Nothing to do with
+circularity -- `skip_guard` was extended to the bounds derivation first, and
+plain subtraction resolves correctly in isolation (`n is a - 20` at index 80 is
+refused, naming the 80).
+
+**The idea is sound; the prover is wrong.** Proving a bound WITHOUT the guard
+and then dropping the guard is valid, and `skip_guard` already implements
+exactly that. It cannot be trusted while the prover believes an out port is
+still its declaration.
+
+**A first fix was tried and is inert.** Recording a call's out port in `copy` as
+an opaque definition fires only for primitives -- and `text.find` is a mereo
+TEMPLATE, so `PRIMITIVES` has nothing to say about which of its ports is
+written (`prim_keys=[]` at that step). Corpus unproved count: 39 before, 39
+after. The direction lives in the method's own signature, and that is where the
+real fix has to read it from.
 
 **And the premise does not survive measurement anyway.** A guard that never
 fires is not only a cost -- it is a RANGE FACT the C compiler uses. Deleting
@@ -1480,9 +1498,19 @@ under-analysed and the store was fine. Loads and stores travel different paths
 and each has had a hole. The write side is the worse one to have: it is the
 direction that corrupts.
 
-The load case is a blackbox gate now. The store case is deliberately NOT wired
+`tests/progs/find_offset_past_end.mereo` is the same hole reached the other way
+and is the simpler reproduction: index sixteen bytes with the offset a `find`
+returns over a 512-byte line, and it is silent -- because `rel` is still
+believed to be the zero it was declared with.
+
+The load case is a blackbox gate now. The other two are deliberately NOT wired
 in -- a red test that never goes green is a broken gate rather than a finding --
-but the reproduction sits beside it, ready to be turned on by whoever fixes it.
+but the reproductions sit beside it, ready to be turned on by whoever fixes them.
+
+**These are one bug with two faces.** An out port that never kills its name, and
+a store that is not checked at all, both let an index from outside the program
+look safe. That is the thing to fix, and dropping guards is worth revisiting
+only afterwards -- at which point it should be as straightforward as it sounds.
 
 ### Landed: itoa is written in mereo, and `_decimal` is gone
 
