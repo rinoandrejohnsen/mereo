@@ -1743,10 +1743,46 @@ it at the call site does not help -- and neither `leave hit when qoff + plen >
 arena_max` NOR `ensure qoff + plen <= arena_max` reaches the accesses inside the
 spliced `equals`. A caller's guard still does not cross into a template.
 
-So the blocker is unchanged and precise: **a general byte primitive's bounds
-belong to its caller, and a caller's fact does not reach a spliced body.** That
-is the one thing to fix before trying again, and it is the same wall `find` sits
-behind.
+**That explanation was wrong, and the question that killed it was "isn't the
+template already spliced?"** It is. `equals` is spliced -- the error names
+`equals_2_i`, a spliced local -- so the guard and the access sit in the same flat
+stream, and dumping the fact set at the failing access shows `qoff <= arena_max`
+live at every one of them. The caller's fact arrives. It was simply not being
+USED.
+
+`tighten` applies a fact `key + others <= rhs` by capping `key` at
+`rhs - min(others)`, and it drops the fact when a sibling's LOWER bound is
+unknown. That is correct, not a bug: if `plen` could be negative then
+`arena_max - plen` is larger than `arena_max`, and capping at `arena_max` would
+be a claim the fact does not support. The sibling here is `plen`, whose floor is
+unknown because it is `pe - ps` and nothing says `pe >= ps`.
+
+Bounding the offset by the CONSTANT rather than the variable removes the need
+for the relation entirely -- `ensure qoff + path_max <= arena_max` is true,
+because `plen <= path_max` was checked when the line was parsed, and it leaves
+the whole of `plen` in front of `qoff` without the analysis having to relate the
+two. With that, **`equals` in mereo compiles, proves, and produces byte-identical
+output on the 84 MB log.**
+
+### And then it is a 1% loss, so it does not land
+
+| | instructions | clock |
+| --- | ---: | ---: |
+| `_same` C helper | 51,440,443 | 46.2 ms |
+| `equals` in mereo, byte tail | 54,331,875 (+5.6%) | -- |
+| ...with the overlapping 8-byte tail | 52,653,026 (+2.4%) | 46.3 ms |
+| ...and the 4-byte path for lengths 4-7 | **51,945,588 (+0.98%)** | 46.6 ms |
+
+Each step closed part of the gap by making the mereo version match the C
+algorithm more exactly -- the overlap first, then the four-byte path, which
+matters because a quarter of the paths in the log are shorter than eight bytes.
+The last 1% is not algorithmic and was not chased.
+
+Clock is inside the noise either way (ratio 1.009, sd 1.5), so instructions
+decide, and they say keep the helper. The port is preserved in the session
+scratchpad. **What changed is that it is now a JUDGEMENT rather than a wall:**
+`equals` can be written in mereo whenever the 1% is worth removing a C helper
+for, and nothing about the analysis is stopping it.
 
 ### One resolver instead of three, and the third copy had the bug too
 
