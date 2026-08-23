@@ -1683,6 +1683,59 @@ cannot be checked by a build gate or by output tests on programs that do not
 run. The corpus had 37 programs and executed a handful; the ones with the most
 to lose -- the TLS stack, the crypto -- were the ones nothing ran.
 
+### Every change on this branch, audited on clock first and instructions second
+
+Clock is the metric. Where two builds are within noise of each other, the
+instruction count to completion decides. `.text` decides nothing. Re-measured
+commit by commit on the exam, against the 84 MB log:
+
+| | instructions | vs previous |
+| --- | ---: | ---: |
+| branch start | 57,929,261 | -- |
+| `_same` a word at a time + `_scan` early exit | 51,630,115 | **-10.9%** |
+| descending-index floor | 51,630,115 | 0 |
+| slot sharing | 51,630,115 | 0 |
+| slot-sharing re-entry fix | 51,630,115 | 0 |
+| `format` written in mereo | 51,630,260 | +145 |
+| the assume attribute | 51,630,260 | 0 |
+| out-port kill + `scan` promise | 51,440,652 | **-189,608** |
+| slot spans that wrap a loop refused | 51,440,443 | -209 |
+
+**Branch total: 52.0 -> 46.0 ms, ratio 0.884, and -11.2% of instructions.** The
+two metrics agree, which is the case where neither needs arguing about.
+
+Two corrections to corrections, both from comparing across too many commits:
+
+**`format` in mereo is NEUTRAL, not a win and not a cost.** +145 instructions in
+51.6 million. The -189,463 credited to it a day earlier belonged to the commit
+after it. The `.text` figure it was first judged on (+76 bytes) was measuring
+nothing that matters.
+
+**And the -189,608 is the `scan` PROMISE, not the out-port kill.** Removing
+`ensure offset <= length` from HEAD and changing nothing else puts the exam back
+at 51,630,051. The out-port kill itself is -209, which is noise.
+
+### `scan`'s promise is the SECOND fact that pays, and there was supposed to be none
+
+`docs/performance.md` and the project record both say the kernel's half of the
+syscall contract is the only fact worth stating to GCC, because it is the only
+one absent from the translation unit. That is now wrong by one.
+
+`ensure offset <= length` on `scan` is worth **-189,608 instructions, -0.37%**,
+for six assume sites in the exam. Clock is unchanged (ratio 1.004 over 31 runs),
+so by the rule above it is a win, and a small one.
+
+The mechanism is the same as the kernel's, which is why it was missed: `_scan`
+is `always_inline` C wrapped around an inline-asm block with a `"memory"`
+clobber. GCC cannot see that the offset it returns is bounded by the length it
+was given -- the SWAR tail's bound is not something value-range propagation
+follows through the asm. It is a promise about a body GCC cannot read, exactly
+like the kernel's, and it had simply never been written down.
+
+**So the rule is not "only the kernel pays". It is "only a fact GCC cannot
+derive pays" -- and inline assembly is a second place those live.** Worth a pass
+over the other helpers: `same` returns 0 or 1 and never says so.
+
 ### Corrected: slot sharing was measured on the wrong axis, and cost instructions
 
 `.text` and stack frame are not the metric. Clock time and instructions to
