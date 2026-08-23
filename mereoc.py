@@ -6493,8 +6493,25 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
         return set(re.findall(r"[A-Za-z_][\w.]*", str(e)))
 
     facts, live, lastdef = {}, {}, {}   # live: expr -> [(op, rhs, siblings)]
+    # A `leave` fact is SCOPED. `ensure` states something for the rest of the
+    # enclosing scope, but `leave X when C` states `not C` only until X ends --
+    # past that `end`, control may have arrived THROUGH the leave, where C was
+    # true, and the negation is exactly wrong. Letting one escape proved an
+    # out-of-range access silently, which is the worst failure this analysis
+    # has. Each is recorded against the scope it was learned in and dropped
+    # when that scope closes; a `leave` naming an ancestor is dropped at the
+    # innermost end instead, which loses a fact and can never invent one.
+    scoped = []
     for i, st in enumerate(steps):
         t = st.get("type")
+        if t == "loop_start":
+            scoped.append([])
+        elif t == "loop_end" and scoped:
+            for key, ent in scoped.pop():
+                if key in live and ent in live[key]:
+                    live[key].remove(ent)
+                    if not live[key]:
+                        live.pop(key, None)
         if t == "assign":
             tgt, ex = st.get("name"), str(st.get("expr", "")).strip()
             inherit = live.get(ex)
@@ -6524,7 +6541,10 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
                 if t == "loop_exit":
                     op = {">": "<=", ">=": "<", "<": ">=", "<=": ">"}[op]
                 terms = [x.strip() for x in lhs.split("+")] if "-" not in lhs else []
-                live.setdefault(lhs, []).append((op, rhs, []))
+                _ent = (op, rhs, [])
+                live.setdefault(lhs, []).append(_ent)
+                if t == "loop_exit" and scoped:
+                    scoped[-1].append((lhs, _ent))
                 # A bound on a NAME is a bound on what it was defined as.
                 # `total is length + 5` then `ensure total <= capacity` says
                 # `length <= capacity - 5`; without carrying it back, a length
@@ -6535,7 +6555,10 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
                         terms = back
                 if len(terms) > 1 and op in ("<=", "<"):
                     for x in terms:
-                        live.setdefault(x, []).append((op, rhs, [y for y in terms if y != x]))
+                        _e2 = (op, rhs, [y for y in terms if y != x])
+                        live.setdefault(x, []).append(_e2)
+                        if t == "loop_exit" and scoped:
+                            scoped[-1].append((x, _e2))
         if live:
             facts[i] = {k: list(v) for k, v in live.items()}
 

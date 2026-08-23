@@ -1703,8 +1703,24 @@ correct program. That is worse than an unproved warning: this is code that would
 not compile, and the author's only recourse is to delete a guard that is doing
 its job.
 
-Both directions are gated now -- the program above must be SILENT, and the same
-shape against a fifty-byte buffer must still be refused. Corpus unproved 42
+**And the first version of it was UNSOUND, which is the part worth keeping.** An
+`ensure` holds for the rest of its scope; a `leave X when C` states `not C` only
+until X ENDS. Past that `end`, control may have arrived THROUGH the leave, where
+C was true, and the negation is exactly wrong. Letting one escape proved an
+out-of-range access **silently** -- a program that had been correctly refused
+was accepted. Each fact is now recorded against the scope that learned it and
+dropped when that scope closes, and a `leave` naming an ancestor is dropped at
+the innermost end instead: that loses a fact and can never invent one.
+
+It was caught by looking at why `equals` still failed, not by the suite -- 42
+unproved before and after, 100 files byte-identical, all six suites green with
+the hole wide open. `leave_fact_escapes.mereo` is the planted violation and is a
+gate now, and it is the third analysis change on this branch to ship a bug that
+only a hand-written adversarial case would find.
+
+Three directions are gated -- the bounded program must be SILENT, the same shape
+against a fifty-byte buffer must be REFUSED, and the fact must not survive its
+scope. Corpus unproved 42
 before and after and 100 generated files byte-identical, which is why it went
 unnoticed: no program here happens to bound an index with a `leave` and then use
 it, presumably because anyone who tried had to work around it.

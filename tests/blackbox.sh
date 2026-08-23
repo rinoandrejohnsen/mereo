@@ -522,6 +522,10 @@ silent  access/descending-load  descending_load
 # too small, and must still be refused.
 silent  access/leave-bounds-index  leave_bounds_index
 rejects access/leave-bounds-too-loose leave_bounds_too_loose "reaches 101 bytes into 'buf'"
+# ...and the SCOPE of that fact. `leave check when n > 40` bounds n only
+# until `check` ends; past it, control may have arrived through the leave and
+# the negation is exactly wrong. Unscoped, this was proved SILENTLY.
+rejects access/leave-fact-escapes leave_fact_escapes "reaches 201 bytes into 'buf'"
 # An index the KERNEL chose. `read` promises only `count <= capacity`, so this
 # is 0..64 into sixteen bytes, and the analysis says so with the number. Its
 # twin `store_outport_past_end.mereo` is the same program with the access

@@ -1,0 +1,28 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- The planted violation for the SCOPE of a `leave` fact. Inside `check`, the
+-- leave bounds `n` at 40. After `check` ends, control may have arrived THROUGH
+-- that leave, where the condition was true, so `n` can be anything the kernel
+-- returned -- up to 200, well past fifty bytes.
+--
+-- Reading a `leave` as a fact without scoping it proved this SILENTLY, which is
+-- the worst failure this analysis has: an out-of-range access accepted.
+program goes
+  buf is 50 bytes
+  data is 200 bytes
+  n is 0
+  got is 0
+  d is 0
+  input is already linux.file (descriptor is 0)
+  terminal is already linux.file (descriptor is 1)
+  input.read (buffer is data, capacity is 200, count is got)
+  n is got
+  check goes
+    leave check when n > 40
+    d is d + 1
+  end
+  d is [buf + n : 1]
+  [buf : 1] is d
+  terminal.write (buffer is buf, count is 1)
+end
