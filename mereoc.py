@@ -5802,6 +5802,13 @@ def scope_spliced_arrays(body):
     for j, gs in goto_at.items():
         for g in gs:
             by_label.setdefault(g, []).append(j)
+    # LOOP BACK-EDGES: a jump to a label above it. A span enclosed by one sits
+    # in a loop body, and a block there is not free -- the brace stops GCC
+    # hoisting the array's address out of the loop, so it recomputes it every
+    # iteration. On x25519 that was one `lea` running 65,280 times, +0.56% of
+    # all instructions executed, to save stack nobody was short of.
+    back = [(lbl_at[g], j) for j, gs in goto_at.items() for g in gs
+            if g in lbl_at and lbl_at[g] < j]
     edge = min([j for n, j in lbl_at.items()
                 if n.startswith(("error_", "release_")) or n == "exit"]
                or [len(body)])
@@ -5855,6 +5862,8 @@ def scope_spliced_arrays(body):
                 ok = False
                 break
         if not ok or depth != 0:
+            continue
+        if any(lo <= t and j <= hi for t, j in back):   # wraps a loop
             continue
         cands.append((lo, hi, i, body[i].strip(),
                       0 if _ARRDECL.match(body[i]) else 1))

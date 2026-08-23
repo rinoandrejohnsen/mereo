@@ -1683,6 +1683,46 @@ cannot be checked by a build gate or by output tests on programs that do not
 run. The corpus had 37 programs and executed a handful; the ones with the most
 to lose -- the TLS stack, the crypto -- were the ones nothing ran.
 
+### Corrected: slot sharing was measured on the wrong axis, and cost instructions
+
+`.text` and stack frame are not the metric. Clock time and instructions to
+completion are. Re-measured on those, the scoping pass was **costing** work:
+
+| x25519 (pure computation, RFC 7748 answer) | instructions | stack |
+| --- | ---: | ---: |
+| no scoping | 9,335,228 | 6,856 B |
+| every span scoped | 9,387,557 (+0.56%) | 1,416 B |
+| spans that WRAP a loop refused | **9,335,228** | 4,520 B... |
+| ...and corpus-wide with that rule | -- | **-1.2%** (was -9.1%) |
+
+**It is not a bug, and that is worth saying plainly.** The whole difference is
+one instruction: `lea 0x4a8(%rsp),%rsi` running **63,744 times**. The unscoped
+build keeps that inner loop's end pointer live in `%r9`; the scoped build
+recomputes it every iteration. The brace cost GCC a register, so it
+REMATERIALISED an address rather than keeping it. Nothing about the sharing is
+wrong -- the register allocator simply made a different choice inside the block.
+
+Not a spill trade either, which was the first guess: data references went UP
+slightly too (2,266,159 -> 2,267,901). L1 misses fell 113 -> 28, and both are
+0.0% of accesses, so that is noise at this size.
+
+**The clock never moved** -- ratio 1.001 over 41 runs. So this cost only shows on
+the instruction count, and only on x25519: the exam's delta is 209 instructions
+in 51.4 million, 0.0004%.
+
+Spans that wrap a loop are now refused. That is 24 blocks kept instead of 449,
+and -1.2% of corpus stack instead of -9.1% -- the whole benefit on x25519 is
+given up, because every array's span there wraps a loop. Bought at zero
+instructions anywhere, which is the standard now.
+
+**The lesson is about the measurement, not the pass.** Three things were argued
+on `.text` in the days before this and two of them reverse when re-measured:
+`format` in mereo executes **189,463 FEWER** instructions than the C helper it
+replaced, not the "+76 bytes, a small cost" that was recorded; and the `format`
+bound guard is free rather than worth 2,344 bytes -- deleting it changes 8
+instructions in 51.4 million. The earlier "561 instructions" for that guard was
+a STATIC count read out of the binary, not instructions executed.
+
 ### Pushed further, and there is nothing further to get
 
 The reasonable next guess was that RAII was still holding slots back -- the
