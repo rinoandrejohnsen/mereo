@@ -78,11 +78,15 @@ end
 --   number   read DATA[0..LENGTH) as a signed decimal integer (leading spaces ok)
 --   format   write VALUE as decimal digits into BUFFER, yielding its LENGTH
 --
--- `find`, `equals` and `format` are the irreducible byte primitives -- memchr,
--- memcmp and itoa, one machine loop each -- kept as always_inline C helpers.
--- `search` and `number` are COMPOSED from them in mereo (loops + byte-loads),
--- not C, so the logic stays in the language. Each says where it stops with a
--- `leave` per reason, rather than folding every reason into one flag.
+-- `find` and `equals` are still always_inline C helpers: their bounds belong to
+-- the CALLER, and the analysis cannot yet carry a caller's guard through a
+-- template splice, so writing them here reports what it cannot prove. `format`
+-- is no longer among them -- itoa needs only its own scratch, whose bound is
+-- right there, so it is written in mereo below and costs nothing for it.
+-- `search` and `number` are COMPOSED from all of them in mereo (loops +
+-- byte-loads), not C, so the logic stays in the language. Each says where it
+-- stops with a `leave` per reason, rather than folding every reason into one
+-- flag.
 
 scan is helper _scan
   data in
@@ -97,12 +101,6 @@ same is helper _same
   other in
   other_length in
   result out
-end
-
-decimal is helper _decimal
-  value in
-  output in
-  length out
 end
 
 text is
@@ -121,8 +119,46 @@ text is
           result is result)
   end
 
+  -- itoa, written in mereo rather than kept as a C helper. mereo has no `if`,
+  -- so each branch is a scope left early. The digits fall out lowest-first,
+  -- are staged in `scratch`, and copied back in reverse -- the same shape the
+  -- C helper had, and provable now that a descending index carries a floor.
   format (value, buffer, length) goes
-    decimal (value is value, output is buffer, length is length)
+    scratch is 20 bytes
+    n is value
+    i is 0
+    j is 0
+    d is 0
+    sign goes
+      leave sign when n >= 0
+      [buffer + j : 1] is 45
+      j is j + 1
+      n is 0 - n
+    end
+    zero goes
+      leave zero when n != 0
+      [buffer + j : 1] is 48
+      length is j + 1
+      leave format
+    end
+    digits goes
+      leave digits when n <= 0
+      leave digits when i >= 20
+      [scratch + i : 1] is 48 + (n % 10)
+      i is i + 1
+      n is n / 10
+      repeat digits
+    end
+    unstage goes
+      leave unstage when i <= 0
+      i is i - 1
+      leave unstage when i >= 20
+      d is [scratch + i : 1]
+      [buffer + j : 1] is d
+      j is j + 1
+      repeat unstage
+    end
+    length is j
   end
 
   -- THE THREE THE KERNEL'S OWN nolibc KEEPS, and mereo did not: memcpy, memset

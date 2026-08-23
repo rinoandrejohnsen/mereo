@@ -404,18 +404,6 @@ CPU_PROBE = (
     '}')
 
 HELPER_C = {
-    # itoa: write _n as signed decimal into the buffer at _op, return length.
-    "_decimal":
-        'static inline __attribute__((always_inline)) long _decimal(long _n, long _op) {\n'
-        '    char *_o = (char *)_op;\n'
-        '    char _t[20];\n'
-        '    long _i = 0, _j = 0;\n'
-        '    if (_n < 0) { _o[_j++] = (char)45; _n = -_n; }\n'
-        '    if (_n == 0) { _o[_j++] = (char)48; return _j; }\n'
-        '    while (_n > 0) { _t[_i++] = (char)(48 + _n % 10); _n /= 10; }\n'
-        '    while (_i > 0) _o[_j++] = _t[--_i];\n'
-        '    return _j;\n'
-        '}',
     # memchr-as-offset: index of byte _b in _p[0.._len), or _len if absent.
     "_scan":
         'static inline __attribute__((always_inline)) long _scan(long _pp, long _len, long _b) {\n'

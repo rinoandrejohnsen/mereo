@@ -1421,6 +1421,59 @@ blocks over 98 programs. 91 of the 98 binaries are byte-identical -- only the
 seven with spliced arrays move. The TLS stack is where it lands: `https` alone
 is -8.5% frame and -5.7% `.text`.
 
+### Landed: itoa is written in mereo, and `_decimal` is gone
+
+One of the three C helpers is out of the compiler. `text.format` is now mereo --
+scopes left early instead of `if`, digits staged in a 20-byte `scratch` and
+copied back reversed, which is the shape the C helper had.
+
+| | `.text` | unproved | output |
+| --- | ---: | ---: | --- |
+| `_decimal` C helper | 5,759 B | 14 | reference |
+| `format` in mereo | 5,835 B | 14 | identical |
+
+**+76 bytes, +1.3%, and not one new unproved access** -- the 14 in the exam and
+39 across the corpus are the same ones as before, none of them from here.
+Identical on 79 formatted values (negatives, zero, nineteen digits) and on the
+84 MB log; jsontest, which formats heavily, is byte-identical too.
+
+It took two other pieces of work to become possible, neither aimed at it:
+
+* the **descending-index floor**, without which the copy-back loop reported two
+  unproved accesses at every call site and forced an array-free algorithm that
+  cost +36% instead of +1.3%
+* **slot sharing**, without which nine call sites meant nine `scratch[20]`
+
+The first attempt at this was +36% and 23 unproved, and the conclusion then was
+that a spliced template could not match a C helper. That conclusion was wrong --
+it compared two different algorithms -- and this is what the corrected version
+looks like.
+
+### What is still in the compiler, and the one reason for it
+
+`find` and `equals` stay C. Both are general byte primitives whose bounds belong
+to the CALLER, and the analysis cannot carry a caller's guard through a template
+splice. Writing `equals` in mereo produces a hard error, not a warning:
+
+    `[qp + equals_2_i : 1]` reaches 4294967295 bytes into 'arena',
+    which is 1048576 bytes
+
+-- because the exam passes `other is qp` where `qp` is `arena` plus a four-byte
+unsigned field, so the analysis assumes the offset can be 2^32-1 and PROVES the
+loop runs off the end. Bounding the offset where it is read does not help; the
+induction variable is what cannot be bounded. `ensure other_length <= other.size`
+does not resolve when the argument is a computed address into a larger buffer.
+
+`format` moved because it is self-contained: its scratch is its own and the
+bound is right there in the declaration. That is the whole difference, and it is
+the test for any future candidate.
+
+`_scan` additionally needs three things from `assembly` before it could move at
+all: a multi-instruction template (`prim["template"]` is one string), a
+read-write operand (`prim["out"]` is singular, and a quoted constraint would
+emit `"=+r"`), and a home for the CPU probe. The `helper` keyword cannot go
+until all three are out.
+
 ### The slot-sharing pass was WRONG, and X25519 is what said so
 
 Shipped and pushed before this was found. The closure checked that nothing
