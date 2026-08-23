@@ -462,6 +462,18 @@ HELPER_C = {
         '            : [pp] "r" (_p), [ln] "r" (_len),\n'
         '              [bv] "r" ((unsigned int)(_b & 0xff))\n'
         '            : "rax", "rdx", "xmm0", "xmm1", "cc", "memory");\n'
+        # The loop above examines whole vectors only, so it has looked at
+        # exactly [0, _len & ~31) -- a match is therefore below that bound and
+        # running out lands on it exactly. Two instructions and a branch settle
+        # which happened, and on a hit the answer is already in `_i`.
+        #
+        # Without this the word-at-a-time tail below runs anyway and RE-DERIVES
+        # a result the vector already had: two ten-byte constants, a load, and
+        # the whole has-a-zero-byte dance, about twelve instructions to learn
+        # what `tzcnt` established. That was every successful vector scan in the
+        # exam -- 266k of them, and the constants show up in the profile as
+        # `movabs $0x2020202020202020` once per line.
+        '        if (_i < (_len & ~31L)) return _i;\n'
         '    }\n'
         # Word at a time: XOR a word against the broadcast byte and the one
         # that matched becomes zero, which the has-a-zero-byte test finds
@@ -485,7 +497,43 @@ HELPER_C = {
     "_same":
         'static inline __attribute__((always_inline)) long _same(long _pp, long _pl, long _qq, long _ql) {\n'
         '    if (_pl != _ql) return 0;\n'
-        '    char *_p = (char *)_pp, *_q = (char *)_qq;\n'
+        '    const unsigned char *_p = (const unsigned char *)_pp;\n'
+        '    const unsigned char *_q = (const unsigned char *)_qq;\n'
+        # Eight bytes a step, and the last eight OVERLAP the ones before rather
+        # than being walked a byte at a time. Equality does not care about byte
+        # order or alignment, so a whole word is one compare -- where the byte
+        # loop this replaced spent two five-cycle loads and about five uops on
+        # every single byte.
+        #
+        # The overlap is what removes the tail: a 13-byte name is [0,8) and then
+        # [5,13), so two compares and no loop, against thirteen iterations. Both
+        # reads stay inside the string, so this needs no more of either buffer
+        # than the byte loop did.
+        '    if (_pl >= 8) {\n'
+        '        long _i = 0;\n'
+        '        unsigned long _a, _b;\n'
+        '        while (_i + 8 <= _pl) {\n'
+        '            __builtin_memcpy(&_a, _p + _i, 8);\n'
+        '            __builtin_memcpy(&_b, _q + _i, 8);\n'
+        '            if (_a != _b) return 0;\n'
+        '            _i += 8;\n'
+        '        }\n'
+        '        if (_i != _pl) {\n'
+        '            __builtin_memcpy(&_a, _p + _pl - 8, 8);\n'
+        '            __builtin_memcpy(&_b, _q + _pl - 8, 8);\n'
+        '            if (_a != _b) return 0;\n'
+        '        }\n'
+        '        return 1;\n'
+        '    }\n'
+        # Four to seven bytes: the same overlap once, so no loop at all.
+        '    if (_pl >= 4) {\n'
+        '        unsigned int _a, _b, _c, _d;\n'
+        '        __builtin_memcpy(&_a, _p, 4);\n'
+        '        __builtin_memcpy(&_b, _q, 4);\n'
+        '        __builtin_memcpy(&_c, _p + _pl - 4, 4);\n'
+        '        __builtin_memcpy(&_d, _q + _pl - 4, 4);\n'
+        '        return _a == _b && _c == _d;\n'
+        '    }\n'
         '    long _i = 0;\n'
         '    while (_i < _pl && _p[_i] == _q[_i]) _i++;\n'
         '    return _i == _pl;\n'

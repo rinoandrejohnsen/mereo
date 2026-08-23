@@ -156,19 +156,110 @@ nothing else. Give the twin the same thing and the field looks like this:
 | **mereo** | **51.7 ms** |
 | C, eight-byte SWAR, as the exam writes it | 54.5 ms |
 
-So: **mereo is at parity with a C twin given the same scan** — 0.991 median,
-0.997 min, which is the bar this project set — and **4.6% behind glibc's
-`memchr`**, which is 4x-unrolled with aligned handling where mereo's is a plain
-thirty-two-byte loop. That last gap is the honest remaining headroom, and it is
-in one primitive. A clock has variance in it, though,
-so the same claim is made again below with none: counted exactly, **mereo
-executes 10.9% fewer instructions than the C twin** on this input, and the same
-inlining that makes its binary 30% larger is why. This started at 1.012, and what
-closed it was not the program but the compiler: `read` cannot return more than
-the capacity it was given — that is the kernel's design, not a hope — so mereo
-states it to GCC rather than testing it. The branch could never have been
-taken. On identical output: the two programs agree byte
-for byte on the million-line log and on all 800 adversarial inputs.
+So: **mereo was at parity with a C twin given the same scan** — 0.991 median,
+0.997 min, which is the bar this project set — and 4.6% behind glibc's `memchr`.
+
+### Then the profile was read instead of guessed at, and that changed
+
+Counting what the exam actually *executes*, per instruction, found two primitives
+paying for work they did not need. Neither was a clever idea; both were the
+question "is this the best instruction available for this?" asked of a profile
+rather than of the source.
+
+**`_same` compared one byte at a time** while its sibling `_scan` compared
+thirty-two. It is the hash table's key comparison, and at 8.6% of all
+instructions it was the second-hottest loop in the program — two five-cycle
+loads and about five uops for every byte. It now reads a **word** at a time,
+with the final word *overlapping* the one before it rather than a byte tail: a
+13-byte path is `[0,8)` and `[5,13)`, two compares instead of thirteen
+iterations. Equality does not care about byte order or alignment, so this is
+just the right instruction for the question being asked. Worth **7.1% of all
+instructions** for 67 bytes.
+
+The path lengths decided the width: median 13, **max 23**. A 32-byte vector
+compare would have been dead code — the same trap that the four-vector scan fell
+into, avoided here by measuring the input first.
+
+**`_scan` re-derived answers it already had.** The vector loop finds the byte and
+leaves it in `_i`, and then the word-at-a-time tail below ran anyway and worked
+it out a second time — two ten-byte constants, a load, and the whole
+has-a-zero-byte dance, about twelve instructions to learn what `tzcnt` had
+already established. It showed in the profile as `movabs $0x2020202020202020`
+executing once per line. The vector loop examines whole vectors only, so it has
+looked at exactly `[0, _len & ~31)`: a match is below that bound, running out
+lands on it exactly, and two instructions tell which happened.
+
+| | median | min |
+| --- | ---: | ---: |
+| **mereo** | **38.1 ms** | 37.5 ms |
+| C, `glibc memchr` + `memcmp` (hosted) | 41.0 ms | 40.7 ms |
+| C++, `string_view` + `partial_sort` (hosted) | 41.7 ms | 41.5 ms |
+| C, `glibc memchr` (hosted) | 42.3 ms | 42.1 ms |
+| mereo, before these two | 44.1 ms | 43.7 ms |
+| C, hand-written AVX2 scan, freestanding | 44.6 ms | 44.2 ms |
+| C, that plus a word-at-a-time compare | 45.2 ms | 44.8 ms |
+| C, as the exam writes it, freestanding | 47.3 ms | 46.8 ms |
+
+**13.9% faster than it was**, 10.9% fewer instructions, for 292 bytes — and
+across the whole corpus the cost is **+0.5% of `.text`**. Every row agrees byte
+for byte on the 84 MB log.
+
+### The two fixes work by opposite mechanisms, which the counters show plainly
+
+| | instructions | cycles | IPC |
+| --- | ---: | ---: | ---: |
+| before | 599M | 210M | 2.85 |
+| + `_same` a word at a time | 555M | 199M | 2.79 |
+| + `_scan` early exit | 533M | 176M | 3.03 |
+
+`_same` removed **44M instructions but only 11M cycles**, and IPC went *down*:
+the byte loop was well-predicted, independent, high-IPC filler, so deleting it
+removes more instructions than cycles. `_scan` removed **22M instructions and
+23M cycles**, and IPC went *up*: those instructions were not filler but latency,
+a five-cycle load and a p1-only `tzcnt` sitting on the dependency chain between
+finding the newline and using it. More than a cycle recovered per instruction
+removed is the signature of taking something off a critical path.
+
+**The same change does not help C.** Given the identical word-at-a-time compare,
+the freestanding twin executes 4.8% fewer instructions and gets *slower* —
+672M → 640M instructions but 212M → 218M cycles, IPC 3.17 → 2.94. It started
+with more instruction-level parallelism to lose than it had work to save. This
+is why the technique had to be measured in the program rather than assumed from
+the primitive.
+
+### What was tried before reading the profile, and did not work
+
+Closing the `memchr` gap by **unrolling** was the obvious guess, and it was
+wrong — worth recording for that reason. Four vectors a step was written and
+verified exhaustively, and it is 1.8x faster on a scan of 8 KB or more, but it
+made the exam *slower*: a gate on the length opens on the search bound while the
+cost is the distance to the match. The exam scans for a newline with 64 KB of
+buffer left and finds it after 84 bytes, every time; at that distance the
+unrolled form is 21% slower, since it loads 128 bytes and disambiguates four
+masks to find what one vector finds in three compares. Escalating rather than
+gating removes the loss but earns nothing and costs 27% of `.text`. See todo.md.
+
+The two changes that *did* work came from the profile, and neither was in the
+scan loop everyone was looking at. That is the lesson: **the hot loop was named
+correctly and the expensive instruction in it was not.**
+
+A clock has variance in it, though, so the same claim is made again with none.
+Counted exactly on `callgrind`, **mereo executes 33% fewer instructions than the
+C twin as written** — 51.6M against 77.1M on an 8 MB slice, and the ratio holds
+at −32.6% on a 2 MB slice, so it is a property of the code and not of the input.
+Before today's two fixes it was −25%. What it costs is size: mereo's `.text` is
+**52% larger** than the twin's (5,759 bytes against 3,798), because the language
+has no functions and inlines everything — the same property that removes the
+instructions. That trade is the finding, and it runs in mereo's favour on both
+counts only because the inlining is what makes the primitives cheap to improve:
+fixing `_same` once fixed it at every call site in the corpus.
+
+An earlier version of this page put the instruction gap at 10.9% and the size at
+30%. Both predate several changes and neither reproduces; the numbers above were
+re-measured together, on named inputs.
+
+On identical output: the two programs agree byte for byte on the million-line
+log and on all 800 adversarial inputs.
 
 | | C | mereo |
 | --- | ---: | ---: |

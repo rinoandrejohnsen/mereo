@@ -1394,14 +1394,156 @@ languages. Given the same scan:
 Parity with the AVX2 twin -- 0.991 median, 0.997 min -- which is the bar, and
 **4.6% behind glibc's memchr**, which is the remaining headroom.
 
-### Still open: the last 4.6%, and it is one loop
+### Reading the profile per instruction, which found what guessing did not
+
+After the unroll came out flat, the exam was profiled **per instruction** --
+`callgrind --dump-instr=yes`, joined to `objdump` addresses -- and the two
+primitives that were actually paying for nothing came out immediately. Neither
+was the scan loop the previous three entries on this page are about.
+
+**`_same` compared a byte at a time.** The hash table's key comparison, 8.6% of
+every instruction the exam executed, and the second-hottest loop in the program:
+two five-cycle loads and about five uops per byte, while its sibling `_scan` was
+doing thirty-two bytes a step. It now reads a word at a time with an
+**overlapping** final word rather than a byte tail -- a 13-byte path is `[0,8)`
+then `[5,13)`, two compares against thirteen iterations. Equality does not care
+about byte order or alignment, so a whole word is simply the right instruction
+for the question. **7.1% of all instructions, for 67 bytes.**
+
+The width came from the input, not from taste: path lengths are median 13, **max
+23**, so a 32-byte vector compare would have been dead code -- the identical trap
+the four-vector scan fell into, avoided by measuring first this time.
+
+**`_scan` re-derived answers it already had.** The vector loop finds the byte and
+leaves it in `_i`; the word-at-a-time tail below then ran anyway and worked it
+out a second time -- two ten-byte constants, a load, and the whole
+has-a-zero-byte dance, about twelve instructions to learn what `tzcnt` had
+established. It was visible in the profile as `movabs $0x2020202020202020`
+executing once per line, which is what sent me looking. The vector loop examines
+whole vectors only, so it has looked at exactly `[0, _len & ~31)`: a match lies
+below that bound, exhaustion lands on it exactly, and two instructions settle
+which. **A further 4.2% of instructions.**
+
+| | median | min |
+| --- | ---: | ---: |
+| **mereo, both fixes** | **38.1 ms** | 37.5 ms |
+| C, `glibc memchr` + `memcmp` (hosted) | 41.0 ms | 40.7 ms |
+| C++, `string_view` + `partial_sort` (hosted) | 41.7 ms | 41.5 ms |
+| C, `glibc memchr` (hosted) | 42.3 ms | 42.1 ms |
+| mereo, before | 44.1 ms | 43.7 ms |
+| C, hand-written AVX2 scan, freestanding | 44.6 ms | 44.2 ms |
+| C, that plus a word-at-a-time compare | 45.2 ms | 44.8 ms |
+| C, as the exam writes it, freestanding | 47.3 ms | 46.8 ms |
+
+**13.9% faster, 10.9% fewer instructions, +292 bytes** on the exam; **+0.5% of
+`.text`** across the whole corpus. Verified: `_same` over 45,451 cases (every
+length to 300 x every mismatch position) and `_scan` over 2,439,104 (64
+alignments x lengths to 600 x every match position), both also against buffers
+laid flush against a `PROT_NONE` page so an over-read faults rather than passing.
+Output byte-identical on the 84 MB log; all six suites green.
+
+### The two work by opposite mechanisms, and the counters say so plainly
+
+| | instructions | cycles | IPC |
+| --- | ---: | ---: | ---: |
+| before | 599M | 210M | 2.85 |
+| + `_same` a word at a time | 555M | 199M | 2.79 |
+| + `_scan` early exit | 533M | 176M | 3.03 |
+
+`_same` removed **44M instructions but only 11M cycles**, and IPC fell: the byte
+loop was well-predicted, independent, high-IPC filler. `_scan` removed **22M
+instructions and 23M cycles**, and IPC rose -- more than a cycle recovered per
+instruction removed, which is the signature of taking something off a **critical
+path** rather than removing work. What came off was a five-cycle load and a
+p1-only `tzcnt` sitting between finding the newline and using it.
+
+**Instruction count and cycles are not the same currency**, and this is the
+cleanest demonstration of it the project has: the change that removed twice as
+many instructions saved half as many cycles.
+
+**The same change does not help C.** Given the identical word-at-a-time compare
+in the identical shape, the freestanding twin executes 4.8% fewer instructions
+and gets *slower* -- 672M to 640M instructions, but 212M to 218M cycles, IPC
+3.17 to 2.94. It began with more instruction-level parallelism to lose than it
+had work to save. A primitive that is better in isolation is not automatically
+better in a program.
+
+### What the profile says is left
+
+**The FNV-1a hash is now the top loop: 6.5M instructions, 12.6% of the exam.**
+Six instructions a byte, and the chain is `xor` then `imul` -- 1 + 3 cycles,
+serial in the accumulator, with `imul` on p1 only. Instruction selection here is
+already optimal: `imul r32, r32, imm32` is 1 uop and the shift-add decomposition
+of `0x1000193` is both longer and slower. This is an **algorithm** cost, not an
+instruction cost, and it is out of reach anyway -- the C twin hashes identically
+so the two agree slot for slot, and changing it changes the tie-break order of
+the `top` output.
+
+The whitespace and field skips are next at 5.8%, and they are already the right
+instructions: the range test compiles to `sub $9; cmp $23; ja`, and the runs are
+about one byte each, so there is nothing to vectorise. Decimal parsing uses
+`lea (%rax,%rax,4)` plus an add for the times-ten, which is the standard optimum.
+
+So the scalar side of the exam is now at its instruction-selection floor, and
+what is left is either algorithmic or fixed by agreement with the twin.
+
+### Measured and declined: unrolling the scan to four vectors
 
 glibc's `memchr` is four 32-byte vectors per iteration with an aligned-head
 prologue, so it issues one branch per 128 bytes where mereo issues one per 32
-and never aligns. Unrolling and aligning is the same technique again, applied to
-the same eight lines, and is worth measuring before anything else on this page.
-The exhaustive test already written -- every length 0..200 against every match
-position -- is what makes that safe to attempt.
+and never aligns. That was written, tested and measured. It does not ship, and
+the reason is worth more than the code was.
+
+The block is correct: one unaligned head vector covers `[i, i+32)`, then `i`
+moves to `i + 32 - ((p + i) & 31)` so `vmovdqa` is legal, four compares OR into
+one mask, and a hit re-examines the four masks in order. Verified exhaustively
+at **64 alignments x lengths 0..400 x every match position, 0 bad** -- and a
+misaligned `vmovdqa` faults, so the alignment arithmetic is proved, not argued.
+It is **1.8x faster** than one vector a step on a scan of 8 KB or more.
+
+**It made the exam 8% SLOWER.** Gated on `_len >= 512`, the way a length gate is
+normally written:
+
+| | median | min |
+| --- | ---: | ---: |
+| one vector a step | 43.0 ms | 42.4 ms |
+| four, gated on `_len >= 512` | 47.4 ms | 46.8 ms |
+
+**The gate tests the wrong quantity.** `_len` is the search BOUND; the cost is
+the search WORK, which is the distance to the match -- and the two are unrelated
+here. The exam scans for a newline with up to 64 KB of buffer left, and the
+lines are **median 84 bytes, max 98**. So `_len` is 65536 at every call, the
+gate opens every time, and the four-vector form then loads 128 bytes and
+disambiguates four masks to find what one vector finds in three compares. At the
+exam's own line length it is **21% slower**; the crossover is around 140 bytes.
+No gate on `_len` can see this, because the distance is not knowable before the
+scan runs.
+
+**Escalating instead of gating removes the harm, and adds nothing.** Run one
+vector a step until 256 bytes are cleared, and only then escalate -- an early
+match never reaches the four-vector loop. The one-vector loop stops at exactly
+`_lim & ~31`, so "did it match" is that comparison and not a load: three
+instructions on the common path. That measures as **42.9 ms against the
+baseline's 43.0** -- the distributions overlap, so it is nothing -- while
+executing **2.9% MORE instructions** and costing **+1496 bytes of `.text`, +27%**,
+because `_scan` inlines at five sites and every one of them grows.
+
+Proved it is the restructure and not the unrolling: disabling the four-vector
+loop while keeping the escalation gives **42.8 ms, identical**. The unrolled loop
+contributes 9,097 instructions out of 59.6 million. It never runs on the exam.
+
+**A control that lied, and how it was caught.** The first baseline was the new
+`_scan` with the threshold sed'd to `0x4000000000000000` -- which leaves a dead
+64-bit constant compare on every scan, ~3.5 instructions per line. It reported a
+2% gain that did not exist. Building the true baseline from `git HEAD` erased it.
+A control has to be the code you would actually ship, not the new code disabled.
+
+**The conclusion is about the corpus, not the technique.** The unroll is a real
+1.8x for scans that clear hundreds of bytes without a match. No program here has
+one: every scan in the exam, and every `find` in the TLS stack, hits early
+against a large bound. So the remaining 4.6% behind `memchr` is not this loop,
+and the block is kept in the session scratchpad (`scan4g.h`) against the day a
+program appears that scans far.
 
 ### What had to be decided first
 
