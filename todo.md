@@ -1764,39 +1764,54 @@ the whole of `plen` in front of `qoff` without the analysis having to relate the
 two. With that, **`equals` in mereo compiles, proves, and produces byte-identical
 output on the 84 MB log.**
 
-### Why the last 1% is there: mereo has no `if`
+### Why the 1% is there -- and it is almost all the GUARD, not the port
 
-Same algorithm, byte-identical output, and still 505,145 instructions apart. It
-is not the C boundary and it is not codegen luck. Count the control structure of
-the two bodies:
+Two wrong answers before the right one, both worth recording because both were
+plausible and both were checked too late.
 
-| | |
-| --- | --- |
-| C `_same` | 6 `if`, 2 `while`, 6 `return` -- **0 labels, 0 gotos** |
-| mereo `equals` | **8 labels, 15 gotos**, 11 `if` |
+**Wrong answer 1: "mereo has no `if`, so a conditional region costs a label and
+two jumps."** The counts looked damning -- C `_same` has 6 `if`, 2 `while`,
+0 gotos; mereo `equals` has 8 labels and 15 gotos. But there is no `if` in
+assembly either. Writing the SAME function in C twice, once structured and once
+in mereo's exact goto shape, gives **67 instructions for the goto form against
+79 for the structured one, with 14 branches each.** GCC lowers both to the same
+CFG. Source syntax was being read as a mechanism.
 
-`docs/control-flow.md` opens with it: *mereo has no `while`, no `if` and no
-`switch`. It has scopes and two jumps.* So a conditional REGION costs a label, a
-conditional jump in, and usually an unconditional jump out. C's
-`if (_pl >= 4) { ... }` is one conditional branch; `quad goes / leave quad when
-length < 4 / ... / end` is a label and two jumps.
+**Wrong answer 2: register pressure in the giant `_start`.** Also unmeasured.
 
-At ~95,000 calls that is the whole difference, and the branch mix says so
-exactly: `jg` +380,435, `jle` +297,838, `jmp` +135,925 against `jne` -407,988
-and `jge` -188,092 -- plus ~95,000 extra alignment nops, one padded loop head
-per call.
+**The actual answer**, from attributing every executed instruction to the
+generated-C line it came from and diffing the two builds by source TEXT:
 
-**And the shape of it is not what it looks like.** Adding scopes made it FASTER,
-not slower: 54.3M with two, 52.7M with three, 51.9M with four. Each new scope
-replaced a byte loop with a wider compare, and the loop it removed cost far more
-than the jumps it added. The per-scope cost is real but small; it only becomes
-visible once the algorithm is right.
+    +242,835   if (__builtin_expect(!(((qoff + 255) <= 1048576)), 0)) goto error_...
 
-So the 1% is the price of the control-flow model, paid per call, by any
-primitive with several cases. It is a property of the language rather than a
-defect in the port -- which makes it a thing to decide about rather than a thing
-to fix. Nothing here is going to remove it short of giving mereo an `if`, and
-that is a much larger conversation than one memcmp.
+That is `ensure qoff + path_max <= arena_max` -- the guard added to the EXAM so
+the port would prove, not part of `equals` at all. Building the exam with that
+guard and the C helper separates them:
+
+| | instructions |
+| --- | ---: |
+| exam, C helper, no guard | 51,440,443 |
+| exam, **C helper**, with the guard | 51,887,237 (**+446,794**) |
+| exam, **mereo `equals`**, with the guard | 51,945,588 (**+58,351**) |
+
+**The port costs +0.11%** -- about 0.6 instructions per call. The guard costs
++0.87%, and the C helper pays it identically.
+
+### Which moves the decision, and points at the real gap
+
+`equals` in mereo is free. What is not free is proving the arena offset in
+range, and that is a **runtime check with an error path** rather than an
+assumption -- because `ensure qoff + path_max <= arena_max` has a constant on
+the right, and a clause whose right-hand side is not another PORT becomes a
+check by design. That is the same missing spelling recorded further down this
+page: *"the result is at most N"* cannot be stated as a promise.
+
+So the ledger is: the port is neutral, and the safety it needs costs 0.87% at
+run time -- which is exactly what
+[[mereo-safety-is-not-a-goal]] says the barrier forbids, *safety is what free
+compile-time analysis yields, never something paid for at run time*. Build the
+constant-bound promise and both problems close at once: the port lands free and
+the guard becomes an assumption GCC can use rather than a branch it must take.
 
 ### And then it is a 1% loss, so it does not land
 
