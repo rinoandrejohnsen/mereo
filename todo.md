@@ -1764,6 +1764,58 @@ the whole of `plen` in front of `qoff` without the analysis having to relate the
 two. With that, **`equals` in mereo compiles, proves, and produces byte-identical
 output on the 84 MB log.**
 
+### Tried to land `equals` and could not: it REFUSES three correct programs
+
+The cost question is settled -- the port is +0.11%, about 0.6 instructions per
+call, and the clock cannot see it. Landing it fails for a different reason, and
+a sharper one.
+
+`tests/progs/views.mereo` line 45 says what it is testing: *"equals / starts /
+ends, including the short cases that must not read past"*. Then:
+
+    v.equals (other is "hello", other_length is 5, result is r)   -- v is 17 bytes
+
+The lengths differ, so `equals` returns before reading anything. Correct, and
+deliberately covered. With `_same` as a C helper the reads are invisible and it
+compiles. With `equals` in mereo they are visible, and the analysis REFUSES:
+
+    `["hello" + equals_91_i : 1]` reaches 17 bytes into 'literal', which is 5
+
+A false refusal, on a program written to exercise exactly this case. `views`,
+`jsondemo` and `json/demo` all fail. That is a harder blocker than a cost.
+
+**What is missing is narrow.** The early-out `leave equals when length !=
+other_length` means the two ARE equal inside, so each bounds the other. The
+fact set only read `<= < >= >`, so `!=` yielded nothing -- adding it, so an
+equality contributes a pair of bounds, is right and is kept in the scratch copy.
+It is not sufficient: at this call the length is a FIELD LOAD (`[v + 8 : 8]`,
+17) rather than a scalar, and the loop bound does not pick up the equality
+through it. That is where the next attempt starts.
+
+**Not landed, and the analysis change is not kept either** -- it proves nothing
+on the corpus, which by the rule this branch has learned three times means it is
+untested rather than safe. `core_equals_final.mereo` and `exam_masked.mereo`
+hold the work.
+
+### A cheaper way to bound the arena, found on the way
+
+The exam's `qp is arena + [t_off + four : 4]` reads a four-byte offset field
+nothing bounds. Two ways to state the bound, measured:
+
+| | instructions | shape |
+| --- | ---: | --- |
+| `ensure qoff + path_max <= arena_max` | +446,794 | compare, branch, error path |
+| mask + an arena one path longer | **+80,945** | one `and`, no branch |
+
+Masking is 5.5x cheaper. `arena_max` is a power of two, so the mask is a no-op
+on every value that can really be there, and declaring the arena
+`arena_max + path_max` puts the far end of any read from a masked offset inside
+it. 255 bytes of static storage instead of a run-time check -- which is the side
+of the barrier this project wants to be on.
+
+Worth doing on its own merits whenever the arena read is proved, and it does not
+depend on `equals` moving.
+
 ### Why the 1% is there -- and it is almost all the GUARD, not the port
 
 Two wrong answers before the right one, both worth recording because both were
