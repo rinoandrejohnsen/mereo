@@ -7,43 +7,12 @@ NEGATIVE -- those are not history, they are the reason not to try it again.
 
 The live backlog for the ANALYSIS is not here. It is
 `tests/validation/run.sh`, whose `KNOWN` table names every gap with its reason
-and prints all of them on every run -- twenty at the moment. A gap that starts
+and prints all of them on every run -- nineteen at the moment. A gap that starts
 behaving fails the suite, so the list cannot rot.
 
 ---
 
 ## Open, actionable
-
-### A mask is lost when the value comes round a loop
-
-**Twelve of the corpus's 162 unproved accesses are this one shape**, all in
-loglyze's hash probe, and Frama-C's Eva proves every one of them.
-
-`tests/validation/progs/s_mask_carried.mereo` is it in twenty lines: `hidx` is
-masked on entry and re-masked on the back edge, so it is 0..7 on every path and
-`hidx * 4` is 0..28 into a 32-byte table. Straight-line, the same mask proves
-(`s_mask`). Round a loop it does not.
-
-`iv`'s BitAnd is already order-independent -- it takes the bound from the mask
-alone and never needs the left side -- so the loss is in the JOIN over the back
-edge, not in the operator. Worth reading `reaching` at the loop head first.
-
-### The 12 that "want a run-time guard", and the policy question with it
-
-Those same twelve print `the index comes from input and nothing bounds it here
--- this wants a run-time guard`. That count was **zero** until 2026-08-24, when
-a store became an access; stores had never been checked, so they had never
-warned.
-
-That kills the standing argument for making this category FAIL the build. It was
-written when the cost was zero -- "the cheapest moment it will ever have" -- and
-the cost is no longer zero. Fix the mask first; the count should return to zero
-and the gate can go in for free.
-
-The case for the gate is unchanged and still good: one of the nine that prompted
-it was a remotely triggerable walk off a 512-byte record, and a build that says
-"wants a run-time guard" and passes anyway is a build whose warnings are
-furniture.
 
 ### Share the error-record formatter instead of splicing it
 

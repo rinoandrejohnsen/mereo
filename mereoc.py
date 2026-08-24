@@ -6675,19 +6675,94 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
     for s_, e_, _c, _b in sorted(loops, key=lambda L: L[1] - L[0]):
         for i in range(s_, e_ + 1): inner_loop.setdefault(i, (s_, e_))
 
+    _DEPTH = None
+
+    def depth_at(i):
+        """how many scopes enclose step `i`"""
+        nonlocal _DEPTH
+        if _DEPTH is None:
+            _DEPTH, d = [], 0
+            for st in steps:
+                t = st.get("type")
+                if t == "loop_end":
+                    d -= 1
+                _DEPTH.append(d)
+                if t == "loop_start":
+                    d += 1
+        return _DEPTH[i] if 0 <= i < len(_DEPTH) else 0
+
+    def _back_edges(lp):
+        """every step that sends control back to this loop's head: an explicit
+        `repeat` naming it, and its own end when that end loops."""
+        name = steps[lp[0]].get("name")
+        out = []
+        for k in range(lp[0] + 1, min(lp[1], len(steps))):
+            if steps[k].get("type") == "loop_again" and steps[k].get("name") == name:
+                out.append(k)
+        if lp[1] < len(steps) and steps[lp[1]].get("back"):
+            out.append(lp[1])
+        return out
+
     def reaching(n, at):
         """definitions of `n` that can reach step `at`: the nearest one before
         it, plus any inside the innermost enclosing loop (the back edge)."""
         defs = copy.get(n) or []
         before = [(i, e) for i, e in defs if i < at]
+        # A DEFINITION INSIDE A SCOPE THAT CLOSED DOES NOT KILL WHAT CAME
+        # BEFORE IT. `k is 40`, then `k is 4` inside a scope with a `leave` in
+        # it, is 40 OR 4 at the use -- and taking the nearest definition alone
+        # answered 4 and proved an access that runs off the end. CBMC finds it;
+        # mereoc accepted it in silence.
+        #
+        # A definition kills the earlier ones only if every path to the use
+        # runs it, which is exactly: no scope containing it closes before the
+        # use. `depth_at` is that test.
+        if len(before) > 1:
+            keep, dmin = [], None
+            for i, e in reversed(before):
+                keep.append((i, e))
+                d_i = depth_at(i)
+                if all(depth_at(k) >= d_i for k in range(i + 1, at)):
+                    break
+            before = list(reversed(keep))
         lp = inner_loop.get(at)
         # a definition inside this loop, before the use, KILLS whatever the back
-        # edge carried in -- it runs every iteration ahead of the use
-        if before and lp and before[-1][0] > lp[0]:
-            return [before[-1]]
-        out = [before[-1]] if before else []
+        # edge carried in -- it runs every iteration ahead of the use. Only if
+        # it really runs every iteration, which is what `before` now holds:
+        # more than one entry means the nearest sits in a scope that closed.
+        if before and lp and before[-1][0] > lp[0] and len(before) == 1:
+            return before
+        out = list(before)
         if lp:
-            out += [(i, e) for i, e in defs if lp[0] < i < lp[1] and i != (before[-1][0] if before else -1)]
+            # WHAT A BACK EDGE CAN CARRY, not everything the body writes. Every
+            # definition in the loop was taken before, including ones that are
+            # always overwritten before control gets back to the head: `hidx is
+            # hidx + 1` followed by `hidx is hidx & slot_mask` offered the
+            # UNMASKED value as a candidate, it evaluated to unknown, and the
+            # join threw the mask away. Twelve of loglyze's unproved accesses
+            # were that, and Frama-C proves all twelve.
+            #
+            # For each way back to the head -- an explicit `repeat` inside the
+            # body, or the loop's own end -- the definitions that can be live
+            # there are the ones from the last UNCONDITIONAL definition onward.
+            # Unconditional means at the body's own depth: one nested inside a
+            # scope may not have run, so an earlier value survives it and both
+            # are kept. That is what makes this a narrowing rather than a
+            # guess.
+            for b in _back_edges(lp):
+                depth, cut = 0, lp[0]
+                for k in range(lp[0] + 1, b):
+                    t = steps[k].get("type")
+                    if t == "loop_start":
+                        depth += 1
+                    elif t == "loop_end":
+                        depth -= 1
+                    elif (depth == 0 and t == "assign"
+                          and steps[k].get("name") == n):
+                        cut = k
+                for i, e in defs:
+                    if cut <= i < b and (i, e) not in out:
+                        out.append((i, e))
         if out: return out
         ini = sinit.get(n)
         if not before and ini is not None: return [(-1, str(ini))]

@@ -59,7 +59,6 @@ declare -A KNOWN=(
   [m_find_other_buffer]="...nor the one indexing a smaller buffer"
   [m_measure]="measure answers within its limit; not used as a bound"
   [m_search_ok]="search offset, checked, is still not a bound"
-  [s_mask_carried]="a mask is lost when the value comes round a loop"
   [m_json_ok]="an address held in a SCALAR: search hands equals `data + i`"
   [l_template_chain]="a promise through two splices"
   [l_template_chain_over]="...so its violation cannot be refused"
@@ -118,6 +117,10 @@ check refuses s_width_over          # ...one byte further on
 check proves  s_mask                # `& 15` bounds whatever is behind it
 check refuses s_mask_out            # ...a mask wider than the buffer
 check proves  s_mask_carried        # ...and the same mask round a loop
+check refuses s_cond_scope_kill     # a definition in a scope that CLOSED does
+                                    # not kill what came before it
+check refuses s_backedge_nested     # ...nor over a back edge: unconditional 40,
+check proves  s_backedge_nested_ok  # nested 4, so both reach the head
 check proves  s_modulo              # `% 16`
 check proves  s_shift               # `>> 4` on a byte
 check proves  s_nested_bound        # bounds from two enclosing scopes
