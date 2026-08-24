@@ -6786,9 +6786,21 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
     def size_name(e):
         e = e.strip()
         if e.endswith(".size"):
-            b = e[:-5]
+            b = e[:-5].strip()
             if b in bufs: return bufs[b]
             if b in inst: return psize(b)
+            # A STRING LITERAL knows its own length, and the emitter has always
+            # said so -- `keylen is "name".size` comes out as 4. The analysis
+            # did not, so a guard written against it bounded nothing: `leave
+            # words when "name".size < 8` is what stops a word-at-a-time
+            # `equals` reading eight bytes of a four-byte key, and without the
+            # size that guard said nothing at all.
+            m = _STR.match(b)
+            if m:
+                try:
+                    return len(m.group(1).encode().decode("unicode_escape"))
+                except Exception:
+                    return len(m.group(1))
         return None
 
     # ---------- interval arithmetic over the index expressions
@@ -7589,7 +7601,8 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
                 # and `*` -- two's complement agrees with it modulo 2**64, so
                 # an intermediate that wraps and comes back is still the same
                 # value -- and says nothing about a comparison.
-                if lo > hi or not all(_LONG_MIN <= v <= _LONG_MAX for v in (lo, hi)):
+                if lo > hi or not all(_LONG_MIN <= v <= _LONG_MAX
+                                     for v in (lo, hi)):
                     out.append(["bound-unresolved", bname, inner, ln, None,
                                 size, width, lit, origin])
                     continue

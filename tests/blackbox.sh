@@ -559,6 +559,12 @@ silent  access/call-reads-keeps-fact  call_reads_keeps_fact
 # binary spun until it was killed. One more line -- `i is i + 1` -- and the
 # same loop is ordinary, which is what the twin holds.
 silent  loop/leaves-fine          loop_leaves_fine
+# `"hello".size` is 5 and the emitter has always said so; the analysis
+# resolved `X.size` only where X was a buffer or an instance, so a bound
+# written against a literal bounded nothing. The twin walks a buffer with a
+# literal longer than it -- refused now, merely unproved before.
+silent  literal/size-bound        literal_size_bound
+rejects literal/size-past-end     literal_size_past_end "reaches 47 bytes"
 rejects loop/never-leaves         loop_never_leaves "the body never writes"
 rejects access/call-writes-kills-fact call_writes_kills_fact "reaches 65 bytes into 'small'"
 rejects access/loop-floor-past-end loop_floor_past_end "reaches 64 bytes into 'buf'"
