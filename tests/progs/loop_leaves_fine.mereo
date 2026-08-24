@@ -1,0 +1,21 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- The twin, and the reason the check is about what the body WRITES rather
+-- than about the shape of the loop: one more line, `i is i + 1`, and the same
+-- loop is ordinary. Silent on all 134 programs in the corpus, so this is
+-- what the quiet is worth.
+program goes
+  small is 16 bytes
+  i is 0
+  d is 0
+  terminal is already linux.file (descriptor is 1)
+  spin goes
+    leave spin when i > 10
+    d is d + 1
+    i is i + 1
+    repeat spin
+  end
+  [small : 1] is d
+  terminal.write (buffer is small, count is 1)
+end

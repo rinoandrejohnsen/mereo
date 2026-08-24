@@ -543,6 +543,12 @@ silent  access/loop-floor-bounds  loop_floor_bounds
 # sixteen bytes is refused. Taking every connected name was why a length the TLS
 # stack bounds with `ensure total <= capacity` read back as 0..65535.
 silent  access/call-reads-keeps-fact  call_reads_keeps_fact
+# A loop whose only exit tests a name the body never writes cannot leave
+# through it: no passes or all of them. Accepted in silence before, and the
+# binary spun until it was killed. One more line -- `i is i + 1` -- and the
+# same loop is ordinary, which is what the twin holds.
+silent  loop/leaves-fine          loop_leaves_fine
+rejects loop/never-leaves         loop_never_leaves "the body never writes"
 rejects access/call-writes-kills-fact call_writes_kills_fact "reaches 65 bytes into 'small'"
 rejects access/loop-floor-past-end loop_floor_past_end "reaches 64 bytes into 'buf'"
 rejects access/field-equality-past-end field_equality_past_end "reaches 21 bytes into 'buf'"

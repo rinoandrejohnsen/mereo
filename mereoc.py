@@ -6119,6 +6119,67 @@ def check_sibling_temp(slots, steps):
             wrote.setdefault(cur[-1], set()).add(st["name"])
 
 
+def check_never_leaves(steps):
+    """Refuse a loop that cannot leave through any of its own exits.
+
+    `leave spin when i > 10` where the body never touches `i` is a condition
+    that reads the same on the tenth pass as on the first. Whatever it says on
+    entry it says forever, so the loop runs zero times or it runs for ever --
+    and either way the `repeat` is a mistake, because a loop that cannot
+    repeat twice did not want one and a loop that cannot stop was not meant.
+
+    This is not a termination proof and does not pretend to be one. It is the
+    case where the answer is already in the step list: nothing the body writes
+    appears in any exit it has. mereo makes that cheap to see, because every
+    way out of a loop is a `leave` naming it, written down.
+
+    Conservative wherever the body could change something this cannot follow:
+    a call, a store, or a `leave` aimed at an enclosing scope is enough to
+    leave the loop alone. Silent on all 134 programs in the corpus.
+    """
+    pairs, stack = [], []
+    for i, st in enumerate(steps):
+        if st.get("type") == "loop_start":
+            stack.append(i)
+        elif st.get("type") == "loop_end" and stack:
+            pairs.append((stack.pop(), i))
+    for a, b in pairs:
+        if not steps[b].get("back"):
+            continue                       # a plain scope, not a loop
+        written, exits, opaque = set(), [], False
+        for k in range(a + 1, b):
+            st, t = steps[k], steps[k].get("type")
+            if t == "assign" and st.get("name"):
+                written.add(st["name"])
+            elif t in ("call", "bare", "store", "fstore", "atomic"):
+                opaque = True
+            elif t == "loop_start":
+                opaque = True              # an inner loop; its exits are not ours
+            elif t == "loop_exit":
+                if st.get("name") == steps[a].get("name"):
+                    exits.append(st.get("cond"))
+                else:
+                    opaque = True          # leaves an enclosing scope: a way out
+        if steps[b].get("cond"):
+            exits.append(steps[b]["cond"])
+        if opaque or not exits:
+            continue
+        subjects = set()
+        for c in exits:
+            subjects |= {n for n in re.findall(r"[A-Za-z_]\w*", str(c))
+                         if n not in ("as", "signed", "unsigned", "big",
+                                      "little", "size", "of")}
+        if subjects and not (subjects & written):
+            nm = steps[a].get("name") or "the loop"
+            conds = "`, `".join(str(c) for c in exits if c)
+            names = "`, `".join(sorted(subjects))
+            fail(f"line {steps[a].get('line')}: `{nm}` repeats, and the only "
+                 f"way out is `{conds}` -- but the body never writes `{names}`, "
+                 "so that reads the same on every pass. The loop runs no times "
+                 "or it runs for ever; either way the `repeat` is not what was "
+                 "meant.")
+
+
 def check_shadowed_counters(steps):
     """Refuse two nested loops whose bounds test the same scalar.
 
@@ -7884,6 +7945,7 @@ def plan(definitions, slots, steps, overrides):
     # pass runs here, where the flat step list first exists.
     steps, _dropped = drop_proved_checks(definitions, slots, steps)
     ACCESS_VERDICTS[:] = classify_accesses(definitions, slots, steps)
+    check_never_leaves(steps)
     check_shadowed_counters(steps)
     check_sibling_temp(slots, steps)
     refuse_proven_wrong(ACCESS_VERDICTS)

@@ -1,0 +1,24 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- The only way out of `spin` is `leave spin when i > 10`, and the body never
+-- writes `i`. That condition reads the same on the thousandth pass as on the
+-- first, so the loop runs no times or it runs for ever. mereoc accepted this
+-- in silence and the binary spun until it was killed.
+--
+-- Not a termination proof, and not trying to be one: this is the case where
+-- the answer is already in the step list, and mereo makes it cheap to see
+-- because every way out of a loop is a `leave` naming it.
+program goes
+  small is 16 bytes
+  i is 0
+  d is 0
+  terminal is already linux.file (descriptor is 1)
+  spin goes
+    leave spin when i > 10
+    d is d + 1
+    repeat spin
+  end
+  [small : 1] is d
+  terminal.write (buffer is small, count is 1)
+end
