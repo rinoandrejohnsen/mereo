@@ -124,6 +124,12 @@ check proves  s_size_of             # the buffer states its own size
 check proves  s_port_store          # a template that only STORES, in range
 check refuses s_port_store_over     # ...past the end. Nothing is READ here.
 check refuses s_port_load_over      # the same template READING, for contrast
+check proves  s_dead_after_leave     # a `leave` whose condition FOLDS to true
+                                    # puts the rest of its scope out of reach,
+                                    # and an access that cannot happen is not
+                                    # something to ask a bound for
+check refuses s_dead_leave_false    # ...folds to FALSE, so the body does run
+check refuses s_dead_leave_nested   # ...nested, so it may never be reached
 check proves  s_subtract            # `k - 8` under a guard that keeps k >= 8
 check reports s_subtract_under      # ...with nothing keeping it there
 

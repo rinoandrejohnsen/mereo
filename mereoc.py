@@ -7573,8 +7573,70 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
                         return True
         return False
 
+    def dead_after_leave():
+        """Steps a `leave` with a CONSTANT-TRUE condition puts out of reach.
+
+        `leave words when length < 8`, spliced with a five-byte literal for
+        `length`, reads `5 < 8`: the scope is left every time and its body
+        never runs. The body holds `[data + length - 8 : 8]`, which is an
+        offset of -3, and asking the programmer to bound an access that cannot
+        happen is asking for something that cannot be written.
+
+        This is CONSTANT FOLDING on one guard and nothing more. Both sides must
+        be exact -- floor equal to ceiling -- so the comparison is decided by
+        arithmetic rather than by intervals, and no two facts are ever combined.
+        The contradiction test that once marked live code dead did combine them,
+        which is why this does not.
+
+        Only a `leave` at the TOP of the scope it names counts. One nested
+        inside a conditional scope may never be reached, so what follows it is
+        not dead.
+        """
+        stack, endof = [], {}
+        for i, st in enumerate(steps):
+            t = st.get("type")
+            if t == "loop_start":
+                stack.append(i)
+            elif t == "loop_end" and stack:
+                endof[stack.pop()] = i
+        dead = set()
+        for a, e in endof.items():
+            name, depth = steps[a].get("name"), 0
+            for k in range(a + 1, e):
+                t = steps[k].get("type")
+                if t == "loop_start":
+                    depth += 1
+                elif t == "loop_end":
+                    depth -= 1
+                elif (depth == 0 and t == "loop_exit"
+                      and steps[k].get("name") == name and steps[k].get("cond")):
+                    m = _CMPX.match(str(steps[k]["cond"]))
+                    if not m:
+                        continue
+                    # READ IT JUST BEFORE. At `k` the facts already carry
+                    # this leave's own consequence -- `leave when n < 8` puts
+                    # `n >= 8` in scope -- so asking about `n` there answers
+                    # (8, 4) for an `n` that is 4: the guard applied to its own
+                    # condition, and an inverted interval that decides nothing.
+                    at = k - 1 if k else k
+                    lo1, hi1 = iv(m.group(1).strip(), at)
+                    lo2, hi2 = iv(m.group(3).strip(), at)
+                    if None in (lo1, hi1, lo2, hi2) or lo1 != hi1 or lo2 != hi2:
+                        continue
+                    op = m.group(2)
+                    fired = {"<": lo1 < lo2, "<=": lo1 <= lo2, ">": lo1 > lo2,
+                             ">=": lo1 >= lo2, "==": lo1 == lo2,
+                             "!=": lo1 != lo2}.get(op)
+                    if fired:
+                        dead |= set(range(k + 1, e))
+        return dead
+
+    UNREACHED = dead_after_leave()
+
     out = []
     for i, st in enumerate(steps):
+        if i in UNREACHED:
+            continue
         for s in _acc_strings(st):
             for inner in _accesses(s):
                 body, w = _split_width(inner)
