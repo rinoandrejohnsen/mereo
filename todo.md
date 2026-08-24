@@ -14,6 +14,28 @@ behaving fails the suite, so the list cannot rot.
 
 ## Open, actionable
 
+### Make "wants a run-time guard" fail the build
+
+**The cost is zero again as of 2026-08-25**, which is the cheapest this will
+ever be. That category counts an index that came from OUTSIDE the program with
+nothing bounding it -- the one the design calls a mistake waiting to happen, as
+against "a guard is in scope and could not be tied to this access", which is a
+limit of the analysis and not a hole.
+
+It was 9, then 0, then 12 on 2026-08-24 when a store became an access, and 0
+again once a definition in a closed scope stopped killing the one before it.
+Across `programs`, `examples` and `exam/mereo`: **zero**.
+
+One program would fail the gate: `tests/progs/find_offset_past_end.mereo`,
+which exists to produce exactly this warning and is a `reports` gate in
+`tests/blackbox.sh`. So the gate needs the test suite to be able to ask for the
+warning without the build refusing -- an env var the suite sets, or the gate
+skipping `tests/progs`. Decide which before writing it.
+
+The case for it is unchanged: one of the nine that prompted this was a remotely
+triggerable walk off a 512-byte record, and a build that says "wants a run-time
+guard" and passes anyway is a build whose warnings are furniture.
+
 ### Share the error-record formatter instead of splicing it
 
 `_write_value` is spliced into every error block. Making it a real
