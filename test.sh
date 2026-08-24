@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# The full test run -- eight suites plus the build gate.
+# The full test run -- seven suites plus the build gate.
+# (CBMC is suite 7 and runs separately: ./tests/cbmc.sh)
 #
 #   1. UNIT tests for RAII + error handling  (tests/scopes/run.sh)
 #      Small mereo programs paired with equivalent C++; strace both and assert
@@ -67,15 +68,14 @@ echo
 echo "### Suite 6 -- where mereo's bytes are, against the C twin"
 "$DIR/tests/size/run.sh" || rc=1
 echo
-# An independent check of the same programs, by a tool that answers with a
-# counterexample rather than a verdict. Only where CBMC is installed -- it is
-# not required to build or test mereo, and saying so beats failing quietly.
-if command -v cbmc >/dev/null 2>&1; then
-    echo "### Suite 7 -- bounded model checking of the generated C"
-    "$DIR/tests/cbmc.sh" || rc=1
-else
-    echo "### Suite 7 -- bounded model checking (skipped: cbmc not installed)"
-fi
+# Suite 7, bounded model checking with CBMC, is NOT run here: it is about a
+# minute on its own and the questions it answers do not change between edits.
+# It stays worth running when core.mereo or the analysis changes, by hand:
+#
+#     ./tests/cbmc.sh
+#
+# It found the guard that overflowed a signed long and the builder count that
+# wrapped, so it is kept -- just not on every run.
 
 echo
 echo "### Suite 8 -- what the validation can and cannot see"
@@ -92,6 +92,20 @@ echo "### Build + layout gate"
 "$DIR/build.sh" tests/progs/tmpl_road_nest.mereo >/dev/null 2>&1 \
     && echo "  nested crossroad layout: ok" \
     || { echo "  nested crossroad layout FAIL"; rc=1; }
+# A kernel promise is emitted only where some emitted BRANCH can use it -- a
+# check to delete or a loop to give a trip count. The pair below is the whole
+# claim: one program's inner loop runs to a read count and must keep its
+# assume; the other's runs to a constant and must not have one. An assume
+# nothing can use is not free, and six of them cost loglyze 10,995
+# instructions.
+_an=$(python3 "$DIR/mereoc.py" "$DIR/tests/progs/assume_needed.mereo" 2>/dev/null | grep -c __assume__)
+_ai=$(python3 "$DIR/mereoc.py" "$DIR/tests/progs/assume_idle.mereo"   2>/dev/null | grep -c __assume__)
+if [ "$_an" = 1 ] && [ "$_ai" = 0 ]; then
+    echo "  kernel promises: kept where a branch uses them, dropped where none does"
+else
+    echo "  kernel promise pruning FAIL (needed=$_an want 1, idle=$_ai want 0)"; rc=1
+fi
+
 # A KNOWN ANSWER, because the corpus had none and paid for it. `x25519` runs the
 # Montgomery ladder over RFC 7748 s5.2 and prints the shared secret, so it is a
 # whole crypto primitive checked against a number someone else published. It

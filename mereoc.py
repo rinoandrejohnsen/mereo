@@ -5770,6 +5770,74 @@ _ARRDECL = re.compile(r"^(\s*)(?:unsigned )?char (\w+)\[(\d+)\]"
 # have anything to gain. See todo.md.
 
 
+def prune_assumes(body):
+    """Drop a kernel promise no emitted CHECK can use.
+
+    An assume earns its place by letting GCC delete a branch mereo could not
+    delete itself. Where no surviving check mentions the value it bounds there
+    is no branch to delete, and what is left is a hint the optimiser weighs and
+    sometimes gets wrong: loglyze carried six, executed 10,995 MORE
+    instructions for them (+0.67%), and came out 581 bytes SMALLER -- GCC had
+    changed its inlining and lost.
+
+    Where a check DOES depend on it the fact is worth a great deal. Measured on
+    one hot loop over a span whose length is a read count: with the promise
+    29,000,043 instructions, without it 103,000,036, and 3.8x on the clock. So
+    this prunes rather than removes.
+
+    The test is whether the value the promise BOUNDS -- the left side, the one
+    whose range it narrows -- is named in a check that survived. A backward
+    slice through the assignments was tried first and pruned nothing: from
+    thirty-two checks it reaches almost every name in the program.
+
+    Verified by measuring the corpus rather than by argument: no program
+    executes more instructions with this in place. See todo.md."""
+    # EVERY emitted branch, not only the fallible ones. A promise earns its
+    # place as much by giving a loop a trip count as by deleting a check:
+    # `n <= 64` over `walk: if (i >= n) goto done` was worth 200,000
+    # instructions in one measurement, and looking only at `__builtin_expect`
+    # checks missed it entirely.
+    checks, keep = [], []
+    for ln in body:
+        t = ln.strip()
+        m = re.match(r"if \(__builtin_expect\(!\((.*)\), 0\)\) goto ", t)
+        if m:
+            checks.append(m.group(1))
+            continue
+        m = re.match(r"if \((.*)\) goto ", t)
+        if m:
+            checks.append(m.group(1))
+    # which names a check bounds, and FROM WHICH SIDE. An upper bound decides
+    # nothing about a check that asks for a floor: loglyze promises
+    # `got <= 65536` and checks `got >= 0`, and keeping that one assume cost
+    # every instruction the six together cost.
+    WORDS = {"long", "unsigned", "int", "char", "signed", "short"}
+    above, below = set(), set()
+    for c in checks:
+        for cm in re.finditer(r"([^()&|]+?)\s*(<=|<|>=|>)\s*([^()&|]+)", c):
+            lo = set(re.findall(r"[A-Za-z_]\w*", cm.group(1))) - WORDS
+            hi = set(re.findall(r"[A-Za-z_]\w*", cm.group(3))) - WORDS
+            if cm.group(2) in ("<", "<="):
+                above |= lo          # `x < K` wants an upper bound on x
+                below |= hi          # ...and a lower bound on K
+            else:
+                below |= lo
+                above |= hi
+    for ln in body:
+        m = re.match(r"\s*__attribute__\(\(__assume__\((.*)\)\)\);$", ln)
+        if m:
+            am = re.match(r"\s*(.+?)\s*(<=|<|>=|>|==)\s*(.+?)\s*$", m.group(1))
+            if am:
+                subj = set(re.findall(r"[A-Za-z_]\w*", am.group(1))) - WORDS
+                want = above if am.group(2) in ("<", "<=") else below
+                if am.group(2) == "==":
+                    want = above | below
+                if subj and not (subj & want):
+                    continue
+        keep.append(ln)
+    return keep
+
+
 def scope_spliced_arrays(body):
     """Put a template expansion's private locals inside a `{ }` around the
     statements that use them, so GCC gives two expansions ONE stack slot
@@ -9588,6 +9656,7 @@ def transpile(sources, prog):
         for tgt, val in r["assigns"]:
             body.append(f"    {tgt} = {val};")
         body.append(f"    goto {r['resume']};")
+    body = prune_assumes(body)
     body = scope_spliced_arrays(body)
     body.append("}")
 
