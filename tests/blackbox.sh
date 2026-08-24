@@ -66,6 +66,13 @@ bb span            span     $'host=localhost\nport=8080\n'  0 \
 bb span/no-final-nl span    $'a=1\nb=2'       0  $'a -> 1\nb -> 2'
 bb span/no-equals   span    $'bare\nk=v\n'    0  $'bare -> \nk -> v'
 bb span/empty       span    ""               0  ""
+# `{"a":1}` has no quote after the key, so `find` answers the length it was
+# given and the offset lands one PAST a seven-byte document -- reported as the
+# start of a string value, with the following `length - start` underflowing to
+# 2**64-1. A well-formed document is untouched; a malformed one now fails into
+# the release tower instead of answering an offset outside its own backing.
+bb json/quoted-value  json_no_quote  '{"a":"hi"}'  0  "hi"
+bb json/no-quote      json_no_quote  '{"a":1}'     1  ""
 # `builder.add` guards with `ensure count + length <= limit`. As a single
 # addition that is the wrong check -- a field is UNSIGNED, so a count of
 # 2**64-1 makes the sum 7, which fits, and the append writes at data + 2**64-1.

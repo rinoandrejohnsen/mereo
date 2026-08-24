@@ -1,0 +1,25 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- `{"a":1}` is seven bytes and has no quote after the key, so `find` answers
+-- the length it was given and `start is off + q1off + 1` lands on EIGHT --
+-- which `json.text` reported as the start of a string value. `length - start`
+-- is unsigned, so it underflowed to 2**64-1 and the second `find` was handed
+-- that as its extent.
+--
+-- Found by CBMC on the generated C: "arithmetic overflow on unsigned - in
+-- doc.length - off". Nothing in the corpus reached it, because every program
+-- that reads JSON here reads a constant one.
+program goes
+  raw is 128 bytes
+  n is 0
+  start is 0
+  vlen is 0
+  input is already linux.file (descriptor is 0)
+  terminal is already linux.file (descriptor is 1)
+  input.read (buffer is raw, capacity is 128, count is n)
+  doc is already json (content is raw, length is n)
+  doc.text (key is "a", keylen is "a".size, start is start, vlen is vlen)
+  field is raw + start
+  terminal.write (buffer is field, count is vlen)
+end

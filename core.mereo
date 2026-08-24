@@ -716,10 +716,18 @@ value_at (content, length, key, keylen, offset) goes
                needle_length is keylen,
                offset is keyat)
   ensure keyat < length
+  -- the key must FIT, not merely start inside: `keyat < length` leaves
+  -- `keyat + keylen` free to land past the end, and `length - offset` is
+  -- unsigned, so it underflows to 2**64-1 rather than going negative.
+  ensure keyat + keylen <= length
   offset is keyat + keylen
   rem is length - offset
   at is content + offset
   text.find (data is at, length is rem, byte is 58, offset is coloff)
+  -- `find` answers the LENGTH it was given when the byte is not there, so
+  -- stepping past it walks off the end. A key with no colon after it is a
+  -- malformed document, and this is where it says so.
+  ensure coloff < rem
   offset is offset + coloff + 1
 end
 
@@ -742,7 +750,14 @@ json is
     rem is length - off
     at is content + off
     text.find (data is at, length is rem, byte is 34, offset is q1off)
+    -- the same step past a byte that was never found. `{"a":1}` has no quote
+    -- after the key, so `q1off` comes back as `rem` and `start` lands one PAST
+    -- the seven bytes of the document -- which this answered as the start of a
+    -- string value. `length - start` then underflowed and the second `find`
+    -- was handed 2**64-1 as its extent.
+    ensure q1off < rem
     start is off + q1off + 1
+    ensure start <= length
     rem is length - start
     at is content + start
     text.find (data is at, length is rem, byte is 34, offset is vlen)
