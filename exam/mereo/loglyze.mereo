@@ -295,7 +295,14 @@ program goes
             hit goes
               leave hit when [t_hash + four : 4] != h
               leave hit when [t_len + two : 2] != plen
-              qp is arena + [t_off + four : 4]
+              -- The offset is read back from the TABLE, so nothing about it
+              -- is known here -- four bytes wide is 0..4294967295 as far as
+              -- anything can tell, and `equals` reads eight bytes at a time
+              -- from it. What the program relies on is that an entry was
+              -- stored with room for its path, and that is stated here.
+              qoff is [t_off + four : 4]
+              ensure qoff <= arena_max - path_max
+              qp is arena + qoff
               same is 0
               text.equals (data is ln + ps, length is plen,
                             other is qp, other_length is plen, result is same)

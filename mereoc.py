@@ -534,50 +534,6 @@ HELPER_C = {
         '    return _i;\n'
         '}',
     # equal bytes: 1 if _p[0.._pl) and _q[0.._ql) have the same length AND bytes.
-    "_same":
-        'static inline __attribute__((always_inline)) long _same(long _pp, long _pl, long _qq, long _ql) {\n'
-        '    if (_pl != _ql) return 0;\n'
-        '    const unsigned char *_p = (const unsigned char *)_pp;\n'
-        '    const unsigned char *_q = (const unsigned char *)_qq;\n'
-        # Eight bytes a step, and the last eight OVERLAP the ones before rather
-        # than being walked a byte at a time. Equality does not care about byte
-        # order or alignment, so a whole word is one compare -- where the byte
-        # loop this replaced spent two five-cycle loads and about five uops on
-        # every single byte.
-        #
-        # The overlap is what removes the tail: a 13-byte name is [0,8) and then
-        # [5,13), so two compares and no loop, against thirteen iterations. Both
-        # reads stay inside the string, so this needs no more of either buffer
-        # than the byte loop did.
-        '    if (_pl >= 8) {\n'
-        '        long _i = 0;\n'
-        '        unsigned long _a, _b;\n'
-        '        while (_i + 8 <= _pl) {\n'
-        '            __builtin_memcpy(&_a, _p + _i, 8);\n'
-        '            __builtin_memcpy(&_b, _q + _i, 8);\n'
-        '            if (_a != _b) return 0;\n'
-        '            _i += 8;\n'
-        '        }\n'
-        '        if (_i != _pl) {\n'
-        '            __builtin_memcpy(&_a, _p + _pl - 8, 8);\n'
-        '            __builtin_memcpy(&_b, _q + _pl - 8, 8);\n'
-        '            if (_a != _b) return 0;\n'
-        '        }\n'
-        '        return 1;\n'
-        '    }\n'
-        # Four to seven bytes: the same overlap once, so no loop at all.
-        '    if (_pl >= 4) {\n'
-        '        unsigned int _a, _b, _c, _d;\n'
-        '        __builtin_memcpy(&_a, _p, 4);\n'
-        '        __builtin_memcpy(&_b, _q, 4);\n'
-        '        __builtin_memcpy(&_c, _p + _pl - 4, 4);\n'
-        '        __builtin_memcpy(&_d, _q + _pl - 4, 4);\n'
-        '        return _a == _b && _c == _d;\n'
-        '    }\n'
-        '    long _i = 0;\n'
-        '    while (_i < _pl && _p[_i] == _q[_i]) _i++;\n'
-        '    return _i == _pl;\n'
-        '}',
 }
 
 SYSCALL_WRAPPER = {

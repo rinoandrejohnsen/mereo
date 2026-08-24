@@ -101,14 +101,6 @@ scan is helper _scan
   ensure offset <= length
 end
 
-same is helper _same
-  data in
-  length in
-  other in
-  other_length in
-  result out
-end
-
 text is
   find (data, length, byte, offset) goes
     scan (data is data, length is length, byte is byte, offset is offset)
@@ -117,12 +109,54 @@ text is
   -- ANSWERS 1 FOR EQUAL, not 0. It is named for what it reports, because
   -- `compare` next to C's `memcmp` reads backwards and the mistake is silent:
   -- a table that never finds an entry, every key counted once.
+  -- WRITTEN IN MEREO, not a C helper. Eight bytes a step, and a last eight
+  -- that OVERLAP the ones before rather than a byte-at-a-time tail: a
+  -- thirteen-byte name is [0,8) then [5,13), two compares and no loop against
+  -- thirteen iterations. Both reads stay inside the region, so this needs no
+  -- more of either side than the byte loop did.
+  --
+  -- `leave words when length < 8` is what keeps `length - 8` out of reach for
+  -- a short key, and it took a rule for a `leave` whose condition folds to a
+  -- constant before the analysis could see that.
+  --
+  -- The C it replaced was not safer for being C, only unexamined: Frama-C
+  -- cannot prove `_p[_i]` in bounds there either. Byte-identical output on a
+  -- 169 KB and an 84 MB log, and the same wall clock -- median ratio 1.003
+  -- over nine interleaved runs.
   equals (data, length, other, other_length, result) goes
-    same (data is data,
-          length is length,
-          other is other,
-          other_length is other_length,
-          result is result)
+    i is 0
+    x is 0
+    y is 0
+    result is 0
+    compare goes
+      leave compare when length != other_length
+      words goes
+        leave words when length < 8
+        step goes
+          leave step when i + 8 > length
+          x is [data + i : 8]
+          y is [other + i : 8]
+          leave compare when x != y
+          i is i + 8
+          repeat step
+        end
+        tail goes
+          leave tail when i >= length
+          x is [data + length - 8 : 8]
+          y is [other + length - 8 : 8]
+          leave compare when x != y
+        end
+        result is 1
+        leave compare
+      end
+      single goes
+        leave single when i >= length
+        leave compare when [data + i : 1] != [other + i : 1]
+        i is i + 1
+        repeat single
+      end
+      result is 1
+    end
   end
 
   -- itoa, written in mereo rather than kept as a C helper. mereo has no `if`,

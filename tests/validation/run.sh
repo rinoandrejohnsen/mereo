@@ -59,6 +59,7 @@ declare -A KNOWN=(
   [m_find_other_buffer]="...nor the one indexing a smaller buffer"
   [m_measure]="measure answers within its limit; not used as a bound"
   [m_search_ok]="search offset, checked, is still not a bound"
+  [m_json_ok]="an address held in a SCALAR: search hands equals `data + i`"
   [l_template_chain]="a promise through two splices"
   [l_template_chain_over]="...so its violation cannot be refused"
   [s_loop_floor]="the floor under a descending counter"
