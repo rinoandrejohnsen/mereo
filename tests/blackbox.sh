@@ -525,7 +525,12 @@ reports access/slide-unpaired span_slide_unpaired "\`[w.data + copy_3_i : 1]\` n
 # shortens the length together, and through `take` and `trim`, which narrow via
 # a conditional store. If any of that machinery breaks, this goes noisy rather
 # than wrong, and nothing else would catch it.
-silent  access/views-silent  views
+# `views` was SILENT until a store became an access. It is not silent now and
+# should not be: every one of these is a builder writing at `data + count + i`,
+# which needs `count + length <= limit <= data.size` -- stated, and relational,
+# and not something an interval can carry. Reported rather than proved is the
+# honest answer, and it was silence before.
+reports access/views-builder-stores views "no bound on the index is in scope"
 # A descending index is as provable as an ascending one. `leave X when i <= 0`
 # is a FLOOR under everything after it, the mirror of the ceiling a `>=` exit
 # states -- and until that was read as one, a counting-down LOAD proved nothing

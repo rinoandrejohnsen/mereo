@@ -5733,9 +5733,27 @@ def _acc_const(e):
     return None
 
 def _acc_strings(st):
+    """Every string in a step that might hold an access.
+
+    A STORE'S TARGET IS AN ACCESS, and it did not look like one. It is kept as
+    a bare address and a width -- `addr` of `buf + i`, `size` of 1 -- while
+    `_accesses` scans for `[...]`, so a store found nothing and went
+    unclassified. A LOAD past the end of a template's buffer was refused and
+    the identical STORE was proved: `text.copy` was only ever caught because
+    its right-hand side reads the source, and `text.fill`, which writes and
+    reads nothing, wrote past its target in silence.
+
+    Put back into brackets here, so a store is checked by the same code that
+    checks everything else. `addr` is then skipped below rather than scanned
+    raw: it may itself contain loads -- `[page : 8] + [page + 8 : 8] + j` is
+    one -- and those are already inside the form built here."""
     out = []
+    if st.get("type") == "store" and st.get("addr"):
+        w = str(st.get("size") or "1").strip() or "1"
+        out.append("[%s : %s]" % (str(st["addr"]).strip(), w))
     for k, v in st.items():
         if k in ("type","name","method","inst","label","pname","kind","op"): continue
+        if k == "addr" and st.get("type") == "store": continue
         if isinstance(v, str): out.append(v)
         elif isinstance(v, list):
             for it in v:
@@ -7527,6 +7545,34 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
                 return True
         return False
 
+    def loose_bound(e, at):
+        """was anything in this index bounded by a fact about a SUM?
+
+        `facts` keeps `key + others <= rhs`; where `others` is non-empty the
+        bound `tighten` can derive is looser than what was written, so an index
+        built on it is not PROVEN out of range, only unproven."""
+        # HERE ONLY. Following reaching definitions as well caught names that
+        # had nothing to do with the bound actually used, and downgraded a
+        # refusal that should stand -- `loop_floor_past_end` stopped being
+        # refused, which is a planted violation and a gate.
+        here = facts.get(at, {})
+        for n in set(re.findall(r"[A-Za-z_][\w.]*", str(e))):
+            for ent in here.get(n, ()):
+                if len(ent) < 3 or not ent[2]:
+                    continue
+                # A CONSTANT other term loses nothing: `i + 4 <= n` gives
+                # `i <= n - 4` exactly, because 4's floor and ceiling are the
+                # same number. It is a term with ROOM in it that makes the
+                # reduction loose -- subtracting its floor throws away the
+                # part that was correlated. Treating every `others` as loose
+                # stopped `loop_floor_past_end` being refused, and that is a
+                # planted violation with a gate on it.
+                for t in ent[2]:
+                    tl, th = iv(str(t), at)
+                    if tl is None or th is None or tl != th:
+                        return True
+        return False
+
     out = []
     for i, st in enumerate(steps):
         for s in _acc_strings(st):
@@ -7607,6 +7653,17 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
                                 size, width, lit, origin])
                     continue
                 verdict = "proved" if hi + width <= size else "OUT"
+                # A RELATIONAL FACT, REDUCED, IS AN OVER-APPROXIMATION -- the
+                # same reasoning as the load width below, and it cannot support
+                # a refusal either. `ensure tlen + inner_len <= tr.size` states
+                # exactly what the copy at `tr + tlen` needs, and `tighten`
+                # can only use it by subtracting the LOWER bound of the other
+                # term: `tlen <= tr.size`, with the correlation gone. Adding a
+                # loop index on top then reads as 17035 bytes into 16384, and
+                # the TLS client -- which states the invariant on the line
+                # above the copy -- was refused for saying so.
+                if verdict == "OUT" and loose_bound(idx, i):
+                    verdict = "bound-unresolved"
                 if verdict == "OUT" and _accesses(idx):
                     # The index reads memory, and a LOAD is bounded by its own
                     # WIDTH -- a 4-byte field is 0..4294967295 whatever it

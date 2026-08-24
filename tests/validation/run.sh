@@ -35,12 +35,18 @@ ONLY=${1:-}
 # every run. A listed case that starts behaving fails the suite too: that is
 # the whole point of writing them down rather than editing the expectation.
 declare -A KNOWN=(
-  # --- MISSED. A store is not checked the way a load is. `copy` is caught
-  #     only because its right-hand side READS the source; a template that
-  #     just writes has no such side, and neither `fill` nor `format` is seen.
-  [s_port_store_over]="a store through a template port is not checked"
-  [m_fill_over]="text.fill writes past its target, unseen -- store side"
-  [m_format_small]="text.format writes digits past its buffer -- store side"
+  # --- A STORE IS NOW CHECKED, and what it runs into is the relational limit.
+  #     `[digits + j : 1]` needs `j <= digits.size`, which nothing states;
+  #     the builder needs `count + length <= limit <= data.size`, which IS
+  #     stated and which an interval cannot carry -- reducing it uses the
+  #     LOWER bound of the other term and loses the correlation. Reported
+  #     rather than proved, which is the honest answer and was silence before.
+  [m_format]="format writes at j with nothing tying j to the buffer"
+  [m_format_small]="...so the too-small buffer is reported, not refused"
+  [m_number]="the same, through text.number"
+  [m_builder_ok]="builder writes at data + count: count + length <= limit is relational"
+  [m_builder_number]="the same, writing a decimal"
+  [l_builder_over_read]="the same, appending after a read"
 
   # --- FALSE POSITIVE. The code says the WIDTH of a load is an over-approximation
   #     and cannot support a refusal. Assigning it to a name evades that rule.
