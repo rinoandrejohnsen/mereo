@@ -240,6 +240,58 @@ def split_conjuncts(cond):
     return [p for p in parts if p]
 
 
+def top_split(expr, sep="+"):
+    """Split on `sep` at bracket depth zero.
+
+    `[sink + 8 : 8] + 8` has two terms, not three. A plain `split("+")` finds
+    the one inside the load and reports the shape as something it is not."""
+    out, buf, depth = [], "", 0
+    for ch in str(expr):
+        if ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth -= 1
+        if ch == sep and depth == 0:
+            out.append(buf); buf = ""
+        else:
+            buf += ch
+    out.append(buf)
+    return [x.strip() for x in out]
+
+
+def nowrap_cond(st):
+    """`A + B op C` written so the sum cannot wrap.
+
+    The obvious emission is a single compare, and it is wrong: a field is
+    unsigned, so `ensure count + length <= limit` with `count` at 2**64-1
+    computes 7, passes, and the builder writes past its own backing -- exit 0,
+    no diagnostic, the byte simply gone. Demonstrated, not theorised.
+
+    `A + B <= C` is `B <= C and A <= C - B`. The subtraction cannot wrap once
+    its own guard holds, and the guard is the part that says the extent alone
+    already fits. The `>` direction is the same statement negated, which is
+    why it is an `or`.
+
+    Only for a sum the analysis could NOT prove small: `classify_accesses`
+    marks the rest `nowrap`, and those keep the single compare, so nothing in
+    the corpus pays for this."""
+    cond = str(st.get("cond") or "")
+    if st.get("nowrap"):
+        return cond
+    m = _CMPX.match(cond)
+    if not m:
+        return cond
+    lhs, op, rhs = m.group(1).strip(), m.group(2), m.group(3).strip()
+    parts = top_split(lhs)
+    if (len(parts) != 2 or len(top_split(lhs, "-")) != 1
+            or op not in ("<=", "<", ">", ">=")):
+        return cond
+    a, b = parts
+    if op in ("<=", "<"):
+        return f"{b} {op} {rhs} && {a} {op} ({rhs}) - ({b})"
+    return f"{b} {op} {rhs} || {a} {op} ({rhs}) - ({b})"
+
+
 def render_choice_cond(cond, scalars, buffers, ln):
     """A condition -> a C predicate, via the shared expression grammar (so `is`,
     `and`, `or`, comparisons, arithmetic and parens all work, and either side
@@ -7491,6 +7543,29 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
                     verdict = "bound-unresolved"
                 out.append([verdict, bname, inner, ln, hi, size, width, lit,
                             origin])
+    # ---------- a guard of the shape `A + B op C`, and whether that sum can
+    # WRAP. The emitter writes it as an addition, and a field is unsigned, so
+    # `count + length <= limit` with count at 2**64-1 computes 7 and passes:
+    # the builder then writes past its own backing and the program exits 0.
+    # Reported here rather than fixed here -- `plan` emits the subtraction
+    # form for anything left unmarked, and the marked ones keep the single
+    # compare they already had.
+    for i_here, st in enumerate(steps):
+        if st.get("type") not in ("guard", "loop_exit") or not st.get("cond"):
+            continue
+        m = _CMPX.match(str(st["cond"]))
+        if not m:
+            continue
+        lhs = m.group(1).strip()
+        parts = top_split(lhs)
+        if len(parts) != 2 or len(top_split(lhs, "-")) != 1:
+            st["nowrap"] = True          # not the shape; nothing to do
+            continue
+        a, b = iv(parts[0], i_here), iv(parts[1], i_here)
+        ok = all(v is not None for v in (a[0], a[1], b[0], b[1]))
+        st["nowrap"] = bool(ok and a[0] >= 0 and b[0] >= 0
+                            and a[1] + b[1] <= _LONG_MAX)
+
     if probe is not None:
         # Evaluate a guard's own condition, which is a different question from
         # whether the access behind it is in range. `iv` is a closure over the
@@ -8206,7 +8281,7 @@ def plan(definitions, slots, steps, overrides):
             if stage_slot is None:
                 fail(f"line {st['line']}: cannot derive the status slot for "
                      "`ensure` -- wire a scalar into the final noreturn step")
-            pred_c = render_choice_cond(st["cond"], scalars, buffers,
+            pred_c = render_choice_cond(nowrap_cond(st), scalars, buffers,
                                         st["line"])
             errsrc_c = resolve_value(lhs, scalars, buffers, st["line"])
             ref = st.get("ref") or lhs

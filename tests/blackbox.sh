@@ -66,6 +66,13 @@ bb span            span     $'host=localhost\nport=8080\n'  0 \
 bb span/no-final-nl span    $'a=1\nb=2'       0  $'a -> 1\nb -> 2'
 bb span/no-equals   span    $'bare\nk=v\n'    0  $'bare -> \nk -> v'
 bb span/empty       span    ""               0  ""
+# `builder.add` guards with `ensure count + length <= limit`. As a single
+# addition that is the wrong check -- a field is UNSIGNED, so a count of
+# 2**64-1 makes the sum 7, which fits, and the append writes at data + 2**64-1.
+# It exited 0 and the byte was gone. The emitter writes the subtraction form
+# for any sum it could not prove small, so the guard fires instead.
+bb builder/count-honest  builder_count_wrap  "hABCDEFGHxxxxxxx"  0  "ABCDEFGH"
+bb builder/count-wraps   builder_count_wrap  "wABCDEFGHxxxxxxx"  1  ""
 bb branch/many     branch   "xyz"             0  "many bytes"
 bb branch/nothing  branch   ""                0  "nothing"
 bb branch/one      branch   "x"               0  "one byte"

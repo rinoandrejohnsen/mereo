@@ -1,0 +1,27 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- `builder.add` guards with `ensure count + length <= limit`. Written as a
+-- single addition that is the wrong check: a field is UNSIGNED, so a `count`
+-- of 2**64-1 makes the sum 7, which fits, and the append then writes at
+-- `data + 2**64-1`. The program exited 0 and the byte was simply gone.
+--
+-- The first byte selects the count, because a small one written out as eight
+-- little-endian bytes is mostly zeros and a shell cannot pass a zero byte.
+-- `h` adopts the builder at 0 and the payload comes back; `w` adopts it at
+-- 2**64-1, where the guard must refuse rather than write.
+program goes
+  room is 64 bytes
+  src is 16 bytes
+  n is 0
+  sel is 0
+  c is 0
+  input is already linux.file (descriptor is 0)
+  terminal is already linux.file (descriptor is 1)
+  input.read (buffer is src, capacity is 16, count is n)
+  sel is [src + 0 : 1]
+  c is 0 - 1 when sel == 119
+  page is already builder (data is room, count is c, limit is 64)
+  page.add (source is src + 1, length is 8)
+  terminal.write (buffer is room, count is 8)
+end
