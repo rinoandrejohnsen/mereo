@@ -1,0 +1,13 @@
+include "../../../linux.mereo"
+include "../../../core.mereo"
+
+-- `skip` narrows the view; what is left is still inside
+program goes
+  buf is 32 bytes
+  n is 0
+  terminal is already linux.file (descriptor is 1)
+  v is already span (data is buf, length is 32)
+  v.skip (count is 8)
+  v.find (byte is 10, offset is n)
+  terminal.write (buffer is buf, count is 1)
+end

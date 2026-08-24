@@ -1,0 +1,9 @@
+include "../../../linux.mereo"
+include "../../../core.mereo"
+
+-- a write of exactly what the buffer holds
+program goes
+  buf is 32 bytes
+  terminal is already linux.file (descriptor is 1)
+  terminal.write (buffer is buf, count is 32)
+end

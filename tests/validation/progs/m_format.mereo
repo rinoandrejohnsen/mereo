@@ -1,0 +1,11 @@
+include "../../../linux.mereo"
+include "../../../core.mereo"
+
+-- format writes decimal digits; twenty bytes is the stated need
+program goes
+  digits is 20 bytes
+  n is 0
+  terminal is already linux.file (descriptor is 1)
+  text.format (value is 1234567890, buffer is digits, length is n)
+  terminal.write (buffer is digits, count is n)
+end

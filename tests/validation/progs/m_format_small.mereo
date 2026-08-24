@@ -1,0 +1,11 @@
+include "../../../linux.mereo"
+include "../../../core.mereo"
+
+-- the same, into a buffer that cannot hold twenty digits
+program goes
+  digits is 4 bytes
+  n is 0
+  terminal is already linux.file (descriptor is 1)
+  text.format (value is 1234567890, buffer is digits, length is n)
+  terminal.write (buffer is digits, count is n)
+end

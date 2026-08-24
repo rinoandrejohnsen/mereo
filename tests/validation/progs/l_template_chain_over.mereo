@@ -1,0 +1,20 @@
+include "../../../linux.mereo"
+include "../../../core.mereo"
+
+-- the same chain, where the far end indexes a buffer
+-- smaller than the one the offset was bounded against
+narrow (area, extent, spot) goes
+  text.find (data is area, length is extent, byte is 10, offset is spot)
+end
+
+program goes
+  buf is 32 bytes
+  small is 8 bytes
+  spot is 0
+  d is 0
+  terminal is already linux.file (descriptor is 1)
+  narrow (area is buf, extent is 32, spot is spot)
+  d is [small + spot : 1]
+  [buf : 1] is d
+  terminal.write (buffer is buf, count is 1)
+end

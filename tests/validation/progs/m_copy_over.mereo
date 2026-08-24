@@ -1,0 +1,11 @@
+include "../../../linux.mereo"
+include "../../../core.mereo"
+
+-- the same copy, longer than the source can give
+program goes
+  src is 16 bytes
+  dst is 32 bytes
+  terminal is already linux.file (descriptor is 1)
+  text.copy (source is src, target is dst, length is 32)
+  terminal.write (buffer is dst, count is 16)
+end

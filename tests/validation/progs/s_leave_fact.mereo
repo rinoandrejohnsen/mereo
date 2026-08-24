@@ -1,0 +1,16 @@
+include "../../../linux.mereo"
+
+-- `leave` states a bound that holds for everything after it
+program goes
+  buf is 16 bytes
+  small is 8 bytes
+  i is 0
+  d is 0
+  terminal is already linux.file (descriptor is 1)
+  d is [buf + 0 : 1]
+  i is d
+  leave program when i >= 8
+  d is [small + i : 1]
+  [buf : 1] is d
+  terminal.write (buffer is buf, count is 1)
+end

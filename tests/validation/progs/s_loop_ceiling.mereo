@@ -1,0 +1,17 @@
+include "../../../linux.mereo"
+
+-- a counter with a ceiling the loop states
+program goes
+  buf is 16 bytes
+  i is 0
+  d is 0
+  terminal is already linux.file (descriptor is 1)
+  walk goes
+    leave walk when i >= 16
+    d is d + [buf + i : 1]
+    i is i + 1
+    repeat walk
+  end
+  [buf : 1] is d
+  terminal.write (buffer is buf, count is 1)
+end

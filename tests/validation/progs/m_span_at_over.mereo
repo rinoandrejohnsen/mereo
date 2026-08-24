@@ -1,0 +1,13 @@
+include "../../../linux.mereo"
+include "../../../core.mereo"
+
+-- the same read, past what the view covers
+program goes
+  buf is 32 bytes
+  b is 0
+  terminal is already linux.file (descriptor is 1)
+  v is already span (data is buf, length is 32)
+  v.at (offset is 40, byte is b)
+  [buf : 1] is b
+  terminal.write (buffer is buf, count is 1)
+end

@@ -1,0 +1,11 @@
+include "../../../linux.mereo"
+
+-- the same load one byte further on
+program goes
+  buf is 16 bytes
+  d is 0
+  terminal is already linux.file (descriptor is 1)
+  d is [buf + 9 : 8]
+  [buf : 1] is d
+  terminal.write (buffer is buf, count is 1)
+end

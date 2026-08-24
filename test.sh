@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The full test run -- seven suites plus the build gate.
+# The full test run -- eight suites plus the build gate.
 #
 #   1. UNIT tests for RAII + error handling  (tests/scopes/run.sh)
 #      Small mereo programs paired with equivalent C++; strace both and assert
@@ -76,6 +76,10 @@ if command -v cbmc >/dev/null 2>&1; then
 else
     echo "### Suite 7 -- bounded model checking (skipped: cbmc not installed)"
 fi
+
+echo
+echo "### Suite 8 -- what the validation can and cannot see"
+"$DIR/tests/validation/run.sh" || rc=1
 
 echo
 echo "### Build + layout gate"

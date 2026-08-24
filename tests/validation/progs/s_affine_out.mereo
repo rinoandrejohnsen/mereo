@@ -1,0 +1,17 @@
+include "../../../linux.mereo"
+
+-- one step too many: i * 4 reaches 16, and the load is 4 wide
+program goes
+  buf is 16 bytes
+  i is 0
+  d is 0
+  terminal is already linux.file (descriptor is 1)
+  walk goes
+    leave walk when i >= 5
+    d is d + [buf + i * 4 : 4]
+    i is i + 1
+    repeat walk
+  end
+  [buf : 1] is d
+  terminal.write (buffer is buf, count is 1)
+end

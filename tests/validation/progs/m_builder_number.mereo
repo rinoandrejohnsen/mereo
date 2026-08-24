@@ -1,0 +1,11 @@
+include "../../../linux.mereo"
+include "../../../core.mereo"
+
+-- a builder writing a decimal number, which needs room
+program goes
+  room is 64 bytes
+  terminal is already linux.file (descriptor is 1)
+  page is already builder (data is room, count is 0, limit is 64)
+  page.number (value is 1234567890)
+  terminal.write (buffer is room, count is 10)
+end

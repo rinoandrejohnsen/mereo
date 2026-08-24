@@ -1,0 +1,16 @@
+include "../../../linux.mereo"
+include "../../../core.mereo"
+
+-- `find` promises `offset <= length` -- which INCLUDES length,
+-- because that is what "not there" answers. Checked, then used.
+program goes
+  buf is 32 bytes
+  n is 0
+  d is 0
+  terminal is already linux.file (descriptor is 1)
+  text.find (data is buf, length is 32, byte is 10, offset is n)
+  leave program when n >= 32
+  d is [buf + n : 1]
+  [buf : 1] is d
+  terminal.write (buffer is buf, count is 1)
+end

@@ -1,0 +1,12 @@
+include "../../../linux.mereo"
+include "../../../core.mereo"
+
+-- a builder filling its own backing, one append at a time
+program goes
+  room is 64 bytes
+  terminal is already linux.file (descriptor is 1)
+  page is already builder (data is room, count is 0, limit is 64)
+  page.add (source is "hello", length is "hello".size)
+  page.byte (value is 10)
+  terminal.write (buffer is room, count is 6)
+end
