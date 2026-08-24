@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The full test run -- three suites plus the build gate.
+# The full test run -- seven suites plus the build gate.
 #
 #   1. UNIT tests for RAII + error handling  (tests/scopes/run.sh)
 #      Small mereo programs paired with equivalent C++; strace both and assert
@@ -66,6 +66,17 @@ echo
 # Where the extra bytes are, attributed rather than asserted.
 echo "### Suite 6 -- where mereo's bytes are, against the C twin"
 "$DIR/tests/size/run.sh" || rc=1
+echo
+# An independent check of the same programs, by a tool that answers with a
+# counterexample rather than a verdict. Only where CBMC is installed -- it is
+# not required to build or test mereo, and saying so beats failing quietly.
+if command -v cbmc >/dev/null 2>&1; then
+    echo "### Suite 7 -- bounded model checking of the generated C"
+    "$DIR/tests/cbmc.sh" || rc=1
+else
+    echo "### Suite 7 -- bounded model checking (skipped: cbmc not installed)"
+fi
+
 echo
 echo "### Build + layout gate"
 "$DIR/build.sh" >/dev/null 2>&1 && echo "  build + mereocheck: ok" \
