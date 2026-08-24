@@ -8278,6 +8278,15 @@ def plan(definitions, slots, steps, overrides):
             # for a bare truthiness test).
             m = re.match(r"^(.+?) (is|<=|>=|==|!=|<|>) (.+)$", st["cond"])
             lhs = (m.group(1).strip() if m else st["cond"].strip())
+            # The record prints the value that failed. Where the guard was
+            # rewritten to the subtraction form, that value must be the
+            # SUBJECT and not the sum: recomputing `count + length` to report
+            # it performs the very addition the rewrite exists to avoid, and
+            # CBMC flags the diagnostic itself as the overflow.
+            if not st.get("nowrap"):
+                _t = top_split(lhs)
+                if len(_t) == 2 and len(top_split(lhs, "-")) == 1:
+                    lhs = _t[0]
             if stage_slot is None:
                 fail(f"line {st['line']}: cannot derive the status slot for "
                      "`ensure` -- wire a scalar into the final noreturn step")
