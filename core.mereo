@@ -621,15 +621,20 @@ span is
     result is r
   end
 
+  -- The short case is ruled out BEFORE the compare, not after it. Zeroing the
+  -- answer afterwards fixes what is reported and not what was read: `equals`
+  -- is handed `other_length` at both ports, so its own length early-out never
+  -- fires and it reads that many bytes -- from a view that may be shorter.
   starts (other, other_length, result) goes
     r is 0
+    result is 0
+    leave starts when length < other_length
     text.equals (data is data,
                   length is other_length,
                   other is other,
                   other_length is other_length,
                   result is r)
     result is r
-    result is 0 when length < other_length
   end
 
   -- the window is the LAST other_length bytes, so the address is computed
@@ -638,14 +643,15 @@ span is
   ends (other, other_length, result) goes
     r is 0
     tail is data
-    tail is data + length - other_length when length >= other_length
+    result is 0
+    leave ends when length < other_length
+    tail is data + length - other_length
     text.equals (data is tail,
                   length is other_length,
                   other is other,
                   other_length is other_length,
                   result is r)
     result is r
-    result is 0 when length < other_length
   end
 
   -- atoi over the view. `text.number` already skips leading spaces and reads an

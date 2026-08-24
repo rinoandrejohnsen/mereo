@@ -150,6 +150,9 @@ check refuses m_upper_over          # ...past the end of it
 check proves  m_span_fit            # a view over bytes it fits inside
 check refuses m_span_over           # ...claiming more than its backing has
 check proves  m_span_skip           # `skip` narrows, and the rest is inside
+check proves  m_starts_short        # a needle LONGER than the view: the short
+check proves  m_ends_short          # case is ruled out before the compare, so
+                                    # nothing outside the view is ever read
 check proves  m_span_at             # one byte at an offset the view covers
 check proves  m_span_at_over        # ...past it: `ensure offset < length`
                                     # catches that at run time, so nothing
