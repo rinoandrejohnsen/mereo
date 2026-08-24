@@ -6747,9 +6747,29 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
     ASSUME = {}
 
 
+    _LONG_MIN, _LONG_MAX = -(1 << 63), (1 << 63) - 1
+
     def tighten(key, cur, at, sn):
         lo, hi = cur
-        for op, rhs, others in facts.get(at, {}).get(key, []):
+        ents = facts.get(at, {}).get(key, [])
+        # THE MACHINE EVALUATES THE GUARD, NOT THE MATHEMATICS. Everything
+        # here reasons over whole numbers, which is right for `+`, `-` and `*`
+        # -- two's complement is a ring homomorphism onto the machine's, so an
+        # intermediate that wraps and comes back lands on the same value. A
+        # COMPARISON is where that stops: `i + j > 100` with i and j at 2**62
+        # is true in arithmetic and false in a signed long, so the branch the
+        # program takes is not the branch this believed, and an access proved
+        # from it is proved from nothing. `ovf_guard_past_end` is the gate; it
+        # was accepted in silence and dumped core.
+        # EITHER endpoint, EITHER direction. Checking only `lo` below the
+        # floor and `hi` above the ceiling missed the case that matters: once
+        # one fact has been applied the interval can come back INVERTED --
+        # 2**63 up to something deeply negative -- and neither half of a
+        # one-sided test sees it.
+        if ents and any(v is not None and not (_LONG_MIN <= v <= _LONG_MAX)
+                        for v in (lo, hi)):
+            return cur
+        for op, rhs, others in ents:
             if op in ("<=", "<"):
                 lows = [iv(t, at, sn)[0] for t in others]
                 if any(l is None or l < 0 for l in lows): continue
@@ -7441,6 +7461,24 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
                     known = first in bnd or first in copy or first in facts.get(i, {})
                     kind = "bound-unresolved" if known else "data-dependent"
                     out.append([kind, bname, inner, ln, None, size, width, lit, origin])
+                    continue
+                # AN EMPTY RANGE PROVES NOTHING. `lo > hi` says this analysis
+                # derived that the state cannot occur -- and from a state that
+                # cannot occur, every access is in range. It can occur: a guard
+                # whose subject overflows a signed long is TRUE in arithmetic
+                # and false on the machine, so the program walks into code this
+                # believed unreachable carrying a value this believed
+                # impossible. Only `hi` is read below, so `(2**63, 100)` read
+                # as "at most 100" and proved an access that dumped core.
+                #
+                # Likewise a bound the machine cannot hold. Everything here is
+                # whole-number arithmetic, which is exactly right for `+`, `-`
+                # and `*` -- two's complement agrees with it modulo 2**64, so
+                # an intermediate that wraps and comes back is still the same
+                # value -- and says nothing about a comparison.
+                if lo > hi or not all(_LONG_MIN <= v <= _LONG_MAX for v in (lo, hi)):
+                    out.append(["bound-unresolved", bname, inner, ln, None,
+                                size, width, lit, origin])
                     continue
                 verdict = "proved" if hi + width <= size else "OUT"
                 if verdict == "OUT" and _accesses(idx):

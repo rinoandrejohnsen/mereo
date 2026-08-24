@@ -556,6 +556,11 @@ rejects access/load-outport-past-end load_outport_past_end "reaches 65 bytes int
 # its out port: `rel is 0` was still believed after `find (... offset is rel)`,
 # so the index looked like the constant zero and the access looked proved.
 reports access/find-offset-past-end find_offset_past_end "the index comes from input and nothing bounds it here"
+# A guard whose subject overflows a signed long: true in arithmetic, false on
+# the machine. Believing it gave the sum an EMPTY range -- lower bound above
+# the upper -- and only the upper half was read, so an access that dumped core
+# passed as proved. Reported now, not proved.
+reports access/overflowing-guard ovf_guard_bounds "not proved in range"
 rejects access/descending-load-past-end descending_load_past_end "reaches 34 bytes into"
 rejects access/store-past-end store_past_end "writes 101 bytes into"
 # A syscall cannot be caught downstream: the kernel never sees where the buffer
