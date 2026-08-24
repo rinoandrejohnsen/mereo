@@ -29,23 +29,54 @@ src, n_as = re.subn(r"__attribute__\s*\(\(\s*__assume__\s*\((.*)\)\s*\)\)\s*;",
 src = re.sub(r"__attribute__\s*\(\(\s*(externally_visible|noreturn|naked)\s*\)\)",
              "", src)
 
-WRAP = re.compile(
+HEAD = re.compile(
     r"static inline __attribute__\(\(always_inline\)\)\s+"
     r"(long|void)\s+(_assembly_\w+|_write|_sigaction|_scan|_same|_mereo_cpu)"
-    r"\s*\(([^)]*)\)\s*\{(?:[^{}]|\{[^{}]*\})*\}", re.S)
+    r"\s*\(([^)]*)\)\s*\{")
 
 
-def model(m):
-    ret, name, params = m.group(1), m.group(2), m.group(3)
+def each_primitive(text):
+    """Head, params, and the WHOLE body, by counting braces.
+
+    A regex cannot do this: the one-level body pattern reaches a single level of
+    nesting and `_same` has two -- an `if` around a `while` -- so it was
+    silently left unmodelled while the count said seven of eight. CBMC then
+    checked the real byte loop and reported it out of bounds, which took a
+    while to recognise as a hole in this file rather than in mereo."""
+    out, pos = [], 0
+    while True:
+        m = HEAD.search(text, pos)
+        if not m:
+            return out
+        depth, i = 1, m.end()
+        while i < len(text) and depth:
+            depth += (text[i] == "{") - (text[i] == "}")
+            i += 1
+        out.append((m.start(), i, m.group(1), m.group(2), m.group(3)))
+        pos = i
+
+
+def model_of(ret, name, params):
     ps = [q.strip().split()[-1].lstrip("*") for q in params.split(",") if q.strip()]
     body = []
+    # A model REPLACES a body, so whatever the body checked stops being
+    # checked. For the two that read caller memory that would hide the
+    # question worth asking, so the obligation is asserted rather than
+    # assumed: these say what the caller must have got right, and CBMC
+    # reports the caller when it did not.
     if name == "_scan":
-        # its stated promise: `ensure offset <= length`
-        body = ["long _o = nondet_long();",
+        body = ['__CPROVER_assert(_len <= 0 || __CPROVER_r_ok((void *)_pp, '
+                '(unsigned long)_len), "scan reads inside its region");',
+                "long _o = nondet_long();",
+                # its stated promise: `ensure offset <= length`
                 "__CPROVER_assume(_o >= 0 && _o <= _len);",
                 "return _o;"]
     elif name == "_same":
-        body = ["long _e = nondet_long();",
+        body = ['__CPROVER_assert(_pl <= 0 || __CPROVER_r_ok((void *)_pp, '
+                '(unsigned long)_pl), "equals reads inside its first region");',
+                '__CPROVER_assert(_ql <= 0 || __CPROVER_r_ok((void *)_qq, '
+                '(unsigned long)_ql), "equals reads inside its second region");',
+                "long _e = nondet_long();",
                 "__CPROVER_assume(_e == 0 || _e == 1);",
                 "return _e;"]
     elif "buffer" in ps and "capacity" in ps:
@@ -64,9 +95,17 @@ def model(m):
     return ("%s %s(%s) {\n    %s\n}" % (ret, name, params, "\n    ".join(body)))
 
 
-src, n_wrap = WRAP.subn(model, src)
-src = ("long nondet_long(void);\n"
-       "void __CPROVER_havoc_slice(void *, unsigned long);\n" + src)
+found = each_primitive(src)
+for start, end, ret, name, params in reversed(found):
+    src = src[:start] + model_of(ret, name, params) + src[end:]
+n_wrap = len(found)
+# `nondet_long` needs declaring; the __CPROVER_ built-ins must NOT be. A
+# declaration turns a built-in into an ordinary undefined function, CBMC says
+# "no body for callee __CPROVER_r_ok" and gives it a nondeterministic result --
+# so every assertion written with it passed or failed at random, and
+# `havoc_slice` quietly did nothing at all. Both were declared here for two
+# hours and the checks they were supposed to perform were not being performed.
+src = "long nondet_long(void);\n" + src
 sys.stderr.write("  promises -> assumptions: %d   primitives modelled: %d\n"
                  % (n_as, n_wrap))
 open(sys.argv[2], "w").write(src)

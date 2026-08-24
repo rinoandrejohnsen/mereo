@@ -72,6 +72,10 @@ bb span/empty       span    ""               0  ""
 # 2**64-1. A well-formed document is untouched; a malformed one now fails into
 # the release tower instead of answering an offset outside its own backing.
 bb json/quoted-value  json_no_quote  '{"a":"hi"}'  0  "hi"
+# `search` told a four-byte haystack, asked for a four-byte needle that would
+# start at offset 3: it fits only by reading three bytes outside the region,
+# and that is what it did -- answering 3 instead of "not found".
+bb search/needle-room  search_needle_room  ""  0  "4"
 bb json/no-quote      json_no_quote  '{"a":1}'     1  ""
 # `builder.add` guards with `ensure count + length <= limit`. As a single
 # addition that is the wrong check -- a field is UNSIGNED, so a count of

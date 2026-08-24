@@ -342,15 +342,34 @@ text is
     i is 0
     rem is 0
     rel is 0
+    last is 0
     eq is 0
     first is 0
     at is 0
+    -- A candidate has to FIT. `equals` is handed `needle_length` at both
+    -- ports, so its length early-out never fires and it always reads that
+    -- many bytes -- and nothing here checked they were still inside the
+    -- haystack. Told four bytes of `xyzABCDE` and asked for `ABCD`, this
+    -- answered 3: a match assembled from three bytes the caller had said
+    -- were not part of the region.
+    --
+    -- `last` is the final offset the needle can start at, computed once and
+    -- by SUBTRACTION -- `i + needle_length > length` is the addition that
+    -- wraps, which is the same mistake in a different place.
+    i is length
+    leave search when needle_length > length
+    last is length - needle_length
+    i is 0
     first is [needle : 1]
     probe goes
       rem is length - i
       at is data + i
       text.find (data is at, length is rem, byte is first, offset is rel)
       i is i + rel
+      -- no room left for the needle, and `find` answering `rem` because the
+      -- byte is absent lands here too: both mean not found.
+      i is length when i > last
+      leave probe when i >= length
       at is data + i
       text.equals (data is at,
                     length is needle_length,
@@ -358,7 +377,6 @@ text is
                     other_length is needle_length,
                     result is eq)
       leave probe when eq == 1           -- this candidate is the needle
-      leave probe when i >= length       -- ran out of haystack
       i is i + 1
       repeat probe
     end

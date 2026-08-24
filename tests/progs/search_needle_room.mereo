@@ -1,0 +1,33 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- `search` is told the haystack is FOUR bytes. The needle is four bytes and
+-- would start at offset 3, so it fits only by reading three bytes the caller
+-- said were not part of the region -- and this answered 3.
+--
+-- `equals` is handed `needle_length` at BOTH ports, so its length early-out
+-- never fires and it always reads that many bytes. Nothing checked they were
+-- still inside the haystack. The same path also called it at `data + length`
+-- when `find` reported the first byte absent.
+--
+--   hay = "xyzABCDE", length told = 4, needle = "ABCD"  ->  4, not found
+program goes
+  hay is 8 bytes
+  digits is 24 bytes
+  off is 0
+  dlen is 0
+  terminal is already linux.file (descriptor is 1)
+  [hay + 0 : 1] is 120
+  [hay + 1 : 1] is 121
+  [hay + 2 : 1] is 122
+  [hay + 3 : 1] is 65
+  [hay + 4 : 1] is 66
+  [hay + 5 : 1] is 67
+  [hay + 6 : 1] is 68
+  [hay + 7 : 1] is 69
+  text.search (data is hay, length is 4, needle is "ABCD",
+               needle_length is "ABCD".size, offset is off)
+  text.format (value is off, buffer is digits, length is dlen)
+  terminal.write (buffer is digits, count is dlen)
+  terminal.write (buffer is "\n", count is 1)
+end
