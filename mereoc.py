@@ -6908,6 +6908,13 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
     mutated = set()
     for st in steps:
         if st.get("type") not in ("store", "fstore", "atomic"): continue
+        # A FIELD STORE names its instance and carries no address at all, so
+        # matching on `addr` alone never saw one: `page.count is 100` after
+        # `already builder (count is 3)` left the analysis believing 3, and it
+        # PROVED an access at 100 into sixteen bytes. CBMC finds the
+        # dereference; mereoc accepted it in silence.
+        if st.get("inst") in inst:
+            mutated.add(st["inst"])
         head = str(st.get("addr", "")).partition("+")[0].strip()
         if head in inst: mutated.add(head)
         for nm in inst:

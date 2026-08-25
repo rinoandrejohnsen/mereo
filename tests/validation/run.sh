@@ -117,6 +117,8 @@ check proves  s_shift               # `>> 4` on a byte
 check proves  s_nested_bound        # bounds from two enclosing scopes
 check proves  s_when_store          # a conditional store, bounded either way
 check refuses s_when_store_out      # ...where one branch is past the end
+check reports s_field_store_stale   # a field store mutates its instance, so
+                                    # the adopted value stops being believed
 check proves  s_size_of             # the buffer states its own size
 check proves  s_port_store          # a template that only STORES, in range
 check refuses s_port_store_over     # ...past the end. Nothing is READ here.

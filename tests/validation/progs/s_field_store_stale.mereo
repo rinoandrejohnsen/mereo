@@ -1,0 +1,23 @@
+include "../../../linux.mereo"
+include "../../../core.mereo"
+
+-- An instance keeps the values it was adopted with only while nothing writes
+-- to it. `mutated` decided that by looking at a store's ADDRESS -- and a field
+-- store names its instance and carries no address at all, so it was never
+-- seen. Adopted with `count is 3` and then stored as 100, the analysis still
+-- believed 3 and PROVED an access at 100 into sixteen bytes. CBMC finds the
+-- dereference; mereoc accepted it in silence.
+--
+-- Reported rather than refused: once the instance is mutated the field is
+-- simply unknown, which is the safe answer and not the sharpest one.
+program goes
+  room is 64 bytes
+  small is 16 bytes
+  d is 0
+  terminal is already linux.file (descriptor is 1)
+  page is already builder (data is room, count is 3, limit is 64)
+  page.count is 100
+  d is [small + page.count : 1]
+  [small : 1] is d
+  terminal.write (buffer is small, count is 1)
+end
