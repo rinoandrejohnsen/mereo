@@ -3,7 +3,7 @@
 
 The claim this exists to check is that mereo's extra size over hand-written C
 sits in code that never runs -- the error blocks, the release tower, the
-per-failure records. That has been asserted in `docs/exam.md` and never
+per-failure records. That has been asserted and never
 measured, which is how the figures there drifted without anyone noticing.
 
 Method: build with `-g`, walk the disassembly with `objdump -dl` so every

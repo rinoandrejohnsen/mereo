@@ -89,8 +89,8 @@ spending that 10% is to decide it at compile time, which is what
 ## What is worth telling the compiler
 
 The compiler already knows everything the program says. Stating a bound mereo
-has proved — as an assumption, in front of a proved store in the exam's
-generated C — produces a **byte-identical binary**. That is not surprising once
+has proved — as an assumption, in front of a proved store in the generated
+C — produces a **byte-identical binary**. That is not surprising once
 said plainly: the proofs are built out of buffer sizes, branch conditions and
 syscall contracts, and all three are already in the emitted C as literals, as
 branches, and as assumptions. GCC re-derives the same ranges.
@@ -99,7 +99,7 @@ So the analysis makes no binary faster. Its product is the list of accesses it
 could not prove, which [Safety](safety.md) covers. Only a fact **absent from
 the program's text** is worth stating, and there is one:
 
-| `exam/mereo/loglyze`, 84 MB of log | size | time |
+| a log summariser, 84 MB of input | size | time |
 | --- | ---: | ---: |
 | the kernel's promise stated | 5920 B | 53.9 ms |
 | the kernel's promise tested | 6576 B | 54.9 ms |

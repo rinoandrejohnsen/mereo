@@ -41,8 +41,7 @@ That is the whole contribution to code generation, and it is zero.
 
 ### GCC already does it, and does it better
 
-Traced through GCC's own pass dumps on the exam program rather than reasoned
-about. Error blocks surviving:
+Traced through GCC's own pass dumps rather than reasoned about. Error blocks surviving:
 
 006t.original   37 016t.cfg        32     unreachable code 044t.fre1       30
 full redundancy elimination 045t.evrp        7     <- early value range
@@ -92,8 +91,8 @@ oversight — both are what buys −32% instructions against the C twin.
 
 ### Cross-checked against two other tools
 
-Frama-C's Eva and rustc were run over the same programs. On the exam's 13 hard
-accesses: **8 neither Eva nor mereo could prove**, 4 Eva proved and mereo did
+Frama-C's Eva and rustc were run over the same programs. On the 13 hard
+accesses of the largest: **8 neither Eva nor mereo could prove**, 4 Eva proved and mereo did
 not, and 2 appeared to be mereo's alone. That last claim was **withdrawn**: it
 rested on a bug, and once `reaching` stopped answering with a value's declared
 initialiser for a name grown in an enclosing loop, mereo reported those two as
@@ -136,7 +135,7 @@ Measured on a hot loop over a span whose length is a read count:
 
 3.55×, and 3.8× on the clock. It is emitted only where an emitted branch
 mentions the value it bounds, in the matching direction — six that no branch
-used cost the exam **+10,995 instructions** before that pruning existed. The
+used cost **+10,995 instructions** before that pruning existed. The
 pair `assume_needed` / `assume_idle` gates both halves in `test.sh`.
 
 ---
@@ -288,7 +287,7 @@ discharged before running. SPARK's ranges are also *declared*, which hands its
 prover the fact.
 
 **Rust** checks bounds at run time and lets LLVM remove the provable ones,
-silently. Measured here on the exam's own shapes, three of six checks survive
+silently. Measured here on the same shapes, three of six checks survive
 optimisation — including both relational cases. Release Rust wraps on overflow,
 exactly as mereo does.
 

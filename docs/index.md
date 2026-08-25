@@ -65,7 +65,6 @@ Built and measured:
 - **[Performance](performance.md)** — measured against hand-written C.
 - **[Safety](safety.md)** — what is removed, what is refused, and the analysis
   that was built, measured and taken out again.
-- **[The exam](exam.md)** — one program written twice and compared.
 - **[Limitations](limitations.md)** — deliberate, and unfinished.
 
 Reference:

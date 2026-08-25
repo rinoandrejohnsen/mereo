@@ -18,7 +18,7 @@ include "../../linux.mereo"
 -- both loops stop on, which is correct and must keep compiling. The difference
 -- is the reset: an advance carries the count forward, a reset throws it away.
 --
--- Found by writing 357 lines of mereo for `exam/` and hitting it: the read
+-- Found by writing 357 lines of mereo and hitting it: the read
 -- loop's index was reused as a parse counter, and nothing said so.
 
 program goes

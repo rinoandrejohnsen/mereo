@@ -71,11 +71,11 @@ open(sys.argv[2], "w").write(src)
 
 # Usage, and what it is for:
 #
-#   python3 mereoc.py exam/mereo/loglyze.mereo > lg.c
+#   python3 mereoc.py programs/tls/https.mereo > hs.c
 #   python3 tools/toframa.py lg.c lg_acsl.c
 #   frama-c -eva -eva-precision 3 -main _start lg_acsl.c
 #
-# A SECOND OPINION, not a replacement. On loglyze the two agree on eight of
+# A SECOND OPINION, not a replacement. On one measured program they agreed on eight of
 # the thirteen accesses neither can prove, which is worth more than either
 # verdict alone: those eight are hard, not a mereo weakness. Eva proves four
 # that mereo does not -- the hash-table reads. And mereo proves two that Eva

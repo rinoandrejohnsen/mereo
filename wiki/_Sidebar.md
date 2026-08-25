@@ -20,7 +20,6 @@
 - [What the compiler decides](Compile-time)
 - [Performance](Performance)
 - [Safety](Safety)
-- [The exam](Exam)
 - [Limitations](Limitations)
 
 **Reference**

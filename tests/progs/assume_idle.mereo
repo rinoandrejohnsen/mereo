@@ -3,7 +3,7 @@ include "../../core.mereo"
 
 -- The same read, and the promise bounds `n` -- but no branch here asks about
 -- `n` at all: the loop runs to a constant. An assume nothing can use is not
--- free, it is a hint the optimiser weighs: loglyze carried six, executed
+-- free, it is a hint the optimiser weighs: one program carried six, executed
 -- 10,995 more instructions for them, and came out 581 bytes SMALLER because
 -- GCC had changed its inlining and lost.
 program goes

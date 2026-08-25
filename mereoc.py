@@ -274,7 +274,7 @@ def nowrap_cond(st):
 
     Applied to every sum of this shape. The analysis used to mark the ones it
     could prove small and those kept the single compare; with it gone they all
-    take the subtraction, which measured ZERO on loglyze and on stat -- GCC
+    take the subtraction, which measured ZERO on two corpus programs -- GCC
     folds it back where the values are known."""
     cond = str(st.get("cond") or "")
     m = _CMPX.match(cond)
@@ -510,7 +510,7 @@ HELPER_C = {
         # a result the vector already had: two ten-byte constants, a load, and
         # the whole has-a-zero-byte dance, about twelve instructions to learn
         # what `tzcnt` established. That was every successful vector scan in the
-        # exam -- 266k of them, and the constants show up in the profile as
+        # program it was measured on -- 266k of them, and the constants show up as
         # `movabs $0x2020202020202020` once per line.
         '        if (_i < (_len & ~31L)) return _i;\n'
         '    }\n'
@@ -4954,7 +4954,7 @@ def call_parts(meth, valmap):
                 # ANALYSIS ONLY. A helper is `always_inline` C, so GCC has its
                 # body and can derive the range itself -- saying it again is
                 # the one thing measured to buy nothing and cost something:
-                # `q1 >= 0` on loglyze was +10,995 instructions for a fact the
+                # one such promise measured +10,995 instructions for a fact the
                 # optimiser could already read. The ANALYSIS still gets it, from
                 # the contract, which is where `call_parts` reads it.
                 #
@@ -5622,7 +5622,7 @@ def prune_assumes(body):
     An assume earns its place by letting GCC delete a branch mereo could not
     delete itself. Where no surviving check mentions the value it bounds there
     is no branch to delete, and what is left is a hint the optimiser weighs and
-    sometimes gets wrong: loglyze carried six, executed 10,995 MORE
+    sometimes gets wrong: one program carried six, executed 10,995 MORE
     instructions for them (+0.67%), and came out 581 bytes SMALLER -- GCC had
     changed its inlining and lost.
 
@@ -5654,7 +5654,7 @@ def prune_assumes(body):
         if m:
             checks.append(m.group(1))
     # which names a check bounds, and FROM WHICH SIDE. An upper bound decides
-    # nothing about a check that asks for a floor: loglyze promises
+    # nothing about a check that asks for a floor: a scan promises
     # `got <= 65536` and checks `got >= 0`, and keeping that one assume cost
     # every instruction the six together cost.
     WORDS = {"long", "unsigned", "int", "char", "signed", "short"}

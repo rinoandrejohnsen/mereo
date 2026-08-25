@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Suite 7 -- BOUNDED MODEL CHECKING of the generated C, with CBMC.
+# Suite 6 -- BOUNDED MODEL CHECKING of the generated C, with CBMC.
 #
 # A second opinion that is not another abstract interpretation. CBMC is
 # bit-precise and answers with a COUNTEREXAMPLE, so where mereoc says "not

@@ -70,10 +70,7 @@ mkdir -p "$OUT"
 SHOWCASES=" "
 
 # Every program directory. Everything here is gated the same way: transpile and
-# compile. A gate that skips a directory does not protect it -- `exam/mereo`
-# went ungated and a change to the access analysis stopped it compiling, with
-# the whole suite still green, because nothing read it.
-SUBDIRS="examples tests/scopes programs/tls exam/mereo"
+SUBDIRS="examples tests/scopes programs/tls"
 
 # argument list -> the programs to build; default is every `program` .mereo
 if [ $# -gt 0 ]; then

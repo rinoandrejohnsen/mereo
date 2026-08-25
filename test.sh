@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The full test run -- seven suites plus the build gate.
+# The full test run -- five suites plus the build gate.
 # (CBMC is suite 7 and runs separately: ./tests/cbmc.sh)
 #
 #   1. UNIT tests for RAII + error handling  (tests/scopes/run.sh)
@@ -28,7 +28,6 @@
 #      does the error point at the line it is on? The second half is the whole
 #      argument about `concept` and about deriving a port's requirement.
 #
-#   6. WHERE THE BYTES ARE                   (tests/size/run.sh)
 #      mereo is bigger than its hand-written C twin, and the reason given for
 #      years was that the extra is cold -- error blocks and the release tower.
 #      This attributes every byte and checks that the answer is still whatever
@@ -64,11 +63,7 @@ echo "### Suite 5 -- compile-time checking versus C++ and Zig"
 "$DIR/tests/checking/run.sh" || rc=1
 
 echo
-# Where the extra bytes are, attributed rather than asserted.
-echo "### Suite 6 -- where mereo's bytes are, against the C twin"
-"$DIR/tests/size/run.sh" || rc=1
-echo
-# Suite 7, bounded model checking with CBMC, is NOT run here: it is about a
+# Suite 6, bounded model checking with CBMC, is NOT run here: it is about a
 # minute on its own and the questions it answers do not change between edits.
 # It stays worth running when core.mereo or the analysis changes, by hand:
 #
@@ -93,7 +88,7 @@ echo "### Build + layout gate"
 # check to delete or a loop to give a trip count. The pair below is the whole
 # claim: one program's inner loop runs to a read count and must keep its
 # assume; the other's runs to a constant and must not have one. An assume
-# nothing can use is not free, and six of them cost loglyze 10,995
+# nothing can use is not free, and six of them once cost 10,995
 # instructions.
 _an=$(python3 "$DIR/mereoc.py" "$DIR/tests/progs/assume_needed.mereo" 2>/dev/null | grep -c __assume__)
 _ai=$(python3 "$DIR/mereoc.py" "$DIR/tests/progs/assume_idle.mereo"   2>/dev/null | grep -c __assume__)
