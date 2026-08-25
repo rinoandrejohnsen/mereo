@@ -1,17 +1,23 @@
 include "../../../linux.mereo"
 
--- `leave words when n < 8` with n a constant 4 reads `4 < 8`:
--- the scope is left every time and its body never runs. The body holds an
--- offset of -4, which is not something the programmer can be asked to bound,
--- because it cannot happen.
+-- `leave words when "hello".size < 8` reads `5 < 8` -- a CONSTANT expression,
+-- the same on every path, which is what a spliced template leaves behind when
+-- its length argument is a literal. The scope is left every time and the body
+-- never runs, so `[small + "hello".size - 8 : 1]` -- an offset of -3 -- cannot
+-- happen and is not something to ask a bound for.
+--
+-- Constant expressions ONLY, deliberately. Asking the analysis for a name's
+-- value instead read it at one point and called it the value everywhere:
+-- `leave parse when plen == 0` inside a loop answered 0 from the entry path
+-- and marked 149 live steps unreachable in loglyze, whose accesses were then
+-- never classified at all.
 program goes
   small is 4 bytes
-  n is 4
   d is 0
   terminal is already linux.file (descriptor is 1)
   words goes
-    leave words when n < 8
-    d is [small + n - 8 : 1]
+    leave words when "hello".size < 8
+    d is [small + "hello".size - 8 : 1]
   end
   [small : 1] is d
   terminal.write (buffer is small, count is 1)

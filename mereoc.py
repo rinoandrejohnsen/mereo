@@ -7757,6 +7757,33 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
                         return True
         return False
 
+    def const_expr(e):
+        """the value of an expression made only of literals and `.size`, or
+        None. Deliberately blind to names: a name has a value at a point, a
+        constant has one everywhere."""
+        t = str(e).strip().replace(" as signed", "").replace(" as unsigned", "")
+        sz = size_name(t)
+        if sz is not None:
+            return sz
+        v = _acc_const(t)
+        if v is not None:
+            return v
+        # A field of an instance NOTHING writes to holds the value it was
+        # adopted with, everywhere -- `already span (length is 4)` is as
+        # constant as a literal, and `adopted_field` already refuses once the
+        # instance is mutated. That is what `starts` and `ends` are spliced
+        # with, so without this the short case they rule out is analysed as if
+        # it ran.
+        af = adopted_field(t)
+        if af is not None and af.strip() != t:
+            return const_expr(af)
+        m2 = re.fullmatch(r"(.+?)\s*([-+*])\s*(.+)", t)
+        if m2:
+            a, b = const_expr(m2.group(1)), const_expr(m2.group(3))
+            if a is not None and b is not None:
+                return {"+": a + b, "-": a - b, "*": a * b}[m2.group(2)]
+        return None
+
     def dead_after_leave():
         """Steps a `leave` with a CONSTANT-TRUE condition puts out of reach.
 
@@ -7797,15 +7824,22 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
                     m = _CMPX.match(str(steps[k]["cond"]))
                     if not m:
                         continue
-                    # READ IT JUST BEFORE. At `k` the facts already carry
-                    # this leave's own consequence -- `leave when n < 8` puts
-                    # `n >= 8` in scope -- so asking about `n` there answers
-                    # (8, 4) for an `n` that is 4: the guard applied to its own
-                    # condition, and an inverted interval that decides nothing.
-                    at = k - 1 if k else k
-                    lo1, hi1 = iv(m.group(1).strip(), at)
-                    lo2, hi2 = iv(m.group(3).strip(), at)
-                    if None in (lo1, hi1, lo2, hi2) or lo1 != hi1 or lo2 != hi2:
+                    # CONSTANT EXPRESSIONS ONLY -- no names, no dataflow. A
+                    # spliced template carries its argument in the condition
+                    # TEXT (`leave words when "name".size < 8`), and a constant
+                    # has the same value on every path by construction.
+                    #
+                    # Asking `iv` instead read the value at one point and
+                    # called it the value everywhere: `leave parse when plen ==
+                    # 0` inside a loop answered 0 from the entry path and
+                    # marked 149 live steps unreachable in loglyze -- their
+                    # accesses were then never classified at all. That is the
+                    # same failure as the contradiction test that once killed
+                    # the exam's line assembly, and it is why this does no
+                    # dataflow.
+                    lo1 = const_expr(m.group(1))
+                    lo2 = const_expr(m.group(3))
+                    if lo1 is None or lo2 is None:
                         continue
                     op = m.group(2)
                     fired = {"<": lo1 < lo2, "<=": lo1 <= lo2, ">": lo1 > lo2,

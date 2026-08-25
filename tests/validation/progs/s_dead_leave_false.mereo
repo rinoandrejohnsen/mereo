@@ -1,16 +1,15 @@
 include "../../../linux.mereo"
 
--- the same shape where the condition is FALSE: `12 < 8`
--- does not fire, the body DOES run, and `12 - 8` is four -- past the end of
--- four bytes. The rule must not blanket a scope just for having a `leave`.
+-- the same shape where the constant makes it FALSE: `12 < 8` does not fire,
+-- the body DOES run, and the access in it is plainly past four bytes. The
+-- rule must not blanket a scope just for having a `leave` in it.
 program goes
   small is 4 bytes
-  n is 12
   d is 0
   terminal is already linux.file (descriptor is 1)
   words goes
-    leave words when n < 8
-    d is [small + n - 8 : 1]
+    leave words when "hello world!".size < 8
+    d is [small + 9 : 1]
   end
   [small : 1] is d
   terminal.write (buffer is small, count is 1)
