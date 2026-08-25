@@ -26,14 +26,6 @@ Open, unblocked, demonstrated end to end, not written into `core.mereo` yet.
 `span` counts bytes; an array view counts ELEMENTS, which is a span plus a
 stride. Leaning: ship the RECORD form, skip the scalar one.
 
-### A top-level template must have at least one port, and should not have to
-
-`bump goes` at the left margin is not a template at all -- it falls to the
-top-level line list -- and `bump () goes` is refused for an empty port list. A
-METHOD may take no ports because it has its instance's state to reach; a
-template genuinely has nothing to reach, so the restriction is defensible. What
-is not defensible is that neither spelling says so.
-
 ### Strip section headers from the shipped binary?
 
 Open, leaning NO, and measured: `objcopy --strip-section-headers` saves 287

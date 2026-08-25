@@ -1,0 +1,17 @@
+include "../../linux.mereo"
+
+-- A TEMPLATE WITH NO PORTS. It was refused, on the reasoning that a template
+-- has nothing to reach without one. That is wrong: its locals are renamed per
+-- splice so it cannot see a caller's scalars, but it can adopt a descriptor
+-- and write a literal, which is the whole of this. Refusing it meant giving
+-- such a template a port it ignores.
+
+say () goes
+  sink is already linux.file (descriptor is 1)
+  sink.write (buffer is "hi\n", count is 3)
+end
+
+program goes
+  say ()
+  say ()
+end

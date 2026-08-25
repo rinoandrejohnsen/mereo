@@ -66,6 +66,7 @@ bb span            span     $'host=localhost\nport=8080\n'  0 \
 bb span/no-final-nl span    $'a=1\nb=2'       0  $'a -> 1\nb -> 2'
 bb span/no-equals   span    $'bare\nk=v\n'    0  $'bare -> \nk -> v'
 bb span/empty       span    ""               0  ""
+bb tmpl/no-port      tmpl_noport  ""  0  $'hi\nhi'
 # `{"a":1}` has no quote after the key, so `find` answers the length it was
 # given and the offset lands one PAST a seven-byte document -- reported as the
 # start of a string value, with the following `length - start` underflowing to
@@ -560,6 +561,7 @@ silent  loop/leaves-fine          loop_leaves_fine
 # literal longer than it -- refused now, merely unproved before.
 silent  literal/size-bound        literal_size_bound
 rejects loop/never-leaves         loop_never_leaves "the body never writes"
+rejects tmpl/no-port-extra        tmpl_noport_extra "has no port 'x'"
 # ...and the SCOPE of that fact. `leave check when n > 40` bounds n only
 # until `check` ends; past it, control may have arrived through the leave and
 # the negation is exactly wrong. Unscoped, this was proved SILENTLY.

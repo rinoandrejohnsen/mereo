@@ -1,0 +1,14 @@
+include "../../linux.mereo"
+
+-- The other half: a call may not name a port the template has not got. That
+-- was accepted and the argument DROPPED, with or without a port list -- and a
+-- misspelled port is the usual way to write one.
+say () goes
+  sink is already linux.file (descriptor is 1)
+  sink.write (buffer is "hi\n", count is 3)
+end
+
+program goes
+  z is 0
+  say (x is z)
+end

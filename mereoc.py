@@ -1867,18 +1867,20 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                 name = qualified(name, ns_of_line.get(n))
                 if name in definitions:
                     fail(f"line {n}: definition '{name}' redefined")
-                params = [p.strip() for p in m.group(2).split(",")]
+                # `NAME () goes` -- NO PORTS, which is a real template and not
+                # a mistake. It was refused on the reasoning that a template has
+                # nothing to reach without one; that is wrong. Its locals are
+                # renamed per splice so it cannot see a caller's scalars, but it
+                # can adopt a descriptor and write a literal, which is the whole
+                # of `say () goes ... end`. Refusing it meant giving such a
+                # template a port it ignores.
+                params = ([] if not m.group(2).strip()
+                          else [p.strip() for p in m.group(2).split(",")])
                 for p in params:
                     if not re.fullmatch(r"\w+", p):
-                        fail(f"line {n}: `{s}` -- "
-                             + (f"`{p}` is not a port name; " if p.strip() else
-                                "the port list is empty; ")
-                             + "a parameter list is names separated by commas, "
-                               "`(a, b)`, each a plain word, and at "
-                               "least one. A template with no ports has no "
-                               "spelling today, so give it a port it uses -- or "
-                               "see todo.md, which has the case for allowing "
-                               "none.")
+                        fail(f"line {n}: `{s}` -- `{p}` is not a port name; a "
+                             "parameter list is names separated by commas, "
+                             "`(a, b)`, each a plain word.")
                     name_ok(p, n, "parameter")
                 # one definition holding one method of the same name: downstream
                 # (procedure_call, inline_procedure, the splice) sees exactly what
@@ -1919,9 +1921,9 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                 continue
             fail(f"line {n}: unrecognized top-level line: {s!r} -- at the "
                  "left margin a line opens a definition (`NAME is`, or `NAME "
-                 "extends BASE is`), a template (`NAME (PORTS) goes` -- the "
-                 "port list is required here, unlike a method inside a "
-                 "definition), the program (`program goes`), the "
+                 "extends BASE is`), a template (`NAME (PORTS) goes`, "
+                 "or `NAME () goes` for one that takes none -- the parentheses "
+                 "are what make it a template), the program (`program goes`), the "
                  "failure table (`failures is`), or names a number (`NAME is "
                  "NUMBER`).")
 
@@ -5212,6 +5214,17 @@ def inline_procedure(meth, st, cid, definitions, slots, prims):
         if p not in actual_of:
             fail(f"line {st['line']}: '{meth['name']}' parameter '{p}' is "
                  "not connected")
+    # ...and the other direction, which nothing checked: a name wired at the
+    # call site that the template has no port for was accepted and DROPPED. A
+    # misspelled port is the common way to write one, and it left the argument
+    # nowhere with nothing said.
+    for p in actual_of:
+        if p not in meth["params"]:
+            near = [q for q in meth["params"] if q[:2] == p[:2] or q[-2:] == p[-2:]]
+            fail(f"line {st['line']}: '{meth['name']}' has no port '{p}'"
+                 + (f" -- did you mean '{near[0]}'?" if near else "")
+                 + (f" (it takes {', '.join(meth['params'])})"
+                    if meth["params"] else " -- it takes none"))
     inst = next((sl for sl in slots if sl.get("kind") == "instance"
                  and sl.get("name") == st["inst"]), None)
     idefn = (definitions.get(inst["definition"]) if inst is not None
