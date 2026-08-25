@@ -65,13 +65,13 @@ echo
 echo "### Build + layout gate"
 "$DIR/build.sh" >/dev/null 2>&1 && echo "  build + mereocheck: ok" \
     || { echo "  build FAIL"; rc=1; }
-# ...and one program from tests/progs, named explicitly: a NESTED crossroad (a
-# crossroad inside a cold road) is a layout claim like any other, and the only
+# ...and one program from tests/progs, named explicitly: a guarded scope nested
+# inside a cold one is a layout claim like any other, and the only
 # program that makes it lives with the black-box programs, which the gate's
 # default sweep does not walk.
 "$DIR/build.sh" tests/progs/tmpl_road_nest.mereo >/dev/null 2>&1 \
-    && echo "  nested crossroad layout: ok" \
-    || { echo "  nested crossroad layout FAIL"; rc=1; }
+    && echo "  nested cold-path layout: ok" \
+    || { echo "  nested cold-path layout FAIL"; rc=1; }
 # A kernel promise is emitted only where some emitted BRANCH can use it -- a
 # check to delete or a loop to give a trip count. The pair below is the whole
 # claim: one program's inner loop runs to a read count and must keep its

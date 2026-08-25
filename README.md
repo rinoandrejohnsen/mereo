@@ -1,4 +1,4 @@
-# mereo 0.1
+# mereo 0.2
 
 A prose-like, function-free systems language for Linux. A mereo program
 transpiles to freestanding C and links to a static binary with no C library, no
@@ -19,7 +19,39 @@ end
 
 That builds to a 784-byte executable.
 
-## What is settled in 0.1
+## What is new in 0.2
+
+- **Namespaces.** An `is` block holding a definition, with no keyword of its
+  own. They nest, an inner one sees the outer one's names, a member may call a
+  sibling, and the same name in two namespaces is two things. Checked against
+  C++ on nine questions that must print the same numbers.
+- **`goes` for statements, `is` for declarations.** The surface split that was
+  ambiguous in 0.1, plus `new` for the half of `NAME is VALUE` that could not
+  be said: the plain form opens the name or assigns it and nothing said which.
+- **`already` borrows, `blank` zeroes.** One keyword was doing both jobs, and
+  the borrowing one wrote zeros over a field left unset.
+- **A compile-time checking suite.** Ten mistakes written three ways -- mereo,
+  C++ with concepts, Zig -- and mereo refuses every one at the mistake. Among
+  them: a view over a backing too small for it, a syscall handed more room
+  than the buffer has, a nested loop resetting the enclosing loop's counter,
+  and a scope reading a scalar a sibling opened.
+- **A resource may state an invariant over its own fields**, checked where an
+  instance is adopted, which is where both numbers exist.
+- **Roads became guarded scopes.** `LABEL goes` with an entry condition is an
+  `if`; the crossroad machinery is gone from the compiler.
+- **A template may take no ports**, and a call may not name a port it has not
+  got.
+- **`-fwrapv`**: signed overflow wraps rather than being undefined, and it
+  moves mereo toward the C it is measured against rather than away.
+- **Parity with an AVX2 C twin**, reached by scanning thirty-two bytes a step.
+
+An access analysis was built in 0.2 and **removed before release**. It reached
+98.4% of 3056 accesses and changed no binary: GCC's own passes already did the
+work. [Safety](docs/safety.md) records what it cost to find that out and what
+is kept -- a syscall's contract, stated to GCC as an assumption, which is worth
+29,000,043 instructions against 103,000,036 where a branch uses it.
+
+## What was settled in 0.1
 
 - **Lifetimes are derived, never registered.** A resource is released when its
   scope ends, in reverse order, on every path out — including a failed check and
