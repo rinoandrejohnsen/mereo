@@ -7,17 +7,15 @@ destructors, without an unwinder and without a runtime.
 ```
 include "linux.mereo"
 
-program goes
-  buffer is 64 bytes
-  count is 0
+program goes buffer is 64 bytes count is 0
 
-  terminal is already linux.file (descriptor is 1)
+terminal is already linux.file (descriptor is 1)
 
-  source is linux.file (path is "lorem_ipsum.txt", flags is 0, mode is 0)
+source is linux.file (path is "lorem_ipsum.txt", flags is 0, mode is 0)
 
-  source.read (buffer is buffer, capacity is 11, count is count)
+source.read (buffer is buffer, capacity is 11, count is count)
 
-  terminal.write (buffer is buffer, count is count)
+terminal.write (buffer is buffer, count is count)
 
 end
 ```
@@ -43,8 +41,8 @@ Three words distinguish what an instance does with the thing it names:
 | `NAME is blank CLASS` | a fresh zeroed block of that shape; releases nothing |
 
 `already linux.file (descriptor is 1)` names standard output without ever
-closing it. `adopted` is for a descriptor obtained some other way — the two ends
-of a pipe, for instance — which the tower should still close.
+closing it. `adopted` is for a descriptor obtained some other way — the two
+ends of a pipe, for instance — which the tower should still close.
 
 **`already` names every field**, because it borrows a thing that already exists
 and each field is a fact about that thing. There is no defaulting: zero is not
@@ -112,9 +110,9 @@ end
 
 That one marker **is** the ownership boundary. A fault *before* it releases
 nothing, because nothing had been taken; a fault *after* it — a failed `bind`,
-here — releases the one thing, so the descriptor is closed. The socket is opened
-and bound in one acquisition, which is the point: there is no window in which a
-`transform` exists without its algorithm attached.
+here — releases the one thing, so the descriptor is closed. The socket is
+opened and bound in one acquisition, which is the point: there is no window in
+which a `transform` exists without its algorithm attached.
 
 Omit the marker from a multi-call acquire and it is refused, because the
 boundary would be a guess:
@@ -168,16 +166,16 @@ To own a **second** thing, layer it: `NAME extends THIS is`. Each layer owns
 one thing, and the tower releases them in reverse.
 
 `linux.tty` is the library's own example. A terminal is two things: a
-descriptor, and the settings that were in force before the program touched them.
-`file` already owns the first, so `tty` layers on it and owns only the second:
+descriptor, and the settings that were in force before the program touched
+them. `file` already owns the first, so `tty` layers on it and owns only the
+second:
 
 ```
   tty extends file is
     backup is 36 bytes
 
-    acquire goes
-      ioctl (descriptor is descriptor, request is 21505, argument is backup)
-    end
+acquire goes ioctl (descriptor is descriptor, request is 21505, argument is
+backup) end
 
     release goes
       ioctl (descriptor is descriptor, request is 21506, argument is backup)
@@ -201,12 +199,11 @@ Restore, then close, in reverse order of acquisition. A program says only:
 ```
 include "linux.mereo"
 
-program goes
-  work is linux.terminal_settings
+program goes work is linux.terminal_settings
 
-  console is linux.tty (path is "/dev/tty", flags is 2, mode is 0)
+console is linux.tty (path is "/dev/tty", flags is 2, mode is 0)
 
-  console.snapshot (buffer is work)
+console.snapshot (buffer is work)
 
 end
 ```

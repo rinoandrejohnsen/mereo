@@ -1,8 +1,8 @@
 mereo's design follows from one commitment — that what is written is what the
 machine does — and from the constraints accepted to keep it. There is no
 runtime, so nothing happens that the source does not say; no allocator, so
-memory is where it was declared; and no functions, so control flow is visible in
-the text rather than in a call graph.
+memory is where it was declared; and no functions, so control flow is visible
+in the text rather than in a call graph.
 
 ## Etymology
 
@@ -12,10 +12,10 @@ Mereology-Oriented Programming, whose first-order principle was that everything
 is a part and that programs are built by fusing smaller parts into larger
 wholes.
 
-Little of that formal apparatus survives in the language as it now stands, but
-the idea it was named for does: the **scope** is mereo's part, a named region
-that owns what it holds and releases it on the way out, and every other
-construct — a loop, a guarded scope, a template, the program itself — is one.
+Little of that formal apparatus survives, but the idea it was named for does.
+The **scope** is mereo's part: a named region that owns what it holds and
+releases it on the way out. Every other construct — a loop, a guarded scope, a
+template, the program itself — is one.
 
 ## Everything is a scope
 
@@ -35,10 +35,10 @@ nothing for them to mean that naming a scope does not already say.
 
 ## Lifetimes are derived, not registered
 
-A resource is acquired in exactly one step. That restriction is what makes the
-rest possible: the transpiler always knows how far acquisition has progressed,
-so cleanup is emitted as a ladder of labels entered at the point matching the
-progress made, and no state is kept at runtime to record it.
+A resource is acquired in exactly one step. That restriction makes the rest
+possible. The transpiler always knows how far acquisition has progressed, so
+cleanup is a ladder of labels entered at the matching point, and no state is
+kept at runtime to record it.
 
 ```c
     goto release_server;      /* failed before the client existed */
@@ -48,18 +48,18 @@ release_server:
     _assembly_close(server_descriptor);
 ```
 
-Every exit enters that ladder — reaching `end`, a `leave`, a failed check, or an
-interrupt. A generated program holding several descriptors contains no boolean
-guard of any kind. The cost of the guarantee is the restriction that buys it:
-ownership cannot be transferred conditionally, and a resource cannot be stored
-in a data structure.
+Every exit enters that ladder — reaching `end`, a `leave`, a failed check, or
+an interrupt. A generated program holding several descriptors contains no
+boolean guard of any kind. The cost of the guarantee is the restriction that
+buys it: ownership cannot be transferred conditionally, and a resource cannot
+be stored in a data structure.
 
 ## Failure is derived from what failed
 
 `ensure` states what must hold. When it does not, mereo releases what is live,
 writes a record naming the step to standard error, and exits non-zero. Neither
-`end` nor `leave program` accepts a status, so a non-zero exit means exactly one
-thing: something failed, and both the code and the message came from *what*
+`end` nor `leave program` accepts a status, so a non-zero exit means exactly
+one thing: something failed, and both the code and the message came from *what*
 failed. There is no exception, no error enum and no result type to inspect at a
 call site — the `ensure` is the inspection. Where failure is expected rather
 than exceptional, `or continue` repairs it in place.
@@ -80,15 +80,16 @@ already exist. Nothing is coerced silently, because there is nothing to coerce.
 
 ## Optimisation claims are checked, not hinted
 
-A cold block — the record an `ensure` writes when it fails — is emitted past the
-program's exit, out of the path that runs. The build then disassembles the
-binary it produced and fails if that layout was not achieved, so the placement is
-a claim the toolchain verifies rather than a hint the compiler may ignore.
+A cold block — the record an `ensure` writes when it fails — is emitted past
+the program's exit, out of the path that runs. The build then disassembles the
+binary it produced and fails if that layout was not achieved, so the placement
+is a claim the toolchain verifies rather than a hint the compiler may ignore.
 
 The same principle covers safety. A bounds check is not something to switch off
-for speed; it is something to state once so the compiler can prove it redundant.
-Bounding a loop by the same length the check tests removes the check from the
-binary entirely — see [Performance](Performance), which measures both.
+for speed; it is something to state once so the compiler can prove it
+redundant. Bounding a loop by the same length the check tests removes the check
+from the binary entirely — see [Performance](Performance), which measures
+both.
 
 ## What was deliberately left out
 
@@ -104,5 +105,5 @@ The absences are load-bearing rather than incidental:
 | Separate compilation | a program is one translation unit |
 
 The libraries follow the same rule. `core.mereo` carries three of C's thirteen
-`ctype` questions and no `memmove`; both absences are recorded in the source with
-the same reason, which is that nothing has wanted one yet.
+`ctype` questions and no `memmove`; both absences are recorded in the source
+with the same reason, which is that nothing has wanted one yet.

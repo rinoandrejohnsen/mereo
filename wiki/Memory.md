@@ -14,9 +14,9 @@ which**:
 | in a definition | a **state slot** | is per-instance, and its number is the value it starts at |
 
 The three places are far enough apart that nothing is ambiguous within one
-scope, and the one collision that can happen — a scalar taking a constant's name
-— is refused where it is written. Fields are the other declaration and never
-overlap with these: a field is `N bytes`, never a number.
+scope, and the one collision that can happen — a scalar taking a constant's
+name — is refused where it is written. Fields are the other declaration and
+never overlap with these: a field is `N bytes`, never a number.
 
 A **backing** is a run of bytes with a name:
 
@@ -26,8 +26,8 @@ A **backing** is a run of bytes with a name:
 ```
 
 `in stack` is the default; `in static` places the bytes in the program's data
-rather than its frame. A buffer sized by a run-time scalar is a run of memory by
-definition and cannot live in a register.
+rather than its frame. A buffer sized by a run-time scalar is a run of memory
+by definition and cannot live in a register.
 
 A backing written as a **string literal** allocates one byte more than it
 counts, and that byte is zero. `message` above is fourteen bytes of text in
@@ -39,8 +39,8 @@ carries no length, so `openat`, `statx`, `unlinkat` and nine more read to the
 first zero byte, while a *buffer* always comes with an explicit count and is
 never scanned. A literal handed to the first kind needs a terminator and has
 nowhere to put a length; a literal handed to the second is bounded by the count
-and never reaches the extra byte. One rule covers both. A byte list —
-`raw is bytes 0xe3, 0xb0` — is not text and gets no terminator.
+and never reaches the extra byte. One rule covers both. A byte list — `raw is
+bytes 0xe3, 0xb0` — is not text and gets no terminator.
 
 What this does not cover is a path assembled at run time. Those bytes are
 whatever the program put there, and terminating them is the program's job, in
@@ -62,8 +62,8 @@ system, and it sits at the boundary between a register and memory.
 
 ## Layout views
 
-Writing readings out at every use is repetitive, so a **layout view** names them
-once and a record describes itself:
+Writing readings out at every use is repetitive, so a **layout view** names
+them once and a record describes itself:
 
 ```ada
 sockaddr_in is
@@ -102,14 +102,14 @@ takes the offset from there rather than repeating it:
   bits is info.mode as linux.file_mode
 ```
 
-The alternative is `meta + 28`, with 28 written out beside a layout that already
-knows it — two places to keep in step, and the offset is exactly what a layout
-view exists to remove. The field's own width is what the fit is checked against,
-so a view too wide for it is refused.
+The alternative is `meta + 28`, with 28 written out beside a layout that
+already knows it — two places to keep in step, and the offset is exactly what a
+layout view exists to remove. The field's own width is what the fit is checked
+against, so a view too wide for it is refused.
 
-The same view may be laid at a plain offset, or over an address only known while
-the program runs — a run of variable-length records, for instance, where the
-programmer supplies the width the compiler checks against the layout's size:
+The same view may be laid at a plain offset, or over an address known only at
+run time — a run of variable-length records, say, where the programmer supplies
+the width the compiler checks against the layout's size:
 
 ```ada
   bits is meta + 28 as linux.file_mode     -- at a compile-time offset
@@ -141,30 +141,24 @@ a name for the operations that belong to the record:
 ```ada
 include "linux.mereo"
 
-record is
-  tag is 1 bytes
-  span is 2 bytes as big
+record is tag is 1 bytes span is 2 bytes as big
 
-  fill (a, b) goes
-    tag is a                   -- its own fields, by bare name
-    span is b                  -- ...and byte order still holds
-  end
-end
+fill (a, b) goes tag is a                   -- its own fields, by bare name
+span is b                  -- ...and byte order still holds end end
 
-program goes
-  buf is 8 bytes
+program goes buf is 8 bytes
 
-  h is buf as record
-  h.fill (a is 5, b is 4660)   -- 0x1234, stored most-significant first
+h is buf as record h.fill (a is 5, b is 4660)   -- 0x1234, stored most-
+significant first
 
   ensure h.tag == 5
   ensure [buf + 1 : 1] == 18   -- 0x12 first: the template kept network order
 end
 ```
 
-Inside the template, a field is reached by its bare name — `tag is a` writes the
-instance's `tag`, not a local. Nothing is passed in to say which instance: the
-template is spliced at the use site, so `h.fill (...)` becomes stores into
+Inside the template, a field is reached by its bare name — `tag is a` writes
+the instance's `tag`, not a local. Nothing is passed in to say which instance:
+the template is spliced at the use site, so `h.fill (...)` becomes stores into
 `buf`.
 
 This is how `span` and `builder` in [the standard library](Library) are
@@ -185,13 +179,13 @@ end
 ```
 
 `host.nodename` is where that string starts, ready for a span or the byte
-layer. Assigning a number to one is refused, since there is no store of
-that width either.
+layer. Assigning a number to one is refused, since there is no store of that
+width either.
 
 Below that width the default is the other way round: a field of 1, 2, 4 or 8
 bytes is a **number**, so `[field + k : w]` reads it as an **address**. That is
-what `span`'s own `data` field wants — it holds where the bytes are, and
-`[data + offset]` follows it.
+what `span`'s own `data` field wants — it holds where the bytes are, and `[data
++ offset]` follows it.
 
 A field can say which side it wants, in the words a program body already uses
 for the same choice:
@@ -203,17 +197,13 @@ holder is
 end
 ```
 
-`in stack` is the one to reach for when eight bytes are a **record** rather than
-a number — a poll entry, a pair of descriptors, a small header. Without it the
-store goes through whatever the field holds, which is nothing.
-`in register` states the default, and is refused on a width a register cannot
-hold.
+`in stack` is the one to reach for when eight bytes are a **record** rather
+than a number — a poll entry, a pair of descriptors, a small header. Without it
+the store goes through whatever the field holds, which is nothing. `in
+register` states the default, and is refused on a width a register cannot hold.
 
 **The fields are the storage, and nothing else changes it.** A definition with
-`N bytes` fields is one contiguous block, laid end to end with no padding, and
-an instance of it is that block in the scope that holds it — 8 + 4 + 2 is
-`14 bytes`, whether the definition carries templates, or a lifecycle, or
-neither. Owning something says what an instance *does*, not how its fields are
+`N bytes` fields is one contiguous block, end to end with no padding. An instance is that block in the scope holding it: 8 + 4 + 2 is `14 bytes`, whether the definition carries templates, or a lifecycle, or neither. Owning something says what an instance *does*, not how its fields are
 laid out. Only **scalar state** — `count is 0`, a default value with no width —
 is different, having no bytes and so no offset; a definition cannot mix the two,
 and says so if you try.
@@ -254,20 +244,19 @@ released.
   page.number (value is total)
 ```
 
-`span` corresponds to C++'s `string_view`. Because mereo has no functions, a
-method cannot return a fresh instance, so the operations that would manufacture
-a sub-view — `substr`, `first`, `subspan` — are absent; C++'s own mutators
-`remove_prefix` and `remove_suffix` take their place as `skip` and `trim`, with
-`take` for the front. All three clamp, where C++ leaves an over-long argument
-undefined.
+`span` corresponds to C++'s `string_view`. With no functions, a method cannot
+return a fresh instance, so the operations that manufacture a sub-view —
+`substr`, `first`, `subspan` — are absent. C++'s own mutators `remove_prefix`
+and `remove_suffix` take their place as `skip` and `trim`, with `take` for the
+front. All three clamp, where C++ leaves an over-long argument undefined.
 
 An absent byte answers with the region's `length` rather than a sentinel. C++
-needs `npos` because `size_t` has no spare value; the offset one past the end is
-the length, and it is the offset a caller would resume from anyway.
+needs `npos` because `size_t` has no spare value; the offset one past the end
+is the length, and it is the offset a caller would resume from anyway.
 
 Every `builder` method checks that the write fits before it writes, which is
-what the type buys over a pointer and a length carried separately: the check has
-one place to live rather than one per call site.
+what the type buys over a pointer and a length carried separately: the check
+has one place to live rather than one per call site.
 
 ## Containers
 
@@ -283,5 +272,5 @@ Both ends are available, and a third option usually beats them. `span.at`
 checks its bound and fails naming the step; `[v.data + i]` does not check. But
 bounding a loop by the same length the check tests lets the compiler prove the
 check redundant and delete it, keeping the safety for nothing; and where the
-bound differs, one `ensure` before the loop does the same. [Performance](Performance)
-measures all three.
+bound differs, one `ensure` before the loop does the same.
+[Performance](Performance) measures all three.

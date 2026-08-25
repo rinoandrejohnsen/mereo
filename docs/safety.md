@@ -34,8 +34,8 @@ programs**. It was not wrong, and it is gone as of 2026-08-25.
 `drop_proved_checks` deleted a run-time check when it could show the check
 could never fire. Across 42 corpus programs it fired on **4 checks, in 1
 program**. Leaving all four in gave the same `.text`, the same instruction
-count, and a binary with the landing pads and their message strings gone
-either way — GCC had removed them too.
+count, and a binary with the landing pads and their message strings gone either
+way — GCC had removed them too.
 
 That is the whole contribution to code generation, and it is zero.
 
@@ -44,21 +44,19 @@ That is the whole contribution to code generation, and it is zero.
 Traced through GCC's own pass dumps on the exam program rather than reasoned
 about. Error blocks surviving:
 
-    006t.original   37
-    016t.cfg        32     unreachable code
-    044t.fre1       30     full redundancy elimination
-    045t.evrp        7     <- early value range propagation
+006t.original   37 016t.cfg        32     unreachable code 044t.fre1       30
+full redundancy elimination 045t.evrp        7     <- early value range
+propagation
 
 And the step that enables it, counting memory references to a `builder`:
 
-    038t.ccp1      281
-    041t.esra        0     <- Scalar Replacement of Aggregates
+038t.ccp1      281 041t.esra        0     <- Scalar Replacement of Aggregates
 
 SRA's own log:
 
-    Created a replacement for page offset:   0, size: 64: pageD.4261    (data)
-    Created a replacement for page offset:  64, size: 64: page$8D.4262  (count)
-    Created a replacement for page offset: 128, size: 64: page$16D.4263 (limit)
+Created a replacement for page offset:   0, size: 64: pageD.4261    (data)
+Created a replacement for page offset:  64, size: 64: page$8D.4262  (count)
+Created a replacement for page offset: 128, size: 64: page$16D.4263 (limit)
 
 GCC splits the aggregate into three SSA scalars, one per field, and then
 ordinary range propagation tracks them. **30 of 37 error blocks go that way.**
@@ -191,7 +189,7 @@ numbers in the text:
 
 | | |
 | --- | --- |
-| a syscall handed more room than the buffer has | `read (buffer is small, capacity is 4096)` with `small is 16 bytes` |
+| a syscall handed more room than the buffer has | `input.read (buffer is small, capacity is 4096)` with `small is 16 bytes` |
 | a span claiming more bytes than its backing has | `ensure length <= data.size`, checked where the instance is adopted |
 | a nested loop resetting the enclosing loop's counter | every scalar is visible everywhere, so the name really is the same name |
 | a loop that cannot leave through any exit it has | no exit tests anything the body writes |
@@ -235,16 +233,14 @@ Not because it is hard, and not because it failed to work. Because it was
 Three findings settle it, and each is a number rather than a judgement:
 
 1. **The analysis removed 4 checks in 1 of 42 programs, and GCC removed all
-   four anyway.** Same `.text`, same instruction count.
-2. **GCC removes 30 of 37 error blocks on its own**, through a pass mereo would
-   have to reimplement to match.
-3. **Every remaining lever is closed** — by measurement, or by mereo's own
-   shape (goto loops, one function) which exists for reasons worth more than
-   the levers.
+four anyway.** Same `.text`, same instruction count. 2. **GCC removes 30 of 37
+error blocks on its own**, through a pass mereo would have to reimplement to
+match. 3. **Every remaining lever is closed** — by measurement, or by mereo's
+own shape (goto loops, one function) which exists for reasons worth more than
+the levers.
 
-Should this be reopened, the number to beat is stated so the question cannot be
-re-argued from intuition: **4 checks, in 1 of 42 programs, all of which GCC
-removed anyway.** Anything that does not clear that is a diagnostic, not an
+If this is reopened, the number to beat is **4 checks, in 1 of 42 programs, all
+of which GCC removed anyway.** Anything short of that is a diagnostic, not an
 optimisation — and a diagnostic has a cheaper home.
 
 **That home is CBMC.** `tests/cbmc.sh` is bit-precise, answers with a

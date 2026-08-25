@@ -2,10 +2,10 @@ A mereo program is compiled freestanding, as one translation unit, with no
 functions in it. Those three facts together decide an unusual amount before the
 program runs — and, just as usefully, they mark exactly where deciding stops.
 
-This page is about that boundary: what is settled when the program is read, what
-is handed to the C compiler, and what is genuinely a run-time question. It ends
-with two comparisons, because the obvious neighbours — Zig's `comptime` and
-C++'s `concept` — are each half an answer to something asked here.
+This page is about that boundary: what is settled when the program is read,
+what is handed to the C compiler, and what is genuinely a run-time question. It
+ends with two comparisons, because the obvious neighbours — Zig's `comptime`
+and C++'s `concept` — are each half an answer to something asked here.
 
 ## Why so much is decidable
 
@@ -53,30 +53,30 @@ Constant arithmetic is not folded here:
   n is 2 + 3 * 4
 ```
 
-emits `n = (2 + (3 * 4));`, and GCC folds it. That is deliberate. The compiler's
-job is to know the *shape* of memory and lifetimes; an optimiser already folds
-arithmetic, eliminates redundant checks and merges identical blocks, and doing
-any of it twice would mean two answers to keep in agreement.
+emits `n = (2 + (3 * 4));`, and GCC folds it. That is deliberate. The
+compiler's job is to know the *shape* of memory and lifetimes; an optimiser
+already folds arithmetic, eliminates redundant checks and merges identical
+blocks, and doing any of it twice would mean two answers to keep in agreement.
 
 The same division decides bounds checking. Where a loop is bounded by the same
 length its check tests, GCC proves the check redundant and deletes it — the
-check and its whole error block are absent from the binary. [Performance](Performance)
-measures that against C.
+check and its whole error block are absent from the binary.
+[Performance](Performance) measures that against C.
 
 ## Where deciding stops
 
-An index that came from a system call is not decidable, and no amount of
-whole-program analysis reaches it:
+An index that came from a system call is not decidable, and no amount of whole-
+program analysis reaches it:
 
 ```ada
   source.read (buffer is block, capacity is 4096, count is count)
 ```
 
-`count` is whatever the kernel returned. A check on an access derived from it is
-a real run-time check, and mereo's answer is not to prove it away but to make it
-free: bound the loop by the same value the check tests, and the optimiser
-removes it. Where the bound genuinely differs, one `ensure` before the loop does
-the same for every iteration after it.
+`count` is whatever the kernel returned. A check on an access derived from it
+is a real run-time check. mereo's answer is not to prove it away but to make it
+free: bound the loop by the value the check tests, and the optimiser removes
+it. Where the bound genuinely differs, one `ensure` before the loop does the
+same for every iteration after it.
 
 So the compile-time claim here is deliberately narrow. It covers the decidable
 half completely and says nothing about the other.
@@ -89,10 +89,10 @@ and would gain little, because the two languages spend their compile time on
 different problems.
 
 It is worth separating, because `comptime` is often credited with Zig's bounds
-safety and does not provide it. Zig inserts a **run-time** bounds check in Debug
-and ReleaseSafe, LLVM elides the ones it can prove, and ReleaseFast removes them
-outright. That is the same mechanism described above — an optimiser deleting
-what it can prove — reached by a different route.
+safety and does not provide it. Zig inserts a **run-time** bounds check in
+Debug and ReleaseSafe, LLVM elides the ones it can prove, and ReleaseFast
+removes them outright. That is the same mechanism described above — an
+optimiser deleting what it can prove — reached by a different route.
 
 | | Zig | mereo |
 | --- | --- | --- |
@@ -120,9 +120,9 @@ method it calls, with no shared base and nothing declared. That is what a
 `concept` buys over an interface. What was missing was the check.
 
 It is derived rather than declared, and this is the real difference. A C++
-template body is type-generic, so the compiler cannot summarise what it needs of
-`T` — the requirement has to be written down. A mereo body is not generic that
-way; it says exactly what it does with each port:
+template body is type-generic, so the compiler cannot summarise what it needs
+of `T` — the requirement has to be written down. A mereo body is not generic
+that way; it says exactly what it does with each port:
 
 | the body writes | the port needs |
 | --- | --- |
@@ -170,8 +170,8 @@ line the mistake is on — except where the table says otherwise. A warning is
 recorded separately from a refusal, because it still compiles, and counting one
 as the other would flatter every language that only warns.
 
-Read it for where mereo is *not* alone. C++ agrees outright on four of ten.
-Two of the rows it loses are places where reinterpretation is the documented
+Read it for where mereo is *not* alone. C++ agrees outright on four of ten. Two
+of the rows it loses are places where reinterpretation is the documented
 behaviour, and two it answers with a warning rather than a refusal. Five rows
 are worth stopping on:
 
@@ -208,16 +208,17 @@ are worth stopping on:
   does not — a scalar or a buffer outlives its block — so it is caught from the
   set of resources still held.
 
-Disabling any of mereo's checks moves its column, which is how the suite is kept
-honest: the port row falls back to *refused, at line 2*, which is exactly the
-diagnostic the derivation replaced.
+Disabling any of mereo's checks moves its column, which is how the suite is
+kept honest: the port row falls back to *refused, at line 2*, which is exactly
+the diagnostic the derivation replaced.
 
 ## What none of this is
 
 It is not a proof of memory safety. A run-time index is unchecked unless the
 program checks it; `[v.data + i]` is exactly as unchecked as C, and is meant to
-be. What the compiler decides is the part that can be decided from the text: the
-lifetimes, the layout, the widths, the constant accesses and the connections.
+be. What the compiler decides is the part that can be decided from the text:
+the lifetimes, the layout, the widths, the constant accesses and the
+connections.
 
 The value is not that the list is long. It is that each item is checked rather
 than promised, and that the checks are run against the shipped artifact —

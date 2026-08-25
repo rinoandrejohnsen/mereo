@@ -2,9 +2,8 @@
 
 ## C
 
-C is the closest relative, and the differences cluster in three places: there is
-no standard library, there are no functions, and the type belongs to the access
-rather than to the variable.
+The closest relative. Three differences: no standard library, no functions, and
+the type belongs to the access rather than the variable.
 
 | | C | mereo |
 | --- | --- | --- |
@@ -17,24 +16,23 @@ rather than to the variable.
 | Comments | `//` and `/* */` | `--` only |
 | Allocation | `malloc` | none |
 
-The absence of a format string means no format-string bugs and no buffering to
-flush. The absence of functions means no calling convention and no ABI, at the
-cost of recursion and indirection. mereo's `ensure` at the primitive means a
-call site never tests a result: a system call that failed has already ended the
-program, with a record naming the step.
+No format string means no format-string bugs and nothing to flush. No functions
+means no calling convention and no ABI, at the cost of recursion and
+indirection. `ensure` at the primitive means a call site never tests a result:
+a failed syscall has already ended the program, with a record naming the step.
 
-Generated mereo is C, so the two can be compared directly. On paired programs
-doing the same work with the same checks, mereo's output matches hand-written
+Generated mereo is C, so the two compare directly. On paired programs doing the
+same work with the same checks, mereo's output matches hand-written
 freestanding C to within a few instructions, and is byte-identical on the
-simplest cases — see [Performance](performance.md).
+simplest — see [Performance](performance.md).
 
 ## C++
 
 mereo takes RAII from C++ and rejects almost everything else about how C++
-implements it. A resource is released at the end of its scope, in reverse order,
-on every path out. There the resemblance stops: C++ needs an unwinder and
-exception tables, and mereo needs neither, because acquisition is restricted to
-one step so progress is statically known.
+implements it. A resource is released at the end of its scope, in reverse
+order, on every path out. There the resemblance stops: C++ needs an unwinder
+and exception tables, and mereo needs neither, because acquisition is
+restricted to one step so progress is statically known.
 
 | | C++ | mereo |
 | --- | --- | --- |
@@ -69,13 +67,13 @@ begun the cleanup.
 
 The influence is on surface rather than semantics. Comments are Lua's `--`.
 Blocks close with `end` in the manner of both. The reserved words are ordinary
-English chosen to be read aloud — `is`, `goes`, `already`, `ensure`
-— which is closer to Ada's spirit than to C's.
+English chosen to be read aloud — `is`, `goes`, `already`, `ensure` — which is
+closer to Ada's spirit than to C's.
 
 The semantics are opposite to Lua's in nearly every respect: Lua is dynamically
-typed, garbage-collected and interpreted, with tables as its one data structure;
-mereo has no types on values, no allocator, no runtime and no data structures at
-all.
+typed, garbage-collected and interpreted, with tables as its one data
+structure; mereo has no types on values, no allocator, no runtime and no data
+structures at all.
 
 ## Where mereo does not compete
 

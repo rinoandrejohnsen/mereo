@@ -1,11 +1,11 @@
 # The exam
 
-Before calling anything a release, one program written twice: once in
-hand-optimised freestanding C, once in mereo. Same input, same output, byte for
+Before calling anything a release, one program written twice: once in hand-
+optimised freestanding C, once in mereo. Same input, same output, byte for
 byte. Then measured.
 
-The barrier this project sets itself is **parity with a hand-written, optimised,
-Linux-correct C program**. This is the test of it.
+The barrier this project sets itself is **parity with a hand-written,
+optimised, Linux-correct C program**. This is the test of it.
 
 ## The program
 
@@ -18,15 +18,16 @@ break and what counts as malformed.
 127.0.0.1 - frank [10/Oct/2000:13:55:36 -0700] "GET /apache_pb.gif HTTP/1.0" 200 2326
 ```
 
-It was chosen because it is not a toy. A 64 KiB read buffer that lines straddle;
-a 1 MiB arena; an open-addressed table of 8192 slots holding at most 4096 paths;
-and a parser walking bytes that arrive from outside. Every index is derived from
-input, which is the case that matters. Nothing is allocated in either version.
+It was chosen because it is not a toy. A 64 KiB read buffer that lines
+straddle; a 1 MiB arena; an open-addressed table of 8192 slots holding at most
+4096 paths; and a parser walking bytes that arrive from outside. Every index is
+derived from input, which is the case that matters. Nothing is allocated in
+either version.
 
 ## The C
 
-214 lines, freestanding — no libc, raw syscalls, the same flags the mereo corpus
-builds with. Optimised by hand in three steps, each measured on 80.5 MB:
+214 lines, freestanding — no libc, raw syscalls, the same flags the mereo
+corpus builds with. Optimised by hand in three steps, each measured on 80.5 MB:
 
 | | median | |
 | --- | ---: | --- |
@@ -35,13 +36,13 @@ builds with. Optimised by hand in three steps, each measured on 80.5 MB:
 | ...word-at-a-time scanning for newline, quote and space | 54.7 ms | the only loops that see every byte |
 
 The word-at-a-time step is the classic one: XOR a 64-bit word against a
-broadcast byte, and the byte that matched becomes zero, which the
-has-a-zero-byte test finds without a branch per byte.
+broadcast byte, and the byte that matched becomes zero, which the has-a-zero-
+byte test finds without a branch per byte.
 
 ### Verifying it
 
-SPARK, Frama-C and CBMC were not available on this machine, so the C was held to
-what was:
+SPARK, Frama-C and CBMC were not available on this machine, so the C was held
+to what was:
 
 | | |
 | --- | --- |
@@ -51,22 +52,22 @@ what was:
 | valgrind | clean |
 | 800 adversarial inputs against an independent Python oracle | 0 mismatches |
 
-The last row is the one that carries the weight. The oracle is written the
-obvious slow way in `exam/tools/reference.py`; the fuzzer in
-`exam/tools/fuzz.py` produces the shapes a log never has and a hostile peer
-might — no quotes, one quote, a 300-byte path, a 9000-byte line, a status with a
-letter in it, and 200 bytes of arbitrage.
+The last row is the one that carries the weight. The oracle is the obvious slow
+way, in `exam/tools/reference.py`. The fuzzer, `exam/tools/fuzz.py`, produces
+what a log never has and a hostile peer might: no quotes, one quote, a 300-byte
+path, a 9000-byte line, a status with a letter in it, and 200 bytes of
+arbitrage.
 
 ## The mereo
 
-357 lines, and structured differently on purpose. The first draft used templates
-and hit an 18-port call, because mereo has no globals and a template sees only
-what it is given. The second draft threw that away: **a template is for reuse,
-and there is none here** — each phase runs once, in order — so the structuring
-device is the named scope, which sees what encloses it.
+357 lines, and structured differently on purpose. The first draft used
+templates and hit an 18-port call, because mereo has no globals and a template
+sees only what it is given. The second draft threw that away: **a template is
+for reuse, and there is none here** — each phase runs once, in order — so the
+structuring device is the named scope, which sees what encloses it.
 
-The table is five parallel runs of bytes rather than one run of records, because
-mereo has no array of layouts. An index is scaled by hand:
+The table is five parallel runs of bytes rather than one run of records,
+because mereo has no array of layouts. An index is scaled by hand:
 
 ```
   walk goes
@@ -96,13 +97,13 @@ library wherever the library is plausibly better than a loop:
 | `string_view` | the whole parse is subranges of one buffer, at no run-time cost |
 | `partial_sort` | ten winners out of 8192 in one pass, against the C twin's ten linear passes |
 
-It does not allocate. `unordered_map` would be the idiomatic choice for the path
-table and is the wrong one here, because the spec fixes the storage — so the
-table is open-addressed by hand, exactly as in the C. That is itself a finding
-about where the library stops helping.
+It does not allocate. `unordered_map` would be the idiomatic choice for the
+path table and is the wrong one here, because the spec fixes the storage — so
+the table is open-addressed by hand, exactly as in the C. That is itself a
+finding about where the library stops helping.
 
-It agrees with both other programs byte for byte, on the million-line log and on
-all 800 adversarial seeds. **And it is 10% faster than either.**
+It agrees with both other programs byte for byte, on the million-line log and
+on all 800 adversarial seeds. **And it is 10% faster than either.**
 
 ### Where the 10% actually comes from
 
@@ -115,11 +116,11 @@ becomes a call to `memchr`, and nothing else is touched:
 | the same C, `memchr` and nothing else | 0.903 | 0.912 |
 | the C++ | 0.905 | 0.904 |
 
-The C with `memchr` and the C++ are the same speed. Every abstraction in the C++
-— the views, the charconv, the partial sort, the constexpr table — is worth
+The C with `memchr` and the C++ are the same speed. Every abstraction in the
+C++ — the views, the charconv, the partial sort, the constexpr table — is worth
 nothing measurable, which is the same result the rest of this project keeps
-getting. What is worth 10% is that glibc scans 32 bytes at a time and both other
-programs scan 8.
+getting. What is worth 10% is that glibc scans 32 bytes at a time and both
+other programs scan 8.
 
 The scan is reachable without a libc, too. A hand-written AVX2 loop compiled
 freestanding into the C twin gets **0.940** — 6% of the 10%, with glibc's tuned
@@ -157,14 +158,15 @@ nothing else. Give the twin the same thing and the field looks like this:
 | C, eight-byte SWAR, as the exam writes it | 54.5 ms |
 
 So: **mereo was at parity with a C twin given the same scan** — 0.991 median,
-0.997 min, which is the bar this project set — and 4.6% behind glibc's `memchr`.
+0.997 min, which is the bar this project set — and 4.6% behind glibc's
+`memchr`.
 
 ### Then the profile was read instead of guessed at, and that changed
 
-Counting what the exam actually *executes*, per instruction, found two primitives
-paying for work they did not need. Neither was a clever idea; both were the
-question "is this the best instruction available for this?" asked of a profile
-rather than of the source.
+Counting what the exam actually *executes*, per instruction, found two
+primitives paying for work they did not need. Neither was a clever idea; both
+were the question "is this the best instruction available for this?" asked of a
+profile rather than of the source.
 
 **`_same` compared one byte at a time** while its sibling `_scan` compared
 thirty-two. It is the hash table's key comparison, and at 8.6% of all
@@ -177,8 +179,8 @@ just the right instruction for the question being asked. Worth **7.1% of all
 instructions** for 67 bytes.
 
 The path lengths decided the width: median 13, **max 23**. A 32-byte vector
-compare would have been dead code — the same trap that the four-vector scan fell
-into, avoided here by measuring the input first.
+compare would have been dead code — the same trap that the four-vector scan
+fell into, avoided here by measuring the input first.
 
 **`_scan` re-derived answers it already had.** The vector loop finds the byte and
 leaves it in `_i`, and then the word-at-a-time tail below ran anyway and worked
@@ -215,10 +217,10 @@ for byte on the 84 MB log.
 `_same` removed **44M instructions but only 11M cycles**, and IPC went *down*:
 the byte loop was well-predicted, independent, high-IPC filler, so deleting it
 removes more instructions than cycles. `_scan` removed **22M instructions and
-23M cycles**, and IPC went *up*: those instructions were not filler but latency,
-a five-cycle load and a p1-only `tzcnt` sitting on the dependency chain between
-finding the newline and using it. More than a cycle recovered per instruction
-removed is the signature of taking something off a critical path.
+23M cycles**, and IPC went *up*: those instructions were not filler but
+latency, a five-cycle load and a p1-only `tzcnt` sitting on the dependency
+chain between finding the newline and using it. More than a cycle recovered per
+instruction removed is the signature of taking something off a critical path.
 
 **The same change does not help C.** Given the identical word-at-a-time compare,
 the freestanding twin executes 4.8% fewer instructions and gets *slower* —
@@ -231,22 +233,20 @@ the primitive.
 
 Closing the `memchr` gap by **unrolling** was the obvious guess, and it was
 wrong — worth recording for that reason. Four vectors a step was written and
-verified exhaustively, and it is 1.8x faster on a scan of 8 KB or more, but it
-made the exam *slower*: a gate on the length opens on the search bound while the
-cost is the distance to the match. The exam scans for a newline with 64 KB of
-buffer left and finds it after 84 bytes, every time; at that distance the
-unrolled form is 21% slower, since it loads 128 bytes and disambiguates four
-masks to find what one vector finds in three compares. Escalating rather than
-gating removes the loss but earns nothing and costs 27% of `.text`. See todo.md.
+verified exhaustively. It is 1.8x faster on a scan of 8 KB or more, and it made
+the exam *slower*: the gate opens on the search bound, while the cost is the
+distance to the match. The exam scans for a newline with 64 KB left and finds
+it after 84 bytes, every time. At that distance the unrolled form is 21%
+slower: it loads 128 bytes and disambiguates four masks to find what one vector
+finds in three compares. Escalating rather than gating removes the loss but
+earns nothing and costs 27% of `.text`. See todo.md.
 
 The two changes that *did* work came from the profile, and neither was in the
 scan loop everyone was looking at. That is the lesson: **the hot loop was named
 correctly and the expensive instruction in it was not.**
 
 A clock has variance in it, though, so the same claim is made again with none.
-Counted exactly on `callgrind`, **mereo executes 33% fewer instructions than the
-C twin as written** — 51.6M against 77.1M on an 8 MB slice, and the ratio holds
-at −32.6% on a 2 MB slice, so it is a property of the code and not of the input.
+Counted on `callgrind`, **mereo executes 33% fewer instructions than the C twin as written**: 51.6M against 77.1M on an 8 MB slice. The ratio holds at −32.6% on 2 MB, so it is a property of the code and not of the input.
 Before today's two fixes it was −25%. What it costs is size: mereo's `.text` is
 **52% larger** than the twin's (5,759 bytes against 3,798), because the language
 has no functions and inlines everything — the same property that removes the
@@ -254,9 +254,9 @@ instructions. That trade is the finding, and it runs in mereo's favour on both
 counts only because the inlining is what makes the primitives cheap to improve:
 fixing `_same` once fixed it at every call site in the corpus.
 
-An earlier version of this page put the instruction gap at 10.9% and the size at
-30%. Both predate several changes and neither reproduces; the numbers above were
-re-measured together, on named inputs.
+An earlier version of this page put the instruction gap at 10.9% and the size
+at 30%. Both predate several changes and neither reproduces; the numbers above
+were re-measured together, on named inputs.
 
 On identical output: the two programs agree byte for byte on the million-line
 log and on all 800 adversarial inputs.
@@ -280,25 +280,24 @@ byte, by building with `-g` and reading each instruction's generated-C line:
 | ...the cold tower | 56 B |
 | ...unattributed | 0 B |
 
-The tower is **1.1%**. GCC deletes most of it — six of the program's
-thirty-one error messages survive into the binary, the rest being unreachable
-once the checks around them are proved — so there is very little cold code left
-to blame. The extra 1160 bytes are in the spine, against the C twin's whole
-3798, and the honest statement is that **mereo's running code is about 30%
-larger than the C twin's at the same speed**, which the timing above already
-implies: more bytes, the same work, no slower.
+The tower is **1.1%**. GCC deletes most of it — six of the program's thirty-one
+error messages survive into the binary, the rest being unreachable once the
+checks around them are proved — so there is very little cold code left to
+blame. The extra 1160 bytes are in the spine, against the C twin's whole 3798.
+**mereo's running code is about 30% larger at the same speed** — which the
+timing already implies: more bytes, the same work, no slower.
 
 The old claim went unchecked long enough that the figures in this table drifted
-by 150 instructions without anyone noticing, which is why the attribution is now
-a suite rather than a sentence.
+by 150 instructions without anyone noticing, which is why the attribution is
+now a suite rather than a sentence.
 
 ### The instructions actually executed
 
 Wall-clock says parity and the binary says 30% larger, which reads like a
 contradiction until the third measurement. `valgrind --tool=callgrind` counts
-every instruction a run executes, exactly and deterministically -- three runs of
-the same binary on the same input give the same number to the digit -- and it
-works on these freestanding no-libc binaries unchanged.
+every instruction a run executes, exactly and deterministically -- three runs
+of the same binary on the same input give the same number to the digit -- and
+it works on these freestanding no-libc binaries unchanged.
 
 | 84 MB, one million lines | instructions executed |
 | --- | ---: |
@@ -335,9 +334,9 @@ fault: the same cycles divided by 11% fewer instructions is a smaller number by
 construction. mereo is not stalling more in any way that costs time — the wall
 clock is the same.
 
-The second is *why* the cycles did not fall along with the instructions, and the
-counters answer it. mereo is **front-end bound**: the pipeline is waiting for
-instructions to be fetched, not for work to finish.
+The second is *why* the cycles did not fall along with the instructions, and
+the counters answer it. mereo is **front-end bound**: the pipeline is waiting
+for instructions to be fetched, not for work to finish.
 
 | | retiring | front-end | back-end | bad speculation |
 | --- | ---: | ---: | ---: | ---: |
@@ -373,8 +372,8 @@ operation on x86-64 carries a REX prefix, one extra byte:
 | C | 9,940,670 of 20,348,221 — 48.9% |
 | mereo | 12,342,721 of 17,958,755 — **68.7%** |
 
-Twenty points more, at a byte each, is about half the 0.42-byte gap. The rest is
-the same fact in another form: a 64-bit constant needs `movabs`, ten bytes,
+Twenty points more, at a byte each, is about half the 0.42-byte gap. The rest
+is the same fact in another form: a 64-bit constant needs `movabs`, ten bytes,
 where a 32-bit one needs five — and mereo executes 679,237 of those against C's
 403,002, most of them the SWAR masks.
 
@@ -401,15 +400,15 @@ argument shuffling, and leaves control flow exactly where it was. The front end
 fetches one contiguous run per cycle, so it redirects just as often as C's and
 has less to show for each one.
 
-The two profiles agree on this. Sampling branches by region gives the same shape
-for both: about half in the byte scan, a tenth in the hash. The loops are the
-same loops — mereo's scan and C's `find_byte` are the same SWAR word-at-a-time
-test, branch for branch.
+The two profiles agree on this. Sampling branches by region gives the same
+shape for both: about half in the byte scan, a tenth in the hash. The loops are
+the same loops — mereo's scan and C's `find_byte` are the same SWAR word-at-a-
+time test, branch for branch.
 
 ### What the executed instructions actually are
 
-Counted exactly, by kind, on the same input — `callgrind --dump-instr=yes`, each
-address mapped to its opcode:
+Counted exactly, by kind, on the same input — `callgrind --dump-instr=yes`,
+each address mapped to its opcode:
 
 | | mereo | C | |
 | --- | ---: | ---: | ---: |
@@ -428,8 +427,8 @@ worth naming, because it is the same cause as the other two.
 The gap is **9.1 compares per line**, and about **40% of it is signedness**.
 
 mereo's scalars are signed 64-bit; the C twin's lengths and indices are `u32`.
-That decides whether a loop needs an entry test. mereo's per-line path runs nine
-loops, each shaped
+That decides whether a loop needs an entry test. mereo's per-line path runs
+nine loops, each shaped
 
 ```
   w is 0
@@ -437,9 +436,9 @@ loops, each shaped
     leave mix when w >= plen
 ```
 
-which lowers to a test at the top. For an *unsigned* bound, `0 >= plen` is false
-whenever `plen != 0` — and the parse has already refused `plen == 0` — so GCC
-folds the entry test away and falls straight into the body. For a *signed*
+which lowers to a test at the top. For an *unsigned* bound, `0 >= plen` is
+false whenever `plen != 0` — and the parse has already refused `plen == 0` — so
+GCC folds the entry test away and falls straight into the body. For a *signed*
 bound it cannot: `plen` might be negative, and nothing has said otherwise. The
 test survives, and runs once more than the loop does.
 
@@ -453,9 +452,9 @@ story:
 | mereo | 3,136,871 |
 
 Changing nothing but the C twin's types moves it 85,141 of the way. From the
-other side, telling GCC `plen > 0` at one mereo loop removes 47,402 compares on
-its own, and doing it at all twenty-five loops removes 48,495 — the same
-handful of loops, since most bounds were never the blocker.
+other side: telling GCC `plen > 0` at one mereo loop removes 47,402 compares;
+doing it at all twenty-five removes 48,495. The same handful of loops — most
+bounds were never the blocker.
 
 The remaining 60% is not attributed. It is spread across the parse rather than
 sitting in one place, and no single change has been found that moves it.
@@ -471,9 +470,9 @@ special here, and mereo can do what C does.
 
 The shape of the saving names its cause. Straight-line work — arithmetic and
 data movement — falls by a quarter, while control flow and comparison stay
-flat. That is the signature of removing calls: the address arithmetic, the frame
-adjustment and the argument shuffling go, and every branch and test the program
-actually asked for stays exactly where it was.
+flat. That is the signature of removing calls: the address arithmetic, the
+frame adjustment and the argument shuffling go, and every branch and test the
+program actually asked for stays exactly where it was.
 
 **It is two decisions, not three numbers.**
 
@@ -493,15 +492,15 @@ instructions, and the scalar width makes each survivor more expensive to fetch.
 Neither is an accident and neither is free.
 
 So the shape of the trade is sharper than "bigger but the same speed". mereo
-does the same work in fewer, branchier instructions, and pays back in fetch what
-it saved in execution.
+does the same work in fewer, branchier instructions, and pays back in fetch
+what it saved in execution.
 
 A note on tooling, since it cost an hour. `perf stat -e instructions:u` is the
-obvious instrument and is wrong here: this is a hybrid CPU, the process migrates
-between P-cores and E-cores, and each PMU counts only while the process is on
-its own core type. Reading `cpu_core` alone said mereo executed 8% MORE, which
-is the opposite of the truth. Callgrind has no such split, needs no privileges,
-and is exact.
+obvious instrument and is wrong here: this is a hybrid CPU, the process
+migrates between P-cores and E-cores, and each PMU counts only while the
+process is on its own core type. Reading `cpu_core` alone said mereo executed
+8% MORE, which is the opposite of the truth. Callgrind has no such split, needs
+no privileges, and is exact.
 
 ### Where the 1160 bytes are
 
@@ -515,9 +514,9 @@ GCC keeps three real functions in the C twin and one in mereo:
 | the number formatter | `emit_u64`, **one copy**, called 5 times — 192 B | `_decimal`, **inlined at all 9 call sites** — 846 B |
 
 That one helper is 654 of the 1160. `_write_value` and `_write` add most of the
-rest the same way. The trade is deliberate and it is the same trade that buys
-the speed: no calls means no call overhead, no frames, and no spills at a
-boundary, which is why the timing above is at parity while the size is not.
+rest the same way. The trade is deliberate, and it is the one that buys the
+speed: no calls, no frames, no spills at a boundary. That is why the timing is
+at parity and the size is not.
 
 Two things this is *not*. It is not the error paths, which are 1.1%. And it is
 not signedness: mereo's `_decimal` takes a signed value and handles a minus
@@ -555,8 +554,8 @@ line   5: `[rbuf + i + copy_1_i : 1]` not proved in range -- the index comes
           from input and nothing bounds it here -- this wants a run-time guard
 ```
 
-That is the analysis behaving as designed — reporting rather than guessing — and
-it is also a list of work.
+That is the analysis behaving as designed — reporting rather than guessing —
+and it is also a list of work.
 
 **Three things about writing mereo that only writing 357 lines of it shows.**
 There are no top-level constants and no top-level buffers, so a size used in two
@@ -572,10 +571,10 @@ One program is one program. It is a byte pipeline over a fixed table, which is
 the shape mereo is built for; nothing here says anything about the shapes it is
 not built for, and [Limitations](limitations.md) lists those.
 
-The verification is also not proof. It is two analysers, two sanitizers,
-valgrind, and 800 adversarial inputs against an independent implementation —
-which is enough to say the two programs agree and neither reaches out of bounds
-on anything tried, and not enough to say more than that.
+The verification is also not proof. Two analysers, two sanitizers, valgrind,
+and 800 adversarial inputs against an independent implementation. Enough to say
+the two programs agree and neither goes out of bounds on anything tried; not
+enough to say more than that.
 
 Everything here is in `exam/`: both programs, the oracle, the fuzzer, the
 generator and the benchmark harness.

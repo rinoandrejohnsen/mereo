@@ -1,9 +1,8 @@
 # Syntax and semantics
 
-mereo's surface is deliberately word-based: it has 42 reserved words, no
-punctuation-heavy operators outside arithmetic, and a shape meant to be read
-aloud. Indentation is structural, and `end` closes a block and is checked
-against that indentation rather than replacing it.
+Word-based on purpose: 42 reserved words, no punctuation-heavy operators
+outside arithmetic. Indentation is structural. `end` closes a block and is
+checked against the indentation rather than replacing it.
 
 ## A complete program
 
@@ -20,14 +19,12 @@ program goes
 end
 ```
 
-This prints `hello, world` and links to a 784-byte static executable. There is
-no `print`: `linux.write` sends bytes, `linux.read` receives them, and reaching
-`end` ends the program with status zero.
+784 bytes, static. There is no `print` — `linux.write` sends bytes,
+`linux.read` receives them. Reaching `end` exits with status zero.
 
 ## Lexical structure
 
-Comments run from `--` to the end of the line, following Lua and Ada, and there
-is no block comment form:
+Comments run `--` to end of line, as in Lua and Ada. There is no block form:
 
 ```
   -- one line, and that is the only kind
@@ -42,15 +39,14 @@ String literals are double-quoted and carry a compile-time `.size`:
 
 ## Bindings
 
-`NAME is VALUE` binds a name. The same form declares and assigns, and a name's
-first mention is its declaration:
+`NAME is VALUE` binds a name. One form for both: the first mention declares.
 
 ```
   total is 0
   total is total + 1
 ```
 
-Buffers are declared with a size in bytes, and a buffer's name *is* its address:
+A buffer is declared with a size in bytes. Its name *is* its address:
 
 ```
   block is 4096 bytes
@@ -59,21 +55,20 @@ Buffers are declared with a size in bytes, and a buffer's name *is* its address:
 
 ## Arguments are wired by name
 
-Every argument in a call is labelled, and arguments are matched by name rather
-than by position, so the order at a call site carries no meaning:
+Every argument is labelled and matched by name. Order carries no meaning:
 
 ```
   text.find (data is block, length is count, byte is 10, offset is at)
 ```
 
-There is no return value. An **out-port** is a named place the answer is
-written: `offset is at` means "put the offset in `at`". A step that answers
-three things has three out-ports and no tuple.
+There is no return value. An **out-port** names where the answer goes:
+`offset is at` means "put the offset in `at`". Three answers, three out-ports,
+no tuple.
 
 ## Conditions
 
-Conditions are written in operators, never in words — `==`, `!=`, `<`, `>=`,
-`&&`, `||` — so a condition cannot be confused with prose:
+Operators, never words — `==`, `!=`, `<`, `>=`, `&&`, `||` — so a condition
+cannot read as prose:
 
 ```
   ensure argc >= 2
@@ -82,23 +77,21 @@ Conditions are written in operators, never in words — `==`, `!=`, `<`, `>=`,
 
 ## Namespaces
 
-A namespace has no keyword of its own: it is an `is` block that holds a
-**definition**. Templates alone do not make one — a group is exactly a block of
-templates — and a *field* makes it neither, since a namespace has members rather
-than bytes. The system-call library places everything under `linux`; the
-computation library deliberately uses none, so its groups are reached bare:
+A namespace has no keyword: it is an `is` block holding a **definition**.
+Templates alone do not make one — that is a group. A field makes it neither: a
+namespace has members, not bytes. The syscall library puts everything under
+`linux`; the computation library uses none, so its groups are reached bare:
 
 ```
   linux.files.remove (name is "scratch", flags is 0)
   text.find (data is block, length is count, byte is 10, offset is at)
 ```
 
-A name inside one is qualified from outside and bare from within, and the same
-name in two namespaces is **two things** — declarations are keyed by their full
-path, so `alpha.rec` and `beta.rec` never meet.
+Qualified from outside, bare from within. The same name in two namespaces is
+**two things**: declarations are keyed by full path, so `alpha.rec` and
+`beta.rec` never meet.
 
-Namespaces nest, and a nested one reaches its enclosing namespace's members by
-their bare names:
+Namespaces nest. A nested one reaches the enclosing members bare:
 
 ```
 alpha is
@@ -118,7 +111,7 @@ reached from outside as `alpha.beta.reach (...)`.
 
 ## Reserved words
 
-The reserved words fall into a few groups: block openers and closers (`is`,
+In groups: block openers and closers (`is`,
 `goes`, `end`, `scope`, `program`), the two jumps (`leave`,
 `repeat`), declarations (`bytes`, `constant`, `already`, `adopted`, `extends`,
 `helper`, `assembly`, `pure`, `final`), checks and repair (`ensure`, `fails`,

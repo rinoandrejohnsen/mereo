@@ -27,9 +27,9 @@ A loop is a scope that ends by repeating itself:
   end
 ```
 
-Putting the `leave` first gives a `while`, in which the body may run zero times;
-leaving it at the bottom gives a do-while. A loop that opens a file each pass
-closes it each pass, without being told.
+Putting the `leave` first gives a `while`, in which the body may run zero
+times; leaving it at the bottom gives a do-while. A loop that opens a file each
+pass closes it each pass, without being told.
 
 ## Nesting
 
@@ -39,26 +39,16 @@ outer one, and no flag is needed to carry the decision outwards:
 ```ada
 include "linux.mereo"
 
-program goes
-  row is 0
-  col is 0
+program goes row is 0 col is 0
 
-  terminal is already linux.file (descriptor is 1)
+terminal is already linux.file (descriptor is 1)
 
-  rows goes
-    col is 0
-    cols goes
-      terminal.write (buffer is "#", count is 1)
-      col is col + 1
-      leave rows when row == 1      -- out of BOTH scopes at once
-      repeat cols when col < 3
-    end
-    terminal.write (buffer is "\n", count is 1)
-    row is row + 1
-    repeat rows when row < 3
-  end
+rows goes col is 0 cols goes terminal.write (buffer is "#", count is 1) col is
+col + 1 leave rows when row == 1      -- out of BOTH scopes at once repeat cols
+when col < 3 end terminal.write (buffer is "\n", count is 1) row is row + 1
+repeat rows when row < 3 end
 
-  terminal.write (buffer is "\n", count is 1)
+terminal.write (buffer is "\n", count is 1)
 
 end
 ```
@@ -70,16 +60,13 @@ end
 
 The first row runs to three marks and starts a second. The `leave rows` in the
 inner scope then ends **both** — had it said `leave cols`, only the inner one
-would have ended and the outer would have gone round again. The two are the same
-jump, differing only in the name they give.
+would have ended and the outer would have gone round again. The two are the
+same jump, differing only in the name they give.
 
 Either would also have released whatever the scopes it leaves were holding.
 
 **A jump may only target a scope it sits inside** — an ancestor, never a sibling
-and never one already closed. That rule is what keeps the releases derivable:
-the live set where the jump lands is that scope's entry set, which is a subset
-of the live set at the jump by construction, so the difference is exactly what
-to let go of. A jump anywhere else could arrive with a live set that depends on
+and never one already closed. That keeps the releases derivable. The live set where the jump lands is that scope's entry set, a subset of the live set at the jump by construction — so the difference is exactly what to let go of. A jump anywhere else could arrive with a live set that depends on
 the path taken, and recording that is a drop flag.
 
 ## `NAME is VALUE` declares and assigns, and which one is not written
@@ -109,8 +96,8 @@ declaration is an assignment to whatever that name already is:
                     -- mereo: n is 2.   C++: n is 1.
 ```
 
-And because a scalar's value is whatever anyone last wrote, a scope can read one
-a **sibling** left behind:
+And because a scalar's value is whatever anyone last wrote, a scope can read
+one a **sibling** left behind:
 
 ```ada
   one goes
@@ -159,28 +146,29 @@ program goes
 
 Two calls give `label_1_my_name` and `label_2_my_name`. The isolation runs both
 ways: a template cannot read or write a caller's scalar it has no port for —
-writing one opens a local of its own, and reading one is a read of nothing. What
-it *can* see beyond its ports is a top-level constant, which is a number rather
-than storage.
+writing one opens a local of its own, and reading one is a read of nothing.
+What it *can* see beyond its ports is a top-level constant, which is a number
+rather than storage.
 
 It covers everything a splice declares, not just scalars — two calls to a
-template holding `scratch is 8 bytes` give `fill_1_scratch` and `fill_2_scratch`
-— and it nests: a template calling a template keeps both sets of locals apart.
-Inside one splice the ordinary rule applies again, so a scope there assigns the
-template's local exactly as a scope in the program assigns the program's.
+template holding `scratch is 8 bytes` give `fill_1_scratch` and
+`fill_2_scratch` — and it nests: a template calling a template keeps both sets
+of locals apart. Inside one splice the ordinary rule applies again, so a scope
+there assigns the template's local exactly as a scope in the program assigns
+the program's.
 
 **So the rule is one sentence: the program body is a flat set of names, each
 splice is another, and scopes divide neither.**
 
-So the habit is narrower than the flat set makes it sound: **inside a program, a
-scalar opened in a scope is not private — name it as though it were not. Inside
-a template, it is.**
+So the habit is narrower than the flat set makes it sound: **inside a program,
+a scalar opened in a scope is not private — name it as though it were not.
+Inside a template, it is.**
 
 ## Names in a scope, against C and C++
 
-A scope here controls **when things happen and when they are released**. It does
-not control what a name means. C and C++ use the same braces for both; mereo
-separates them, and the difference shows up in five places.
+A scope here controls **when things happen and when they are released**. It
+does not control what a name means. C and C++ use the same braces for both;
+mereo separates them, and the difference shows up in five places.
 
 **A scalar declared in a scope is visible outside it.** There is one flat set of
 scalars per program, so `NAME is VALUE` opens a name wherever it is written and
@@ -220,11 +208,11 @@ them. An owned resource used after the scope that acquired it is refused by
 name, since its release already ran.
 
 The reason for that first rule is worth stating, because it looks arbitrary
-beside the scalars: **each of these is one declaration in one function**, so two
-of them cannot share a name however far apart the scopes are. A scalar is the
-exception that proves it — `v is 5` written twice is one declaration and an
-assignment, not two declarations, so there is nothing for a uniqueness check to
-compare, and that is exactly why it shares silently where a buffer cannot.
+beside the scalars: **each of these is one declaration in one function**, so
+two of them cannot share a name however far apart the scopes are. A scalar is
+the exception. `v is 5` twice is one declaration and one assignment, so a
+uniqueness check has nothing to compare — which is why it shares silently where
+a buffer cannot.
 
 Where a scope wants a scalar of its own and means it, say so:
 
@@ -250,8 +238,8 @@ refused when the name is not free.
 
 The last row is not a hedge: `tests/namespaces` builds the same nine cases in
 both languages — nested and sibling namespaces, outward lookup, shadowing,
-reopening, qualified access at every depth — and requires identical output, with
-answers chosen so a wrong resolution gives a different number.
+reopening, qualified access at every depth — and requires identical output,
+with answers chosen so a wrong resolution gives a different number.
 
 ## Conditionals
 
@@ -271,16 +259,12 @@ There does not need to be one. An `else` is a scope the `if` **leaves early**:
 ```ada
 include "linux.mereo"
 
-program (arguments) goes
-  x is arguments.count
+program (arguments) goes x is arguments.count
 
-  output is already linux.file (descriptor is 1)
+output is already linux.file (descriptor is 1)
 
-  main goes
-    x == 2 goes
-      output.write (buffer is "hello from if\n", count is 14)
-      leave main
-    end
+main goes x == 2 goes output.write (buffer is "hello from if\n", count is 14)
+leave main end
 
     output.write (buffer is "hello from else\n", count is 16)
   end
@@ -300,8 +284,8 @@ past_2:
 main_done:
 ```
 
-`leave main` is the ordinary jump, so it also releases anything the `if` arm had
-taken, on its way past the `else`.
+`leave main` is the ordinary jump, so it also releases anything the `if` arm
+had taken, on its way past the `else`.
 
 Two scopes with opposite conditions work too, and read fine for two independent
 questions — but they are two conditions, and **both are evaluated**, because
@@ -325,7 +309,7 @@ Where the arms only choose a *value*, neither form is needed.
 
 ### Choosing a value
 
-`when` states a dependence and lets the target lower it however it can:
+`when` states a dependence and lets the target lower it as it can:
 
 ```ada
   offset is i when [data + i] == byte
@@ -377,8 +361,8 @@ arm that acquires something releases it before the flow rejoins — which is wha
 
 A guard is predicted **not taken** unless it says otherwise, which makes the
 fall-through the hot path — and the fall-through is the `else`. That is what a
-guard written to step over an exceptional case wants, and it needs no annotation
-to get it.
+guard written to step over an exceptional case wants, and it needs no
+annotation to get it.
 
 `likely` on a guard predicts it the other way, and means exactly what it means
 in C:
@@ -411,10 +395,10 @@ repeats:
 
 Like every other `repeat`, it releases what the scope holds on the way, and
 since the program's entry set is empty that is everything live. It cannot enter
-the [release tower](Resources) the way `leave program` does, because the
-tower ends at the exit and this has somewhere else to go, so the releases are
-emitted at the jump instead — one open and one close per pass, with the
-descriptor reused rather than leaked.
+the [release tower](Resources) as `leave program` does: the tower ends at
+the exit and this has somewhere else to go. The releases are emitted at the
+jump instead — one open and one close per pass, with the descriptor reused
+rather than leaked.
 
 A scalar keeps its value across the jump, because a declaration is not a step.
 That is what lets such a loop end.

@@ -1,13 +1,13 @@
 A program on a Unix system owes its surroundings a short list of things. Close
 what you open. Do not die halfway through holding a lock or a temporary file.
 Say on standard error what went wrong, and say it in the exit status. Do not
-report a broken pipe as a fault of your own. Do not lose output because you were
-interrupted before a buffer was flushed.
+report a broken pipe as a fault of your own. Do not lose output because you
+were interrupted before a buffer was flushed.
 
 Most languages leave that list to the programmer and provide the tools —
 destructors, `defer`, `atexit`, signal handlers, `errno`. mereo makes the list
-structural: **there is no way to write the program that gets it wrong**, because
-the three mechanisms that would otherwise be separate are one path.
+structural: **there is no way to write the program that gets it wrong**,
+because the three mechanisms that would otherwise be separate are one path.
 
 ## Before the first step
 
@@ -55,9 +55,8 @@ close(3)                   = 0
 ```
 
 The read was interrupted; the file that was open at that moment was closed. No
-handler was written by the programmer, no flag recorded that the file was open,
-and the same tower serves the normal exit, a failed check and an interrupt
-alike — which is why there is no path on which it can be skipped.
+handler was written, no flag recorded that the file was open. The same tower
+serves the normal exit, a failed check and an interrupt, so no path skips it.
 
 ## Saying what happened
 

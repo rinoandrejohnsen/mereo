@@ -19,10 +19,7 @@ buffer for the worst case or map pages itself.
 stored in a data structure. It is released at the end of the scope that acquired
 it, and its name ends there with it. This is the restriction that
 removes drop flags: what a scope holds is known where it is written, so the
-release point is a label rather than a runtime decision. It is why `linux`
-offers a stateless `channel` for pipes as well as a resource that owns one — two
-descriptors have two lifetimes, and closing the write end to signal end-of-input
-while still reading is the ordinary way to use a pipe.
+release point is a label rather than a runtime decision. It is why `linux` offers a stateless `channel` for pipes as well as a resource that owns one. Two descriptors have two lifetimes, and closing the write end while still reading is the ordinary way to use a pipe.
 
 **One platform.** Linux on x86-64. The system call layer is written to that ABI.
 
@@ -53,6 +50,6 @@ compiler by a gate.
 ## Scale
 
 The corpus is small. The largest program is a TLS client; the rest are examples
-and tests. Every line of it comes from the project itself, with no outside users
-and no independent implementation, so no figure in this article should be read
-as describing behaviour at a scale the language has not been used at.
+and tests. Every line of it comes from the project itself, with no outside
+users and no independent implementation, so no figure in this article should be
+read as describing behaviour at a scale the language has not been used at.

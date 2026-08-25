@@ -1,10 +1,9 @@
-mereo's performance claim is narrow and testable: it should cost nothing against
-a hand-written C program that is **correct as a Linux program** — one that
-closes what it opens on every path out including every failure, checks the calls
-that can fail, and reports a failure rather than swallowing it. C that leaks a
-descriptor on an error path is cheaper than mereo and is not a comparison worth
-making, since mereo cannot write that program: its cleanup is derived, so the
-leak is not available to it even as a mistake.
+The claim is narrow and testable: nothing costs more than a hand-written C
+program that is **correct as a Linux program** — one that closes what it opens
+on every path out including every failure, checks the calls that can fail, and
+reports a failure rather than swallowing it. C that leaks a descriptor on an
+error path is cheaper, and not worth comparing: mereo cannot write that
+program. Cleanup is derived, so the leak is not available even as a mistake.
 
 The figures below are measured by `tests/versus`, which builds each mereo
 program beside such a twin and compares the instruction histogram and `.text`
@@ -32,20 +31,20 @@ difference is frame setup, not work.
 
 The comparison is on the instruction *multiset* rather than on bytes, and that
 choice was forced twice. Byte-identity failed first: two programs doing
-identical work landed on different bytes because the compiler chose one register
-over another. Comparing the instruction *sequence* failed next, when two
-instructions were merely scheduled in the other order. The multiset is what cost
-means — an added check is a compare and a jump, a spill is a move, a missed
-strength reduction is a multiply where a shift belonged — and register
+identical work landed on different bytes because the compiler chose one
+register over another. Comparing the instruction *sequence* failed next, when
+two instructions were merely scheduled in the other order. The multiset is what
+cost means — an added check is a compare and a jump, a spill is a move, a
+missed strength reduction is a multiply where a shift belonged — and register
 allocation is none of those.
 
 ## What an error block costs
 
 A failing `ensure` writes a record and routes into the release tower, so each
-one is a small block of code in the binary's cold tail. Two error blocks that
-differ only in their record text share everything after it: the compiler merges
-the identical tails, and the layout gate is unaffected, because it works from
-DWARF labels and the `exit` landmark rather than from the shape of the blocks.
+one is a small block of code in the binary's cold tail. Two error blocks
+differing only in their record text share everything after it. The compiler
+merges the identical tails; the layout gate is unaffected, working from DWARF
+labels and the `exit` landmark rather than from the shape of the blocks.
 
 What keeps the records distinct is the text itself, which names the stage:
 
@@ -59,8 +58,8 @@ several similar failure sites.
 ## Checked access
 
 A bounds check is not a fixed tax. Where the loop is bounded by the same length
-the check tests, the compiler proves the check redundant and removes it —
-the check and its whole error block are absent from the binary, matching C that
+the check tests, the compiler proves the check redundant and removes it — the
+check and its whole error block are absent from the binary, matching C that
 never had one.
 
 Where the bound differs, the check survives, and its real cost is not the
@@ -74,16 +73,16 @@ Measured over 200 million byte-loads:
 | unchecked | 30 ms | 54 — vectorised |
 
 Stating the invariant once recovers the vectorisation and keeps the check. This
-is why mereo offers no way to disable a check: the cheaper option is to say what
-is known, not to stop looking.
+is why mereo offers no way to disable a check: the cheaper option is to say
+what is known, not to stop looking.
 
 Read the last two rows together, though, because they settle a design question.
 33 ms against 30 ms is a **10% residual**, and hand-written C would not carry
-that check at all. The project's bar is parity with that C, so a checked access
-can never be the DEFAULT form — `[buffer + i]` stays unchecked and matches the
-30 ms, and `.at` is opt-in and costs the 10% for whoever wants it. The only way
-to make the default form safer without spending that 10% is to decide it at
-compile time, which is what [Safety](Safety) measures.
+that check at all. The bar is parity with that C, so a checked access can never
+be the default. `[buffer + i]` stays unchecked and matches the 30 ms; `.at` is
+opt-in and costs the 10%. The only way to make the default form safer without
+spending that 10% is to decide it at compile time, which is what
+[Safety](Safety) measures.
 
 ## What is worth telling the compiler
 
@@ -95,8 +94,8 @@ syscall contracts, and all three are already in the emitted C as literals, as
 branches, and as assumptions. GCC re-derives the same ranges.
 
 So the analysis makes no binary faster. Its product is the list of accesses it
-could not prove, which [Safety](Safety) covers. Only a fact **absent from the
-program's text** is worth stating, and there is one:
+could not prove, which [Safety](Safety) covers. Only a fact **absent from
+the program's text** is worth stating, and there is one:
 
 | `exam/mereo/loglyze`, 84 MB of log | size | time |
 | --- | ---: | ---: |
@@ -117,19 +116,20 @@ Widening the byte scan to a word at a time took find-heavy code from 58 ms to
 vector instructions to 41. Hoisting a copy loop's base address out of the loop
 took 208 bytes off the corpus, at no change in time. Each states something GCC
 already had, in a shape its optimiser acts on — and the first two are cases
-where every small reproduction optimises unaided and the whole program does not.
+where every small reproduction optimises unaided and the whole program does
+not.
 
 ### Aliasing, measured
 
 mereo gives up every aliasing mechanism a C compiler has. Memory is bytes,
-`unsigned char` aliases everything by the language's own rule, and
-`-fno-strict-aliasing` ships because byte views type-pun by design. Rust, by
+`unsigned char` aliases everything by the language's own rule, and `-fno-
+strict-aliasing` ships because byte views type-pun by design. Rust, by
 contrast, marks every mutable reference `noalias` automatically.
 
 It costs nothing here. GCC names its own aliasing failures, and the corpus has
 exactly **seven** loops it declined to vectorise because it "would need a
-runtime alias check" — all of them the byte copy inside a builder. Rewriting all
-seven to copy through `restrict`-qualified pointers gives byte-identical
+runtime alias check" — all of them the byte copy inside a builder. Rewriting
+all seven to copy through `restrict`-qualified pointers gives byte-identical
 binaries:
 
 | | span | stat | uname |
@@ -140,18 +140,16 @@ binaries:
 The limit on those loops was never disambiguation. It was that the destination
 was recomputed from the builder's own bytes on every iteration — address
 arithmetic, which is the row above. That result is about code shaped like this
-one, though, and two things would change it: emitting real calls rather than
-splicing every template, which is where `restrict` earns its keep, and typed
-numeric work, where the languages that carry type information beat C for exactly
-this reason.
+one. Two things would change it: emitting real calls rather than splicing,
+which is where `restrict` earns its keep, and typed numeric work, where the
+languages that carry type information beat C for exactly this reason.
 
 ## Binary size
 
 Hello world links to **784 bytes**, static, with no dynamic loader. A linker
-script and a set of size-motivated flags roughly halved file size against the
-default layout; `objcopy --strip-section-headers` would save a further 287 bytes
-per binary but is declined, because the project's central claim is checked by
-disassembling what ships.
+script and size-motivated flags roughly halved file size. `objcopy --strip-
+section-headers` would save a further 287 bytes per binary and is declined,
+because the central claim is checked by disassembling what ships.
 
 ## What has not been measured
 
