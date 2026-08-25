@@ -14,6 +14,44 @@ one cause. A gap that starts behaving fails the suite, so the list cannot rot.
 
 ## Open, actionable
 
+### Scalarise an instance's fields, the way GCC's SRA does
+
+**76 of the corpus's 104 unproved accesses have a field load in them**, and all
+five remaining validation gaps are this. It is the single biggest lever left.
+
+Traced through GCC's own pass dumps on loglyze, 2026-08-25:
+
+    ccp1     281 memory references to `page`
+    esra       0     <- Scalar Replacement of Aggregates
+    fre1      -2 error blocks
+    evrp     -23 error blocks     37 -> 7 in total
+
+SRA's log says exactly what it did:
+
+    Created a replacement for page offset:   0, size: 64: pageD.4261    (data)
+    Created a replacement for page offset:  64, size: 64: page$8D.4262  (count)
+    Created a replacement for page offset: 128, size: 64: page$16D.4263 (limit)
+
+It split the 24-byte aggregate into three SSA scalars, one per field, and after
+that ordinary value-range propagation does the rest. mereo never takes that
+step: `[page + 8 : 8]` is read as a load bounded by its WIDTH, and the moment
+anything writes to an instance the analysis drops every adopted value it had
+for it -- `mutated` is all-or-nothing and program-wide.
+
+The conditions SRA requires (from `tree-sra.cc`) are ones mereo's instances
+meet by construction: a complete fixed-size aggregate, no volatile or
+bit-fields, constant offsets and sizes, consistent access widths at the same
+offset, and no address escaping outside a call argument. mereo's layouts ARE
+fixed offsets with declared widths -- the analysis simply does not use them
+that way.
+
+**But size the prize honestly.** Scalarising only helps where the resulting
+scalars are statically known. GCC scalarised the TLS client too -- 81
+replacements -- and still removed only 1 of its 187 checks, because those
+counts come off the wire. loglyze's report appends a mostly constant sequence,
+which is why 30 fell there. Expect this to close the builder and span gaps and
+much of the corpus's 76, and to do nothing for `https`.
+
 ### Make "wants a run-time guard" fail the build
 
 **The cost is zero again as of 2026-08-25**, which is the cheapest this will
