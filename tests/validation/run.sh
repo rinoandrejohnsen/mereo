@@ -55,8 +55,6 @@ declare -A KNOWN=(
   #     (`ensure offset <= length`) used as a bound on the index it produced.
   [m_search_ok]="search offset, checked, is still not a bound"
   [m_json_ok]="an address held in a SCALAR: search hands equals `data + i`"
-  [s_when_store]="the two values a conditional store can leave"
-  [s_when_store_out]="...so the out-of-range branch cannot be refused"
 )
 
 pass=0 fail=0

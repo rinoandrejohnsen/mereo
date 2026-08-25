@@ -4990,8 +4990,20 @@ def call_parts(meth, valmap):
             # in the same way it is never past the length. Without this,
             # stating the floor cost a branch in every `find` -- which the
             # `versus` suite caught as an extra syscall.
+            if prim.get("kind") == "helper" and val not in meth["bind"]:
+                # ANALYSIS ONLY. A helper is `always_inline` C, so GCC has its
+                # body and can derive the range itself -- saying it again is
+                # the one thing measured to buy nothing and cost something:
+                # `q1 >= 0` on loglyze was +10,995 instructions for a fact the
+                # optimiser could already read. The ANALYSIS still gets it, from
+                # the contract, which is where `lower_primitives` reads it.
+                #
+                # A syscall's promise is different and stays: inline assembly
+                # with a "memory" clobber says SOMETHING changed, and the range
+                # is nowhere in the C.
+                continue
             ens.append((meth["bind"][port][0], cmp_, rhs, ln, reading,
-                        val in meth["bind"] or prim.get("kind") == "helper"))
+                        val in meth["bind"]))
     clauses, assume = [], []
     for e in ens:
         l, c, r, _ = e[0], e[1], e[2], e[3]
@@ -7156,9 +7168,17 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
             parts.append(_under(str(default), at, seen, negs))
         else:
             prev = [(d, ex) for d, ex in (copy.get(name) or []) if d < at]
-            if not prev:
+            if prev:
+                parts.append(_under(prev[-1][1], prev[-1][0], seen, negs))
+            elif sinit.get(name) is not None:
+                # no earlier assignment, so what it keeps is what it was
+                # DECLARED with. `i is 0` at the top is an init and not a step,
+                # so `copy` has never heard of it, and a conditional store with
+                # no `or` branch gave up here -- both of its outcomes unknown
+                # because one of them was written on the declaration line.
+                parts.append(_under(str(sinit[name]), at, seen, negs))
+            else:
                 return UNK
-            parts.append(_under(prev[-1][1], prev[-1][0], seen, negs))
         acc = parts[0]
         for q in parts[1:]:
             acc = join(acc, q)
@@ -8875,8 +8895,9 @@ def plan(definitions, slots, steps, overrides):
                     # the same split as the method path: a right-hand side that
                     # names another PORT is the kernel promising something about
                     # its own behaviour, and cannot fail
-                    is_promise = (_val in wired
-                                  or prim.get("kind") == "helper")
+                    if prim.get("kind") == "helper" and _val not in wired:
+                        continue          # analysis only; see `call_parts`
+                    is_promise = _val in wired
                     if is_promise:
                         rhs = resolve_value(wired[_val][0], scalars, buffers, ln)
                     clauses.append(f"{lhs} {_cmp} {rhs}")
