@@ -5,89 +5,20 @@ git (121 commits touch this file) if a detail is ever wanted. What survives is
 what is still open, plus a one-line record of every measurement that came out
 NEGATIVE -- those are not history, they are the reason not to try it again.
 
-The live backlog for the ANALYSIS is not here. It is
-`tests/validation/run.sh`, whose `KNOWN` table names every gap with its reason
-and prints all of them on every run -- five at the moment, and all five are
-one cause. A gap that starts behaving fails the suite, so the list cannot rot.
+The access analysis was removed on 2026-08-25; see below for the numbers that
+decided it. `tests/validation` went with it.
 
 ---
 
 ## Open, actionable
 
-### Scalarise an instance's fields, the way GCC's SRA does
-
-**76 of the corpus's 104 unproved accesses have a field load in them**, and all
-five remaining validation gaps are this. It is the single biggest lever left.
-
-Traced through GCC's own pass dumps on loglyze, 2026-08-25:
-
-    ccp1     281 memory references to `page`
-    esra       0     <- Scalar Replacement of Aggregates
-    fre1      -2 error blocks
-    evrp     -23 error blocks     37 -> 7 in total
-
-SRA's log says exactly what it did:
-
-    Created a replacement for page offset:   0, size: 64: pageD.4261    (data)
-    Created a replacement for page offset:  64, size: 64: page$8D.4262  (count)
-    Created a replacement for page offset: 128, size: 64: page$16D.4263 (limit)
-
-It split the 24-byte aggregate into three SSA scalars, one per field, and after
-that ordinary value-range propagation does the rest. mereo never takes that
-step: `[page + 8 : 8]` is read as a load bounded by its WIDTH, and the moment
-anything writes to an instance the analysis drops every adopted value it had
-for it -- `mutated` is all-or-nothing and program-wide.
-
-The conditions SRA requires (from `tree-sra.cc`) are ones mereo's instances
-meet by construction: a complete fixed-size aggregate, no volatile or
-bit-fields, constant offsets and sizes, consistent access widths at the same
-offset, and no address escaping outside a call argument. mereo's layouts ARE
-fixed offsets with declared widths -- the analysis simply does not use them
-that way.
-
-**But size the prize honestly.** Scalarising only helps where the resulting
-scalars are statically known. GCC scalarised the TLS client too -- 81
-replacements -- and still removed only 1 of its 187 checks, because those
-counts come off the wire. loglyze's report appends a mostly constant sequence,
-which is why 30 fell there. Expect this to close the builder and span gaps and
-much of the corpus's 76, and to do nothing for `https`.
-
-### Make "wants a run-time guard" fail the build
-
-**The cost is zero again as of 2026-08-25**, which is the cheapest this will
-ever be. That category counts an index that came from OUTSIDE the program with
-nothing bounding it -- the one the design calls a mistake waiting to happen, as
-against "a guard is in scope and could not be tied to this access", which is a
-limit of the analysis and not a hole.
-
-It was 9, then 0, then 12 on 2026-08-24 when a store became an access, and 0
-again once a definition in a closed scope stopped killing the one before it.
-Across `programs`, `examples` and `exam/mereo`: **zero**.
-
-One program would fail the gate: `tests/progs/find_offset_past_end.mereo`,
-which exists to produce exactly this warning and is a `reports` gate in
-`tests/blackbox.sh`. So the gate needs the test suite to be able to ask for the
-warning without the build refusing -- an env var the suite sets, or the gate
-skipping `tests/progs`. Decide which before writing it.
-
-The case for it is unchanged: one of the nine that prompted this was a remotely
-triggerable walk off a 512-byte record, and a build that says "wants a run-time
-guard" and passes anyway is a build whose warnings are furniture.
-
 ### Share the error-record formatter instead of splicing it
 
 `_write_value` is spliced into every error block. Making it a real
 `static __attribute__((noinline, cold))` function measured **-16% across the
-corpus**:
-
-| | spliced | shared |
-| --- | ---: | ---: |
-| `abc` | 1296 | 1120 |
-| `jsontest` | 3696 | 3088 |
-| `https` | 68696 | 55096 |
-
-Cold-path only, so the clock should not notice -- which is exactly why it needs
-measuring on the clock before it lands, not on the byte count.
+corpus** (`abc` 1296 -> 1120, `https` 68696 -> 55096). Cold-path only, so the
+clock should not notice -- which is exactly why it needs measuring on the clock
+before it lands, not on the byte count.
 
 ### An array view: a span that counts elements
 
@@ -103,61 +34,46 @@ METHOD may take no ports because it has its instance's state to reach; a
 template genuinely has nothing to reach, so the restriction is defensible. What
 is not defensible is that neither spelling says so.
 
-Worth doing with the `when`-on-`ensure` gap, which is the same size and the same
-kind: something composes everywhere except one place, with no reason recorded.
-
 ### Strip section headers from the shipped binary?
 
-Open, leaning NO, and measured: `objcopy --strip-section-headers` saves **287
-bytes per binary, 22,157 over 77**, and on `abc` that is a further -22%. It
-costs `objdump -d`, which then prints nothing. The tower's own tooling is worth
-more than the bytes.
+Open, leaning NO, and measured: `objcopy --strip-section-headers` saves 287
+bytes per binary, 22,157 over 77. It costs `objdump -d`, which then prints
+nothing.
 
 ### The language server is gone, and nothing replaced it
 
-Deliberate. `tools/mereolsp.py` served one idea -- bold at a name's declaration,
-bold-italic at every later use -- which a stateless highlighter cannot do. The
-new highlighter is stateless on purpose and reads better for it. Whether that
-one idea is worth an LSP again is the open question.
+Deliberate. It served one idea -- bold at a name's declaration, bold-italic at
+every later use -- which a stateless highlighter cannot do. Whether that is
+worth an LSP again is the open question.
 
 ---
 
-## Open, and known to be hard
+## The access analysis was removed on 2026-08-25
 
-### Two counters whose SUM is bounded, used separately
+It reached 98.4% of 3056 accesses and made no difference to the generated code,
+which was the claim it was built on. GCC's SRA scalarises an instance's fields
+into SSA and EVRP ranges them from there -- 30 of loglyze's 37 error blocks go
+that way -- and the 4 checks mereo removed corpus-wide, GCC removed anyway:
+same `.text`, same instruction count, landing pads gone from both binaries.
 
-**All five remaining validation gaps are this one thing**, and it is the only
-class left. An interval carries a bound on a name; it cannot carry the
-correlation between two, so reducing `a + b <= c` uses the other term's floor
-and the relation is gone.
+The full lever search came back empty too: the unroll pragma cannot attach to a
+goto loop, `restrict` makes GCC emit a `memcpy` freestanding cannot link, the
+copy loop is already vectorised, `assume_aligned` is one instruction on an
+eight-byte load, and overflow checks cost 23.8%.
 
-    builder   `data + count + i`, with `count + length <= limit`,
-              `limit <= data.size` and `i < length`
-    search    `at + j` where `at = data + i`, `i <= length - needle_length`
-              and `j < needle_length`
+**What stays is the one thing that pays**: a syscall's out-port contract, said
+to GCC as an assumption, emitted only where a branch can use it. Worth
+29,000,043 instructions against 103,000,036 where one does, and pruned to zero
+in loglyze where none does. Gated in `test.sh`'s build section.
 
-mereo already does MORE of this than the tools it was measured against:
-`tighten` keeps a fact as `key + others <= rhs`, which gets `line[held]` and
-`arena[used]` in loglyze -- and Frama-C's Eva proves neither, with intervals or
-with octagons. rustc keeps a run-time check for both. What none of them do is
-carry the relation into a DERIVED index.
+What it was good for while it lasted was finding bugs, and those are fixed and
+gated on behaviour: `json.text` answering an offset outside its document,
+`text.search` matching a needle assembled from outside its region,
+`starts`/`ends` reading before checking, three buffers sized for the expected
+value rather than `format`'s worst case.
 
-A relational domain would fix it and is a large piece of work. Nothing smaller
-has been found.
-
-### `check_call_fit`'s scalar-capacity hole
-
-`syscall_extent_scalar`, recorded in `tests/cbmc.sh`'s `EXPECT_FAIL`. A
-syscall's write is not an access in the IR -- inline assembly with a `"memory"`
-clobber says *something changed* -- so the capacity is checked at the call site
-instead, and a capacity held in a SCALAR escapes that check.
-
-### Two shapes of name reuse that are not caught
-
-A fresh temp colliding with an enclosing scope's name (`n is 2` inside a scope
-is an assignment, and always will be -- nothing to do). And a misspelled
-assignment target that is ALSO read, which survives only if the same
-misspelling was written twice.
+Reopening it means reopening the same question, so the number to beat is
+recorded: **4 checks, in 1 of 42 programs, all of which GCC removed anyway.**
 
 ---
 

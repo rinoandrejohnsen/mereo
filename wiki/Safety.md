@@ -131,56 +131,33 @@ nothing either — 377264 bytes against 379168 across 89 binaries, and on the
 matching it exactly on `layout_view` and closing six instructions of the gap on
 `span_scan`.
 
-## How far the analysis reaches
+## The access analysis, and why it was removed
 
-`tools/mereoprove.py` classifies every access in the post-splice IR. It is a
-measurement, not part of the compiler.
+It existed, it reached 98.4% of 3056 accesses over 95 programs, and it was
+taken out on 2026-08-25. The reason is not that it was wrong. It is that it
+made no difference to the generated code, and that was the claim it was built
+on.
 
-| | | |
-| --- | ---: | --- |
-| **proved** | **3007** | **98.4%** |
-| bound-unresolved | 25 | 0.8% |
-| an unresolved base | 24 | 0.8% |
+**GCC already does it.** Scalar Replacement of Aggregates splits an instance's
+fields into SSA registers and value-range propagation tracks them from there;
+traced through the pass dumps on loglyze, `esra` eliminates all 281 memory
+references to a builder and `evrp` then removes 23 of the 30 remaining error
+blocks. mereo read the same fields as loads bounded by their WIDTH.
 
-Over 95 programs and 3056 accesses. The one out-of-range access is
-`access_past_end.mereo`, which mereoc already refuses. Six violations planted
-outside the corpus — a loop wider than its backing, an affine index that
-overflows, a syscall capacity larger than its buffer, an off-by-one in a
-branchless guard, and two with live loops and initialised buffers — are each
-reported.
+**And what it removed, GCC removed anyway.** `drop_proved_checks` fired on 4
+checks in 1 of 42 corpus programs; leaving all four in gave the same `.text`,
+the same instruction count, and the same binary with the landing pads gone.
 
-Nothing is reported wrong unless it is **proven** wrong. A non-relational
-interval domain loses the correlation between two variables and will call a safe
-access out of range; anything merely unproved is reported as unproved.
+**Reading it back found real bugs**, which is what it was actually good for:
+`json.text` answering an offset outside its own document, `text.search`
+matching a needle assembled from bytes outside its region, `starts` and `ends`
+reading a needle before checking the view was that long, and three buffers
+sized for the value someone expected rather than what `format` can write. Each
+is fixed and gated by a black-box test, and none of those gates needs the
+analysis to hold.
 
-The compiler sorts the remainder by cause, which is what makes the list a work
-item rather than a number:
-
-| cause | | |
-| --- | ---: | --- |
-| the backing did not resolve | 22 | the base is a scalar holding an address |
-| guarded, but the guard could not be tied | 14 | a limit of the analysis, not a hole |
-| a bound is in scope, but is not a number | 13 | the bound is a port, so symbolic |
-| **comes from input, nothing bounds it** | **0** | |
-
-**That last row is the one that matters, and it is empty.** It was not. It held
-nine distinct sites — the same seven in the TLS stack, counted once per program
-that includes it, plus two in the exam — and every one of them said *this wants
-a run-time guard* on every build for weeks.
-
-Reading them found `crypto.server_hello` walking off the end of a record. It
-took `(rec, pub)` and no length, so the `ensure` that bounds the record to 512
-bytes never entered it, while every offset inside was built from bytes the peer
-sent. A server declaring a large extensions block walked the index tens of
-kilobytes past the buffer and handed back 32 bytes from wherever it landed as
-the peer's public key, before anything was authenticated. The flight loop had
-two unsigned underflows besides. Seven sites are now guarded; the other two were
-already safe, and what was wrong there was the message, which claimed nothing
-bounded an index that had `leave narrow when j >= n` written above it.
-
-The lesson is not about the analysis, which was right, and printed the line, and
-was ignored. `todo.md` carries a proposal to make that one message fail the
-build.
+What stays is the half that pays: a syscall's contract, stated to GCC as an
+assumption. See *What is not checked* below, which the removal made longer.
 
 ## What proving the rest would buy
 
