@@ -7,8 +7,8 @@ NEGATIVE -- those are not history, they are the reason not to try it again.
 
 The live backlog for the ANALYSIS is not here. It is
 `tests/validation/run.sh`, whose `KNOWN` table names every gap with its reason
-and prints all of them on every run -- five at the moment, all one cause. A gap that starts
-behaving fails the suite, so the list cannot rot.
+and prints all of them on every run -- five at the moment, and all five are
+one cause. A gap that starts behaving fails the suite, so the list cannot rot.
 
 ---
 
