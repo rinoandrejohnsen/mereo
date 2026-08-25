@@ -184,6 +184,11 @@ without it the idea looks attractive again in six months.
 | `--conversion-check` in the CBMC suite | 52 programs flagged, none real -- mereo converts on purpose |
 | A backward slice to prune assumes | prunes nothing: from 32 checks it reaches every name |
 | A byte-loop or word+tail `equals` | 6.8% and 3.1% slower; only the overlapping tail reaches parity |
+| Overflow checks (`-fsanitize=signed-integer-overflow`) | **+23.8%** on loglyze, 120 traps GCC could not prove away. Release Rust wraps too. |
+| `#pragma GCC unroll N` chosen by the verifier | cannot attach: the pragma needs `for`/`while`, mereo emits GOTO loops |
+| `-funroll-loops` globally | -4.8% instructions on loglyze, clock CANNOT see it (two orderings disagree), `.text` 6926 -> 18421 |
+| `#pragma GCC ivdep` / `restrict` to vectorise `copy` | the goto loop is ALREADY vectorised; `restrict` makes GCC call `memcpy`, which freestanding cannot link -- that is what `-fno-tree-loop-distribute-patterns` is for |
+| `__builtin_assume_aligned` at uses | one instruction on an 8-byte load, nothing on a byte loop, and mereo's accesses are byte-wise |
 
 ### Two that came out POSITIVE, recorded because the mechanism is easy to lose
 
