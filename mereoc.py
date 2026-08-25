@@ -4981,9 +4981,17 @@ def call_parts(meth, valmap):
             # `count <= capacity` is the KERNEL promising something about its
             # own behaviour: read returns at most what it was given, by design,
             # so the branch can never be taken. `count >= 0` compares against a
-            # constant and CAN fire. Only the first is an assumption.
+            # constant and CAN fire -- that is the errno test, and it is the
+            # reason a constant right-hand side is a check.
+            #
+            # A HELPER has no errno. It is inline C we wrote, pure computation
+            # with no failure channel, so a clause on its out port cannot fire
+            # whatever it compares against: `scan`'s offset is never negative
+            # in the same way it is never past the length. Without this,
+            # stating the floor cost a branch in every `find` -- which the
+            # `versus` suite caught as an extra syscall.
             ens.append((meth["bind"][port][0], cmp_, rhs, ln, reading,
-                        val in meth["bind"]))
+                        val in meth["bind"] or prim.get("kind") == "helper"))
     clauses, assume = [], []
     for e in ens:
         l, c, r, _ = e[0], e[1], e[2], e[3]
@@ -8867,7 +8875,8 @@ def plan(definitions, slots, steps, overrides):
                     # the same split as the method path: a right-hand side that
                     # names another PORT is the kernel promising something about
                     # its own behaviour, and cannot fail
-                    is_promise = _val in wired
+                    is_promise = (_val in wired
+                                  or prim.get("kind") == "helper")
                     if is_promise:
                         rhs = resolve_value(wired[_val][0], scalars, buffers, ln)
                     clauses.append(f"{lhs} {_cmp} {rhs}")

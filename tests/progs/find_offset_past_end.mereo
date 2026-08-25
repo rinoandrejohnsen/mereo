@@ -7,7 +7,9 @@ include "../../core.mereo"
 -- reaching-definition map is built from `assign` steps only, so a call writing
 -- its out port never kills what the name held. `rel is 0` is still believed.
 --
--- Not wired into blackbox.sh: it does not pass yet. See todo.md.
+-- REFUSED since 2026-08-25. `find` promises an offset no greater than the
+-- length it was given and never negative; with both ends known the range is
+-- 0..512 and sixteen bytes cannot hold it.
 program goes
   small is 16 bytes
   line is 512 bytes

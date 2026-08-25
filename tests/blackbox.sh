@@ -590,7 +590,11 @@ rejects access/load-outport-past-end load_outport_past_end "reaches 65 bytes int
 # This was SILENT until the reaching-definition map learned that a call writes
 # its out port: `rel is 0` was still believed after `find (... offset is rel)`,
 # so the index looked like the constant zero and the access looked proved.
-reports access/find-offset-past-end find_offset_past_end "the index comes from input and nothing bounds it here"
+# `find` answers an offset no greater than the length it was given, and NEVER
+# NEGATIVE -- the second half was added to the contract on 2026-08-25 and is
+# what turned this from a report into a refusal. 512 into sixteen bytes is
+# out of range and can now be said so.
+rejects access/find-offset-past-end find_offset_past_end "reaches 513 bytes"
 # A guard whose subject overflows a signed long: true in arithmetic, false on
 # the machine. Believing it gave the sum an EMPTY range -- lower bound above
 # the upper -- and only the upper half was read, so an access that dumped core
