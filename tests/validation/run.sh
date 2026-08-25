@@ -35,23 +35,28 @@ ONLY=${1:-}
 # every run. A listed case that starts behaving fails the suite too: that is
 # the whole point of writing them down rather than editing the expectation.
 declare -A KNOWN=(
-  # --- A STORE IS NOW CHECKED, and what it runs into is the relational limit.
-  #     `[digits + j : 1]` needs `j <= digits.size`, which nothing states;
-  #     the builder needs `count + length <= limit <= data.size`, which IS
-  #     stated and which an interval cannot carry -- reducing it uses the
-  #     LOWER bound of the other term and loses the correlation. Reported
-  #     rather than proved, which is the honest answer and was silence before.
-  [m_builder_ok]="builder writes at data + count: count + length <= limit is relational"
+  # ALL FIVE ARE ONE THING: two counters whose SUM is bounded, used
+  # separately. An interval carries a bound on a name; it cannot carry the
+  # correlation between two, so subtracting one term uses the other's floor
+  # and the relation is gone.
+  #
+  #   builder   `data + count + i`, with `count + length <= limit`,
+  #             `limit <= data.size` and `i < length`. Needs `count + i` under
+  #             `limit`, which is `i < length` combined with the first fact.
+  #   search    `at + j` where `at = data + i`, `i <= length - needle_length`
+  #             and `j < needle_length`. Needs `i + j < length`. Same shape.
+  #
+  # mereo already does MORE of this than the tools it was measured against:
+  # `tighten` keeps a fact as `key + others <= rhs`, which gets `line[held]`
+  # and `arena[used]` in loglyze -- and Frama-C's Eva proves neither, with
+  # intervals or with octagons. What it cannot do is carry the relation into a
+  # DERIVED index. That wants a relational domain and is a large piece of work;
+  # nothing smaller has been found.
+  [m_builder_ok]="builder writes at data + count: two counters, one bounded sum"
   [m_builder_number]="the same, writing a decimal"
   [l_builder_over_read]="the same, appending after a read"
-
-  # --- FALSE POSITIVE. The code says the WIDTH of a load is an over-approximation
-  #     and cannot support a refusal. Assigning it to a name evades that rule.
-
-  # --- CANNOT DECIDE. Seven of these are one capability: an out-port promise
-  #     (`ensure offset <= length`) used as a bound on the index it produced.
-  [m_search_ok]="search offset, checked, is still not a bound"
-  [m_json_ok]="an address held in a SCALAR: search hands equals `data + i`"
+  [m_search_ok]="search hands equals data + i, then reads j past it: same shape"
+  [m_json_ok]="the same, reached through json.text"
 )
 
 pass=0 fail=0

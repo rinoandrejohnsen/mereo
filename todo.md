@@ -7,7 +7,7 @@ NEGATIVE -- those are not history, they are the reason not to try it again.
 
 The live backlog for the ANALYSIS is not here. It is
 `tests/validation/run.sh`, whose `KNOWN` table names every gap with its reason
-and prints all of them on every run -- nineteen at the moment. A gap that starts
+and prints all of them on every run -- five at the moment, all one cause. A gap that starts
 behaving fails the suite, so the list cannot rot.
 
 ---
@@ -86,28 +86,26 @@ one idea is worth an LSP again is the open question.
 
 ## Open, and known to be hard
 
-### The relational shape: `offset + length <= capacity`
+### Two counters whose SUM is bounded, used separately
 
-Six of the recorded gaps are this, and it is the one thing mereo does that
-neither Frama-C's Eva nor rustc manages: `tighten` keeps a fact as
-`key + others <= rhs` and gets `line[held]` and `arena[used]` in loglyze, which
-Eva cannot prove with intervals OR octagons.
+**All five remaining validation gaps are this one thing**, and it is the only
+class left. An interval carries a bound on a name; it cannot carry the
+correlation between two, so reducing `a + b <= c` uses the other term's floor
+and the relation is gone.
 
-What it cannot do is carry the correlation into a DERIVED index. Reducing
-`ensure tlen + inner_len <= tr.size` uses the other term's floor, so
-`tlen <= tr.size` is all that survives, and a loop index on top reads as 17,035
-bytes into 16,384. That is why a refusal built on a reduced relational bound is
-downgraded to a report.
+    builder   `data + count + i`, with `count + length <= limit`,
+              `limit <= data.size` and `i < length`
+    search    `at + j` where `at = data + i`, `i <= length - needle_length`
+              and `j < needle_length`
+
+mereo already does MORE of this than the tools it was measured against:
+`tighten` keeps a fact as `key + others <= rhs`, which gets `line[held]` and
+`arena[used]` in loglyze -- and Frama-C's Eva proves neither, with intervals or
+with octagons. rustc keeps a run-time check for both. What none of them do is
+carry the relation into a DERIVED index.
 
 A relational domain would fix it and is a large piece of work. Nothing smaller
 has been found.
-
-### An out-port promise used as a bound on the index it produced
-
-Seven recorded gaps. `find`, `measure` and `search` all promise
-`offset <= length`, and none of those answers bounds anything downstream. The
-promise reaches `cbound`/`clow`; what it does not do is survive into an index
-built from the name.
 
 ### `check_call_fit`'s scalar-capacity hole
 
