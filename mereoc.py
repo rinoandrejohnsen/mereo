@@ -588,13 +588,6 @@ def fail(msg):
     raise SystemExit(f"mereoc: error: {where}{msg}")
 
 
-def note(msg):
-    """A diagnostic that does not stop the compile. Goes to stderr, because the
-    C the compiler produces goes to stdout."""
-    where = f"{CURRENT_FILE}: " if CURRENT_FILE else ""
-    sys.stderr.write(f"mereoc: {where}{msg}\n")
-
-
 # asm operand constraints: prose register names / definitions -> GCC letters
 # (the transpiler owns this the way it owns syscall numbers). Specific
 # registers with dedicated letters only in v1; r8-r15/rbp work as
@@ -1546,16 +1539,6 @@ def not_a_receiver(ref, ln, what="name"):
     if ref in NAMESPACES:
         fail(f"line {ln}: '{ref}' is a namespace, not an instance -- "
              f"and it has no {what} by that name")
-
-
-def within(ns, owner):
-    """Is namespace `ns` inside `owner`?
-
-    A member of an ENCLOSING namespace is in scope without qualification, which
-    is what makes nesting worth having: `alpha.beta` reaches `alpha`'s own
-    members by their bare names, as it does in C++. Paths make the test a prefix
-    check, so no chain has to be walked."""
-    return ns is not None and (ns == owner or ns.startswith(owner + "."))
 
 
 def receiver(ref, slots, ns, ln):
@@ -3641,6 +3624,36 @@ def lens_target(slot, definitions, buffers, psize, scalars=None):
 
 
 
+def _adopt_layout(slot, defn, instances, seen):
+    """Wire an adopted LAYOUT's field values and register the instance.
+
+    Both places that meet one -- a plain layout, and one reached past the
+    bitfield test -- did this identically, twenty-two lines each. Answers
+    True when the slot is finished with, which is what both callers did
+    next."""
+    # Only being a RECEIVER -- `x.method (...)` needs somewhere to
+    # look the method up -- still turns on having methods, which is
+    # why an instance with neither values nor methods is still not
+    # registered as one.
+    given = dict(slot.get("init") or {})
+    given.update({k: v for k, (v, _pl) in
+                  (slot.get("pending") or {}).items()})
+    for ref in given:
+        if ref not in defn["flat"]:
+            fail(f"line {slot['line']}: '{slot['name']}' sets "
+                 f"unknown field '{ref}' of layout "
+                 f"'{defn['name']}' (has: "
+                 f"{', '.join(defn['flat'])})")
+    if given or defn["methods"]:
+        slot["constinit"], slot["runinit"] = {}, given
+        slot["borrowmap"], slot["lenders"] = {}, set()
+        instances[slot["name"]] = slot
+    if slot["name"] in seen:
+        fail(f"line {slot['line']}: name '{slot['name']}' is not "
+             "unique")
+    seen.add(slot["name"])
+    return True
+
 def check_slots(definitions, slots):
     seen = set(EMITTED)
     scalars, buffers, instances = {}, {}, {}
@@ -3718,28 +3731,8 @@ def check_slots(definitions, slots):
                 # and the adopt step emitted nothing at all. Whether a
                 # definition happens to carry a template has no bearing on what
                 # its fields were set to, so the values are honoured either way.
-                # Only being a RECEIVER -- `x.method (...)` needs somewhere to
-                # look the method up -- still turns on having methods, which is
-                # why an instance with neither values nor methods is still not
-                # registered as one.
-                given = dict(slot.get("init") or {})
-                given.update({k: v for k, (v, _pl) in
-                              (slot.get("pending") or {}).items()})
-                for ref in given:
-                    if ref not in defn["flat"]:
-                        fail(f"line {slot['line']}: '{slot['name']}' sets "
-                             f"unknown field '{ref}' of layout "
-                             f"'{defn['name']}' (has: "
-                             f"{', '.join(defn['flat'])})")
-                if given or defn["methods"]:
-                    slot["constinit"], slot["runinit"] = {}, given
-                    slot["borrowmap"], slot["lenders"] = {}, set()
-                    instances[slot["name"]] = slot
-                if slot["name"] in seen:
-                    fail(f"line {slot['line']}: name '{slot['name']}' is not "
-                         "unique")
-                seen.add(slot["name"])
-                continue
+                if _adopt_layout(slot, defn, instances, seen):
+                    continue
             if defn.get("bitfields") is not None and is_pure_layout(defn):
                 # a FLAG VIEW -> a word whose bits are named. Registered as a
                 # buffer (its name is its address) carrying the bit layout; a
@@ -3766,28 +3759,8 @@ def check_slots(definitions, slots):
                 # and the adopt step emitted nothing at all. Whether a
                 # definition happens to carry a template has no bearing on what
                 # its fields were set to, so the values are honoured either way.
-                # Only being a RECEIVER -- `x.method (...)` needs somewhere to
-                # look the method up -- still turns on having methods, which is
-                # why an instance with neither values nor methods is still not
-                # registered as one.
-                given = dict(slot.get("init") or {})
-                given.update({k: v for k, (v, _pl) in
-                              (slot.get("pending") or {}).items()})
-                for ref in given:
-                    if ref not in defn["flat"]:
-                        fail(f"line {slot['line']}: '{slot['name']}' sets "
-                             f"unknown field '{ref}' of layout "
-                             f"'{defn['name']}' (has: "
-                             f"{', '.join(defn['flat'])})")
-                if given or defn["methods"]:
-                    slot["constinit"], slot["runinit"] = {}, given
-                    slot["borrowmap"], slot["lenders"] = {}, set()
-                    instances[slot["name"]] = slot
-                if slot["name"] in seen:
-                    fail(f"line {slot['line']}: name '{slot['name']}' is not "
-                         "unique")
-                seen.add(slot["name"])
-                continue
+                if _adopt_layout(slot, defn, instances, seen):
+                    continue
             # a byte-field RESOURCE viewed as a LENS over a backing: its fields
             # live in the provided bytes (fd memory-resident), not auto-allocated
             # scalars. No construct/init (the fd is already there); `adopted`
@@ -4382,20 +4355,6 @@ def kind_of(defn):
     if defn.get("methods"):
         return "template group"
     return "definition"
-
-
-def is_resource(defn):
-    """Is this definition a RESOURCE or plain DATA? A resource has a lifecycle -- any
-    method of its own, or one inherited as a layer from its bases -- so its state
-    is register-resident (`INST_field` longs, keeping an fd in a register across
-    syscalls) and it earns a tower floor. This asks only whether a LIFECYCLE
-    exists. Whether an instance is DATA -- a contiguous, addressable block -- is
-    `is_pure_layout`, because a layout carrying templates has methods and yet
-    owns nothing. A site picking a REPRESENTATION must ask there: the two
-    disagreed once, and the emitter declared a block while accesses used
-    scalars."""
-    return bool(defn["methods"]) or bool(defn.get("layered"))
-
 
 
 def unset_deref_fields(defn):
@@ -5612,84 +5571,10 @@ def check_port_needs(definitions, slots, steps):
     walk(steps)
 
 
-# ---------------------------------------------------------------------------
-# Access classification.
-#
-# Every `[base + index : width]` in the spliced program gets one of five
-# verdicts. The point is not a percentage: it is the LIST of the ones nobody has
-# proved, held against what a skilled C programmer would deduce and therefore
-# leave unchecked.
-#
-#   proved            index bounded, and hi + width fits the backing
-#   OUT               index bounded, and it does NOT fit
-#   bound-unresolved  a bound exists and this cannot chase it
-#   data-dependent    no bound in scope at all
-#   opaque-base       the backing itself did not resolve
-#
-# NOTHING IS CALLED WRONG UNLESS IT IS PROVEN WRONG. Interval arithmetic is
-# non-relational: it loses the correlation between two variables and will place
-# a safe access out of range. An earlier version of this reported 406 false
-# alarms out of 3359 that way. An analysis that cries wolf is worse than one
-# that says nothing, so anything merely unproved is reported as unproved.
-# ---------------------------------------------------------------------------
-
-_ACC = re.compile(r"\[([^\[\]]*)\]")
-
-
-def _accesses(text):
-    """Every `[...]` in `text`, NESTED ONES INCLUDED, innermost first.
-
-    A regex cannot do this. `[[v : 8] + i]` is a load whose base is itself a
-    load -- which is what `span.at` lowers to -- and the pattern above matches
-    only the inner one. The OUTER access, the one that actually indexes the
-    span's bytes, went unseen: never classified, never proved, never reported.
-    Scanning for balanced brackets finds both."""
-    out, stack = [], []
-    for i, c in enumerate(text):
-        if c == "[":
-            stack.append(i)
-        elif c == "]" and stack:
-            out.append(text[stack.pop() + 1:i])
-    return out
-
-
-def _split_width(inner):
-    """`BODY : W` -> (body, width), splitting at the colon that belongs to THIS
-
-    access. `rpartition` takes the last colon in the string, which for
-    `[v : 8] + i` is the one inside the nested load -- leaving `[v ` as the
-    base and nothing that resolves. Depth zero is the only colon that is ours."""
-    depth = 0
-    cut = -1
-    for k, c in enumerate(inner):
-        if c == "[":
-            depth += 1
-        elif c == "]":
-            depth -= 1
-        elif c == ":" and depth == 0:
-            cut = k
-    if cut < 0:
-        return inner, "1"
-    return inner[:cut], inner[cut + 1:]
-_LOADX = re.compile(r"^\s*\[\s*([A-Za-z_]\w*)\s*\+\s*([^:\[\]]+?)\s*:\s*([^:\[\]]+?)\s*\]\s*$")
+# The one regex the whole compiler still shares: a comparison, which is what
+# `ensure`, `leave ... when` and a conditional store are all spelled in.
 _CMPX = re.compile(r"^\s*(.+?)\s*(<=|>=|==|!=|<|>)\s*(.+?)\s*$")
-_STR = re.compile(r'^"(.*)"$', re.S)
-_TOK = re.compile(r"[A-Za-z_][\w.]*|\d+|<<|>>|[-+*/%&|^()]")
-_INC = re.compile(r"^\s*([\w.]+)\s*\+\s*(\d+)\s*$")
-# `i is i - 1` is a step of -1, not an opaque write. Counting DOWN was
-# invisible to the bound machinery until this existed, which is why a
-# descending index proved nothing -- see todo.md.
-_STEP = re.compile(r"^\s*([\w.]+)\s*([+-])\s*(\d+)\s*$")
 
-
-def step_of(expr, name):
-    """signed change this assignment makes to `name`, or None if it is
-    not a literal step of that name."""
-    m = _STEP.match(str(expr))
-    if not m or m.group(1) != name:
-        return None
-    k = int(m.group(3))
-    return k if m.group(2) == "+" else -k
 
 def _acc_const(e):
     if e is None: return None
@@ -5706,106 +5591,6 @@ def _acc_const(e):
         try: return int(eval(e, {"__builtins__": {}}, {}))
         except Exception: return None
     return None
-
-def _acc_strings(st):
-    """Every string in a step that might hold an access.
-
-    A STORE'S TARGET IS AN ACCESS, and it did not look like one. It is kept as
-    a bare address and a width -- `addr` of `buf + i`, `size` of 1 -- while
-    `_accesses` scans for `[...]`, so a store found nothing and went
-    unclassified. A LOAD past the end of a template's buffer was refused and
-    the identical STORE was proved: `text.copy` was only ever caught because
-    its right-hand side reads the source, and `text.fill`, which writes and
-    reads nothing, wrote past its target in silence.
-
-    Put back into brackets here, so a store is checked by the same code that
-    checks everything else. `addr` is then skipped below rather than scanned
-    raw: it may itself contain loads -- `[page : 8] + [page + 8 : 8] + j` is
-    one -- and those are already inside the form built here."""
-    out = []
-    if st.get("type") == "store" and st.get("addr"):
-        w = str(st.get("size") or "1").strip() or "1"
-        out.append("[%s : %s]" % (str(st["addr"]).strip(), w))
-    for k, v in st.items():
-        if k in ("type","name","method","inst","label","pname","kind","op"): continue
-        if k == "addr" and st.get("type") == "store": continue
-        if isinstance(v, str): out.append(v)
-        elif isinstance(v, list):
-            for it in v:
-                if isinstance(it, str): out.append(it)
-                elif isinstance(it, (list, tuple)):
-                    out += [x for x in it if isinstance(x, str)]
-    return out
-
-
-
-def prune_assumes(body):
-    """Drop a kernel promise no emitted CHECK can use.
-
-    An assume earns its place by letting GCC delete a branch mereo could not
-    delete itself. Where no surviving check mentions the value it bounds there
-    is no branch to delete, and what is left is a hint the optimiser weighs and
-    sometimes gets wrong: loglyze carried six, executed 10,995 MORE
-    instructions for them (+0.67%), and came out 581 bytes SMALLER -- GCC had
-    changed its inlining and lost.
-
-    Where a check DOES depend on it the fact is worth a great deal. Measured on
-    one hot loop over a span whose length is a read count: with the promise
-    29,000,043 instructions, without it 103,000,036, and 3.8x on the clock. So
-    this prunes rather than removes.
-
-    The test is whether the value the promise BOUNDS -- the left side, the one
-    whose range it narrows -- is named in a check that survived. A backward
-    slice through the assignments was tried first and pruned nothing: from
-    thirty-two checks it reaches almost every name in the program.
-
-    Verified by measuring the corpus rather than by argument: no program
-    executes more instructions with this in place. See todo.md."""
-    # EVERY emitted branch, not only the fallible ones. A promise earns its
-    # place as much by giving a loop a trip count as by deleting a check:
-    # `n <= 64` over `walk: if (i >= n) goto done` was worth 200,000
-    # instructions in one measurement, and looking only at `__builtin_expect`
-    # checks missed it entirely.
-    checks, keep = [], []
-    for ln in body:
-        t = ln.strip()
-        m = re.match(r"if \(__builtin_expect\(!\((.*)\), 0\)\) goto ", t)
-        if m:
-            checks.append(m.group(1))
-            continue
-        m = re.match(r"if \((.*)\) goto ", t)
-        if m:
-            checks.append(m.group(1))
-    # which names a check bounds, and FROM WHICH SIDE. An upper bound decides
-    # nothing about a check that asks for a floor: loglyze promises
-    # `got <= 65536` and checks `got >= 0`, and keeping that one assume cost
-    # every instruction the six together cost.
-    WORDS = {"long", "unsigned", "int", "char", "signed", "short"}
-    above, below = set(), set()
-    for c in checks:
-        for cm in re.finditer(r"([^()&|]+?)\s*(<=|<|>=|>)\s*([^()&|]+)", c):
-            lo = set(re.findall(r"[A-Za-z_]\w*", cm.group(1))) - WORDS
-            hi = set(re.findall(r"[A-Za-z_]\w*", cm.group(3))) - WORDS
-            if cm.group(2) in ("<", "<="):
-                above |= lo          # `x < K` wants an upper bound on x
-                below |= hi          # ...and a lower bound on K
-            else:
-                below |= lo
-                above |= hi
-    for ln in body:
-        m = re.match(r"\s*__attribute__\(\(__assume__\((.*)\)\)\);$", ln)
-        if m:
-            am = re.match(r"\s*(.+?)\s*(<=|<|>=|>|==)\s*(.+?)\s*$", m.group(1))
-            if am:
-                subj = set(re.findall(r"[A-Za-z_]\w*", am.group(1))) - WORDS
-                want = above if am.group(2) in ("<", "<=") else below
-                if am.group(2) == "==":
-                    want = above | below
-                if subj and not (subj & want):
-                    continue
-        keep.append(ln)
-    return keep
-
 
 _SPLICED = re.compile(r"^[A-Za-z_]\w*?_\d+_\w+$")
 _ARRDECL = re.compile(r"^(\s*)(?:unsigned )?char (\w+)\[(\d+)\]"
@@ -6470,6 +6255,31 @@ def lower_primitives(definitions, slots, steps):
 
 
 
+def buffer_sizes(slots):
+    """Every buffer's size as a NUMBER, and the scalars it may be written as.
+
+    `buffer is capacity bytes` gives the size as a name, so the name is chased
+    through the scalar inits until it lands on a literal -- with a `seen` set,
+    because `a is b` and `b is a` would otherwise not terminate. Both fit
+    checks want exactly this, and each carried its own copy."""
+    scal = {s["name"]: s.get("init") for s in slots if s["kind"] == "scalar"}
+    sizes = {}
+    for sl in slots:
+        if sl["kind"] != "buffer":
+            continue
+        v, seen = sl["size"], set()
+        while True:
+            iv = _int_value(v)
+            if iv is not None:
+                sizes[sl["name"]] = iv
+                break
+            if not isinstance(v, str) or v in seen or v not in scal:
+                break
+            seen.add(v)
+            v = scal[v]
+    return sizes, scal
+
+
 def check_adoption_fit(definitions, slots):
     """Refuse an instance adopted with a field that does not fit its backing.
 
@@ -6484,21 +6294,7 @@ def check_adoption_fit(definitions, slots):
 
     Only decided where both sides are known. A length computed at run time is
     left alone -- see `check_call_fit` for the same rule and the reason."""
-    sizes = {}
-    scal = {s["name"]: s.get("init") for s in slots if s["kind"] == "scalar"}
-    for sl in slots:
-        if sl["kind"] != "buffer":
-            continue
-        v, seen = sl["size"], set()
-        while True:
-            iv = _int_value(v)
-            if iv is not None:
-                sizes[sl["name"]] = iv
-                break
-            if not isinstance(v, str) or v in seen or v not in scal:
-                break
-            seen.add(v)
-            v = scal[v]
+    sizes, scal = buffer_sizes(slots)
 
     for sl in slots:
         if sl["kind"] != "instance":
@@ -6556,21 +6352,7 @@ def check_call_fit(definitions, slots, steps):
     Only decided where both sides are known. A capacity computed at run time is
     left alone rather than guessed at -- the bound the analysis could not prove
     is not the same as a bound it proved false."""
-    sizes = {}
-    scal = {s["name"]: s.get("init") for s in slots if s["kind"] == "scalar"}
-    for sl in slots:
-        if sl["kind"] != "buffer":
-            continue
-        v, seen = sl["size"], set()
-        while True:
-            iv = _int_value(v)
-            if iv is not None:
-                sizes[sl["name"]] = iv
-                break
-            if not isinstance(v, str) or v in seen or v not in scal:
-                break
-            seen.add(v)
-            v = scal[v]
+    sizes, scal = buffer_sizes(slots)
 
     for st in steps:
         if st.get("type") == "bare":
