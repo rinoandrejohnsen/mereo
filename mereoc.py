@@ -4954,7 +4954,7 @@ def call_parts(meth, valmap):
                 # the one thing measured to buy nothing and cost something:
                 # `q1 >= 0` on loglyze was +10,995 instructions for a fact the
                 # optimiser could already read. The ANALYSIS still gets it, from
-                # the contract, which is where `lower_primitives` reads it.
+                # the contract, which is where `call_parts` reads it.
                 #
                 # A syscall's promise is different and stays: inline assembly
                 # with a "memory" clobber says SOMETHING changed, and the range
@@ -6107,154 +6107,6 @@ def check_shadowed_counters(steps):
 
 
 
-def call_prim(st, definitions, slots):
-    """The primitive behind one `call`/`bare` step, and its port bindings.
-
-    ONE implementation, because there were three and they had drifted. Two
-    looked the receiver up as an INSTANCE only, so a method reached through a
-    NAMESPACE -- `text.find`, `text.equals` -- resolved to nothing: a promise on
-    `scan` never reached a caller, a write through its out port never killed the
-    name, and a value off the wire was never marked as coming from outside.
-    Three bugs, one missing branch, found one at a time.
-
-    The analysis should not be doing this at all. It asks about steps; which
-    port of which primitive a step happens to write is a question for the place
-    that BUILT the step. Until the splice records that directly, at least ask it
-    in one place."""
-    if st.get("type") == "bare":
-        return PRIMITIVES.get(st.get("op")) or {}, None
-    d = definitions.get(st.get("inst"))
-    if d is None:
-        ins = next((x for x in slots if x.get("kind") == "instance"
-                    and x.get("name") == st.get("inst")), None)
-        d = definitions.get(ins["definition"]) if ins else None
-    meth = (((d or {}).get("methods") or {}).get(st.get("method")) or {})
-    return PRIMITIVES.get(meth.get("prim")) or {}, (meth.get("bind") or {})
-
-
-def lower_primitives(definitions, slots, steps):
-    """Say what a surviving call DOES, in ordinary steps, once -- so that the
-    analysis after this point never asks a call anything.
-
-    A procedure body is already gone: `expand_procedures` spliced it. What is
-    left is the method that delegates straight to a primitive, and it has to
-    STAY a call, because a syscall must reach the output as one. But a call
-    surviving as CODE is not a reason for it to survive as a QUESTION. Its
-    effects are ordinary and can be written down as ordinary steps beside it:
-
-      `read (buffer is data, capacity is 64, count is n)`
-          assign  n         <- unknown, and from outside
-          assign  data      <- unknown bytes, and from outside
-          guard   n <= 64                     (its promise, at the call site)
-
-    Everything downstream then works the way it works everywhere else. The
-    out-port write kills facts because it is an ASSIGNMENT, not because
-    something looked up a port. The promise is believed because it is a GUARD,
-    the same one `ensure` emits. Nothing consults `out`, `bind`, or `conns`.
-
-    This replaces an annotator that resolved the same ports one phase later and
-    hung `_writes`/`_bounds`/`_wired`/`_inports` on the step. That moved the
-    port knowledge; it did not remove it, and the analysis went on needing a
-    special case per question -- which is why a fact could survive a call that
-    overwrote it, and why a bound stated by the programmer could be discarded
-    by the next call that merely READ the name.
-
-    Order is load-bearing: the assignments come first and the guards after, so
-    a promise about the value is not killed by the write that produced it."""
-    bufs = {s["name"] for s in slots if s.get("kind") in ("buffer", "instance")}
-    out_steps = []
-    for st in steps:
-        if st.get("type") not in ("call", "bare"):
-            out_steps.append(st)
-            continue
-        prim, bind = call_prim(st, definitions, slots)
-        conns = {c[0]: c[1] for c in (st.get("conns") or ()) if len(c) >= 2}
-
-        def wired(port):
-            if bind is not None:
-                b = bind.get(port)
-                port = b[0] if isinstance(b, (list, tuple)) else (b or port)
-            return conns.get(port)
-
-        outp = prim.get("out")
-        ports = {p for _k, p in (prim.get("args") or ())}
-        inports = ports - ({outp} if outp else set())
-        ln = st.get("line")
-        out_steps.append(st)                       # the call itself: codegen
-
-        # ---- what it promises, BEFORE what it writes. Only a clause on the
-        # OUT port says anything about a value; one on an in port is a
-        # REQUIREMENT on the call, a different job.
-        #
-        # The order is load-bearing and it is not the obvious one. A promise
-        # bounds the result by the ARGUMENTS -- `count <= capacity` is about
-        # the capacity handed in -- so its right-hand side must be read where
-        # the call is, before the write lands. Emitting it after cost 38
-        # seconds and then everything: evaluating `rel <= q2 - q1 - 1` past
-        # `rel`'s own opaque write sends the walk back through `q2`, which is
-        # built from `rel`.
-        for cl in (prim.get("contract") or ()):
-            if isinstance(cl, (list, tuple)) and len(cl) >= 3:
-                lhs, op, rhs = (str(cl[0]).strip(), str(cl[1]).strip(),
-                                str(cl[2]).strip())
-            else:
-                m = _CMPX.match(str(cl))
-                if not m:
-                    continue
-                lhs, op, rhs = (m.group(1).replace(" as signed", "").strip(),
-                                m.group(2),
-                                m.group(3).replace(" as signed", "").strip())
-            if lhs != outp:
-                continue
-            tgt = wired(lhs)
-            if not tgt:
-                continue
-            val = wired(rhs)
-            # its OWN type, not `guard`. A guard is a thing the program
-            # states and every guard reader is entitled to act on -- as a loop
-            # bound, as evidence an index is checked. A promise is narrower:
-            # it holds from the call onward and only the reader below wants
-            # it. Emitting it as a guard put it in front of readers that were
-            # never written for it, and loglyze stopped terminating.
-            out_steps.append({"type": "promise", "cond":
-                              f"{tgt} {op} {rhs if val is None else val}",
-                              "ref": None, "ghost": True, "line": ln})
-
-        # ---- what it writes. A syscall's result is unknown and comes from
-        # outside the program, which is both of the things the walk needs and
-        # neither of them is a port question once it is written down.
-        written = []
-        w = str(wired(outp) or "").strip() if outp else ""
-        if re.fullmatch(r"[A-Za-z_]\w*", w):
-            written.append({"type": "assign", "name": w, "expr": None,
-                            "outside": True, "ghost": True, "line": ln})
-        # A primitive with a `buffer` port writes into it UNLESS it also takes
-        # a `count` in-port -- that is `write`, which reads from it instead.
-        fills = "buffer" in inports and "count" not in inports
-        for p in sorted(ports):
-            a = str(wired(p) or "").strip()
-            if not a:
-                continue
-            for nm in set(re.findall(r"[A-Za-z_]\w*", a)):
-                if nm in bufs and nm != w:
-                    written.append({"type": "assign", "name": nm, "expr": None,
-                                    "outside_bytes": (p == "buffer" and fills),
-                                    "addr": a, "ghost": True, "line": ln})
-        # dedupe, keeping the strongest claim about each name
-        seen = {}
-        for s in written:
-            k = s["name"]
-            if k in seen:
-                seen[k]["outside"] = seen[k].get("outside") or s.get("outside")
-                seen[k]["outside_bytes"] = (seen[k].get("outside_bytes")
-                                            or s.get("outside_bytes"))
-            else:
-                seen[k] = s
-        out_steps.extend(seen.values())
-    return out_steps
-
-
-
 def buffer_sizes(slots):
     """Every buffer's size as a NUMBER, and the scalars it may be written as.
 
@@ -6349,9 +6201,9 @@ def check_call_fit(definitions, slots, steps):
     checked at run time; a clause on an IN port is a requirement on the call and
     is checked here. Same keyword, same grammar, no run-time cost.
 
-    Only decided where both sides are known. A capacity computed at run time is
-    left alone rather than guessed at -- the bound the analysis could not prove
-    is not the same as a bound it proved false."""
+    Only decided where both sides are known. A capacity computed at run time
+    is left alone rather than guessed at: not knowing a bound is not the same
+    as knowing it is wrong."""
     sizes, scal = buffer_sizes(slots)
 
     for st in steps:
@@ -6543,9 +6395,6 @@ def plan(definitions, slots, steps, overrides):
     steps = expand_procedures(definitions, slots, steps, PRIMITIVES)
     # ...and only now is there anything to analyse. Everything with a
     # procedure body has been spliced flat; what remains is one stream of
-    # steps under `_start`. Resolve each surviving call's ports ONCE here,
-    # so nothing downstream has to know a port is a thing.
-    steps = lower_primitives(definitions, slots, steps)
     check_adoption_fit(definitions, slots)
     check_call_fit(definitions, slots, steps)
     check_never_leaves(steps)
@@ -6722,11 +6571,6 @@ def plan(definitions, slots, steps, overrides):
 
     def plan_one(st, into, cold=False):
         nonlocal n_resume, loop_id
-        # A step `lower_primitives` wrote down so the analysis could read what a
-        # surviving call does. It says what the CALL already does; emitting it
-        # would be saying it twice.
-        if st.get("ghost"):
-            return
         check_released(st)
         if st["type"] == "assign":           # `X is EXPR` -- recompute a scalar
             if st["name"] not in scalars:
