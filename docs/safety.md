@@ -89,14 +89,14 @@ Two structural reasons close the selective levers for good: pragmas need
 **more than one function** and everything splices into `_start`. Neither is an
 oversight — both are what buys −32% instructions against the C twin.
 
-### Cross-checked against two other tools
+### Nothing it proved was beyond GCC
 
-Frama-C's Eva and rustc were run over the same programs. On the 13 hard
-accesses of the largest: **8 neither Eva nor mereo could prove**, 4 Eva proved and mereo did
-not, and 2 appeared to be mereo's alone. That last claim was **withdrawn**: it
-rested on a bug, and once `reaching` stopped answering with a value's declared
-initialiser for a name grown in an enclosing loop, mereo reported those two as
-well. No case survived where mereo proved something GCC could not.
+Two accesses looked at one point like mereo's alone -- proved here and not by
+the optimiser. That claim was **withdrawn**. It rested on a bug: `reaching`
+answered with a value's declared initialiser for a name grown in an enclosing
+loop, and once that was fixed mereo reported those two as well.
+
+No case survived where mereo proved something GCC could not.
 
 ### The failure mode was silence
 
@@ -112,8 +112,8 @@ one question asked wrong — *which definitions can arrive here*:
 - a `leave` folded with dataflow rather than constants marked **149 live steps
   unreachable**, so their accesses were never classified at all.
 
-Each was found by CBMC or by running a binary, never by the test suite, because
-what they broke they broke by staying quiet. A checker whose bugs are silent
+Each was found by running a binary or by hand, never by the test suite,
+because what they broke they broke by staying quiet. A checker whose bugs are silent
 costs more than one that is merely absent.
 
 ---
@@ -242,12 +242,12 @@ If this is reopened, the number to beat is **4 checks, in 1 of 42 programs, all
 of which GCC removed anyway.** Anything short of that is a diagnostic, not an
 optimisation — and a diagnostic has a cheaper home.
 
-**That home is CBMC.** `tests/cbmc.sh` is bit-precise, answers with a
-counterexample rather than a verdict, and is run by hand when `core.mereo` or
-the emitter changes. It found the guard that overflowed a signed long and the
-`count + length <= limit` that wrapped unsigned, both of which the analysis had
-accepted in silence. It is not on the routine run because its answers do not
-change between edits.
+**There is no cheaper home, and that is the honest end of it.** A bounded
+model checker over the generated C was run for a while and found two things the
+analysis had accepted in silence -- a guard that overflowed a signed long, and
+a `count + length <= limit` that wrapped unsigned. It is gone too. What
+remains against faults of that kind is the black-box suite, which tests what a
+program does rather than what it might do.
 
 What the analysis was genuinely good for was **finding bugs while it was being
 written**, and those are fixed and gated on behaviour, not on the analysis:

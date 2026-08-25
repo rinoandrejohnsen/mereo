@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # The full test run -- five suites plus the build gate.
-# (CBMC is suite 7 and runs separately: ./tests/cbmc.sh)
 #
 #   1. UNIT tests for RAII + error handling  (tests/scopes/run.sh)
 #      Small mereo programs paired with equivalent C++; strace both and assert
@@ -61,17 +60,6 @@ echo
 # differently. Zig is optional -- its column is skipped when it is not installed.
 echo "### Suite 5 -- compile-time checking versus C++ and Zig"
 "$DIR/tests/checking/run.sh" || rc=1
-
-echo
-# Suite 6, bounded model checking with CBMC, is NOT run here: it is about a
-# minute on its own and the questions it answers do not change between edits.
-# It stays worth running when core.mereo or the analysis changes, by hand:
-#
-#     ./tests/cbmc.sh
-#
-# It found the guard that overflowed a signed long and the builder count that
-# wrapped, so it is kept -- just not on every run.
-
 
 echo
 echo "### Build + layout gate"

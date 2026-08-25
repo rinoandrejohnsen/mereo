@@ -6802,7 +6802,6 @@ def plan(definitions, slots, steps, overrides):
             # rewritten to the subtraction form, that value must be the
             # SUBJECT and not the sum: recomputing `count + length` to report
             # it performs the very addition the rewrite exists to avoid, and
-            # CBMC flags the diagnostic itself as the overflow.
             if not st.get("nowrap"):
                 _t = top_split(lhs)
                 if len(_t) == 2 and len(top_split(lhs, "-")) == 1:

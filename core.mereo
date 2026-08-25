@@ -124,8 +124,8 @@ text is
   -- a short key, and it took a rule for a `leave` whose condition folds to a
   -- constant before the analysis could see that.
   --
-  -- The C it replaced was not safer for being C, only unexamined: Frama-C
-  -- cannot prove `_p[_i]` in bounds there either. Byte-identical output on a
+  -- The C it replaced was not safer for being C, only unexamined: nothing
+  -- proved `_p[_i]` in bounds there either. Byte-identical output on a
   -- 169 KB and an 84 MB log, and the same wall clock -- median ratio 1.003
   -- over nine interleaved runs.
   equals (data, length, other, other_length, result) goes

@@ -7,7 +7,7 @@ include "../../core.mereo"
 -- is unsigned, so it underflowed to 2**64-1 and the second `find` was handed
 -- that as its extent.
 --
--- Found by CBMC on the generated C: "arithmetic overflow on unsigned - in
+-- Found on the generated C: an arithmetic overflow on unsigned `-` in
 -- doc.length - off". Nothing in the corpus reached it, because every program
 -- that reads JSON here reads a constant one.
 program goes

@@ -89,7 +89,6 @@ without it the idea looks attractive again in six months.
 | Storage as the DEFAULT rather than `in stack` | 81 to 1 against |
 | A contradiction test for dead code | marked LIVE code dead, killed a working line assembler, reverted |
 | Extent-as-access as a REFUSAL | false positive on the TLS client (`tlen` ~700 read as 32,746) |
-| `--conversion-check` in the CBMC suite | 52 programs flagged, none real -- mereo converts on purpose |
 | A backward slice to prune assumes | prunes nothing: from 32 checks it reaches every name |
 | A byte-loop or word+tail `equals` | 6.8% and 3.1% slower; only the overlapping tail reaches parity |
 | Overflow checks (`-fsanitize=signed-integer-overflow`) | **+23.8%** measured, 120 traps GCC could not prove away. Release Rust wraps too. |
