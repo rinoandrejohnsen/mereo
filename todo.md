@@ -115,19 +115,15 @@ and paid 10,995 instructions for them. `prune_assumes` now emits one only where
 an emitted branch mentions the value it bounds, in the matching direction.
 Gated in `test.sh`'s build section.
 
-**A check that is proved away costs nothing -- and so does one GCC can prove
-itself.** `span.at` with a known length emits no check; with a length off the
-wire it keeps one. But where GCC can see the bound, dropping the check changes
-nothing: 19,968,797 instructions either way, the landing pad and its message
-gone from both binaries. The saving is real only where the fact is absent from
-the C.
+**A check GCC can prove away costs nothing.** `span.at` carries
+`ensure offset < length`, and mereoc emits it in both cases now -- with a known
+length and with one off the wire. Where GCC can see the bound it deletes the
+branch, the landing pad and the message string together: 19,968,797
+instructions either way. Where it cannot, the check stays and is doing its job.
 
-What those two share: the analysis pays, and is UNDER-EXPLOITED.
-`drop_proved_checks` fires on 4 of 120 candidates in 1 of 42 programs, because
-`span.at` is the only checked accessor in `core.mereo`. A newly deployed check
-costs about nothing -- ruling the short case out of `starts`/`ends` cost one
-instruction and zero bytes. The action that points at is MORE checked
-accessors, not fewer.
+mereo used to delete some of them itself, and that is what `drop_proved_checks`
+was. It fired on 4 of 120 candidates in 1 of 42 programs, GCC removed the same
+four, and it went with the analysis on 2026-08-25.
 
 ---
 
