@@ -1,0 +1,34 @@
+include "../../../linux.mereo"
+
+-- `used` grows every pass of the OUTER loop, and is read as an offset in the
+-- INNER one. `reaching` looked only at the innermost enclosing loop, so the
+-- inner back edge carried nothing about `used` and the outer one was never
+-- asked -- it answered with the declared 0 alone and the analysis PROVED an
+-- offset that reaches 400 into sixty-four bytes. CBMC reports it out of
+-- bounds at unwind 24; mereoc called it safe.
+--
+-- Reported rather than refused: `used` has no ceiling here at all, so the
+-- honest answer is that nothing bounds it, not that it is definitely wrong.
+program goes
+  arena is 64 bytes
+  n is 0
+  used is 0
+  i is 0
+  d is 0
+  terminal is already linux.file (descriptor is 1)
+  outer goes
+    leave outer when n >= 100
+    i is 0
+    inner goes
+      leave inner when i >= 4
+      d is d + [arena + used + i : 1]
+      i is i + 1
+      repeat inner
+    end
+    used is used + 4
+    n is n + 1
+    repeat outer
+  end
+  [arena : 1] is d
+  terminal.write (buffer is arena, count is 1)
+end

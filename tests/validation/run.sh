@@ -114,6 +114,10 @@ check refuses s_backedge_nested     # ...nor over a back edge: unconditional 40,
 check proves  s_backedge_nested_ok  # nested 4, so both reach the head
 check proves  s_modulo              # `% 16`
 check proves  s_shift               # `>> 4` on a byte
+check reports s_carried_outer       # a value grown in an OUTER loop, read in an
+                                    # inner one: nothing bounds it, and it was
+                                    # being PROVED from its declared value
+check proves  s_carried_outer_ok    # ...reset each pass, so it is inside
 check proves  s_nested_bound        # bounds from two enclosing scopes
 check proves  s_when_store          # a conditional store, bounded either way
 check refuses s_when_store_out      # ...where one branch is past the end

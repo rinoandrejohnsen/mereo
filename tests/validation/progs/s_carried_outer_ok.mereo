@@ -1,0 +1,28 @@
+include "../../../linux.mereo"
+
+-- The twin, and the proof the outer definition is really being read: the same
+-- shape with `used` reset to 0 at the top of the outer body, so it never
+-- grows and the access is plainly inside.
+program goes
+  arena is 64 bytes
+  n is 0
+  used is 0
+  i is 0
+  d is 0
+  terminal is already linux.file (descriptor is 1)
+  outer goes
+    leave outer when n >= 100
+    used is 0
+    i is 0
+    inner goes
+      leave inner when i >= 4
+      d is d + [arena + used + i : 1]
+      i is i + 1
+      repeat inner
+    end
+    n is n + 1
+    repeat outer
+  end
+  [arena : 1] is d
+  terminal.write (buffer is arena, count is 1)
+end

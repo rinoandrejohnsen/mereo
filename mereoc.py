@@ -6715,9 +6715,11 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
                 if ok:
                     floor_binding.setdefault(i, {})[name] = (fexpr, adj, extra, lp)
 
-    inner_loop = {}
+    inner_loop, enclosing = {}, {}
     for s_, e_, _c, _b in sorted(loops, key=lambda L: L[1] - L[0]):
-        for i in range(s_, e_ + 1): inner_loop.setdefault(i, (s_, e_))
+        for i in range(s_, e_ + 1):
+            inner_loop.setdefault(i, (s_, e_))
+            enclosing.setdefault(i, []).append((s_, e_))
 
     _DEPTH = None
 
@@ -6777,7 +6779,31 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
         if before and lp and before[-1][0] > lp[0] and len(before) == 1:
             return before
         out = list(before)
-        if lp:
+        for lp in enclosing.get(at, ()):
+            # EVERY ENCLOSING LOOP, not only the innermost. `used is used + 4`
+            # sits in an OUTER loop, after an inner one that reads `arena +
+            # used + i` -- so the inner loop's back edge carries nothing about
+            # `used` and the outer one was never asked. `reaching` answered
+            # with the declared 0 alone and the analysis PROVED an offset that
+            # grows without bound: 400 into sixty-four bytes, which CBMC
+            # reports out of bounds and mereoc called safe.
+            #
+            # A definition of the name directly in this loop's body, before the
+            # use, still kills what its back edge carried -- it runs every
+            # pass ahead of the use. One nested deeper may not run, so it does
+            # not kill.
+            _killed, _d = False, 0
+            for _k in range(lp[0] + 1, at):
+                _t = steps[_k].get("type")
+                if _t == "loop_start":
+                    _d += 1
+                elif _t == "loop_end":
+                    _d -= 1
+                elif (_d == 0 and _t == "assign"
+                      and steps[_k].get("name") == n):
+                    _killed = True
+            if _killed:
+                continue
             # WHAT A BACK EDGE CAN CARRY, not everything the body writes. Every
             # definition in the loop was taken before, including ones that are
             # always overwritten before control gets back to the head: `hidx is
