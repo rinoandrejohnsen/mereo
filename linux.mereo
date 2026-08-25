@@ -1206,7 +1206,8 @@ linux is
       capacity is 65536
       buffer is capacity bytes
       count is 0
-      key is 16 bytes
+      key is 20 bytes          -- what `text.format` can write: nineteen
+                              -- digits and a sign, whatever a uid is
       keylen is 0
       key_ptr is 0
       cur is 0

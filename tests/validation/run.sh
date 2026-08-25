@@ -41,9 +41,6 @@ declare -A KNOWN=(
   #     stated and which an interval cannot carry -- reducing it uses the
   #     LOWER bound of the other term and loses the correlation. Reported
   #     rather than proved, which is the honest answer and was silence before.
-  [m_format]="format writes at j with nothing tying j to the buffer"
-  [m_format_small]="...so the too-small buffer is reported, not refused"
-  [m_number]="the same, through text.number"
   [m_builder_ok]="builder writes at data + count: count + length <= limit is relational"
   [m_builder_number]="the same, writing a decimal"
   [l_builder_over_read]="the same, appending after a read"

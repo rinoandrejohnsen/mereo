@@ -12,7 +12,7 @@ program goes
   start is 0
   vlen is 0
   num is 0
-  digits is 12 bytes
+  digits is 20 bytes          -- `text.format`'s worst case
   dlen is 0
 
   doc is already json (content is raw, length is raw.size)

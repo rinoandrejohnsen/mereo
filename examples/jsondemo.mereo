@@ -7,7 +7,7 @@ program goes
   start is 0
   vlen is 0
   portnum is 0
-  digits is 8 bytes
+  digits is 20 bytes          -- `text.format`'s worst case, not a port's
   dlen is 0
 
   -- hand the bytes to a `json` (their address and length); read fields off `doc`

@@ -198,6 +198,12 @@ text is
       leave unstage when i <= 0
       i is i - 1
       leave unstage when i >= 20
+      -- and a ceiling on what has been WRITTEN, not just on what is left to
+      -- read. `j` climbs in lockstep with `i` falling, which is a relation
+      -- between two counters and not something an interval carries -- so
+      -- nothing bounded `j` and every store through it was reported. Twenty
+      -- is the most this can produce: nineteen digits and a sign.
+      leave unstage when j >= 20
       d is [scratch + i : 1]
       [buffer + j : 1] is d
       j is j + 1
