@@ -25,10 +25,6 @@ TIMEOUT=${TIMEOUT:-90}
 # Known open, each confirmed by CBMC and each already reported by mereoc as
 # unproved rather than refused. Fixing one means removing it from here.
 declare -A EXPECT_FAIL=(
-  [find_offset_past_end]="a find offset used as an index with nothing bounding it"
-  [ovf_guard_bounds]="a guard whose subject overflows a signed long"
-  [store_outport_past_end]="the store side of an out port is not checked"
-  [syscall_extent_scalar]="a syscall capacity in a scalar escapes check_call_fit"
 )
 # Not a hole -- a cost. 19 buffers needs --object-bits 14, and then it is four
 # and a half minutes for one program. Run it by hand:

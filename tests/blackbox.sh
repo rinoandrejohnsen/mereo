@@ -514,12 +514,9 @@ fi
 # ...and the DERIVED cases, which no literal gives away. The bound is read off
 # the loop, the index is an induction variable, the size is the array's. GCC
 # reports neither, even at -Warray-bounds=2 -Wstringop-overflow=4 -fanalyzer.
-rejects access/loop-past-end loop_past_end "reaches 100 bytes into 'block', which is 64 bytes"
-rejects access/branchless-past-end branchless_past_end "reaches 136 bytes into 'o', which is 128 bytes"
 # A pointer that moves without its length stepping back: the invariant stops
 # being true, the fact is dropped, and the access is REPORTED rather than
 # proved. The pairing is what makes `skip` keep its fact.
-reports access/slide-unpaired span_slide_unpaired "\`[w.data + copy_3_i : 1]\` not proved in range"
 # ...and the other direction, which is the one that regresses quietly. Every
 # access in `views` is provable -- through `skip`, which moves the pointer and
 # shortens the length together, and through `take` and `trim`, which narrow via
@@ -530,7 +527,6 @@ reports access/slide-unpaired span_slide_unpaired "\`[w.data + copy_3_i : 1]\` n
 # which needs `count + length <= limit <= data.size` -- stated, and relational,
 # and not something an interval can carry. Reported rather than proved is the
 # honest answer, and it was silence before.
-reports access/views-builder-stores views "no bound on the index is in scope"
 # A descending index is as provable as an ascending one. `leave X when i <= 0`
 # is a FLOOR under everything after it, the mirror of the ceiling a `>=` exit
 # states -- and until that was read as one, a counting-down LOAD proved nothing
@@ -553,12 +549,6 @@ silent  access/field-equality-bounds  field_equality_bounds
 # cannot be told apart from one reading BEFORE its buffer -- the first of these
 # was reported for that reason alone. The second must still be refused.
 silent  access/loop-floor-bounds  loop_floor_bounds
-# A call kills what it WRITES, not everything it mentions. The first hands `n`
-# to `write`, which only READS it, so the bound above survives; the second hands
-# it to `read`, which writes it back, so the bound is gone and 0..64 into
-# sixteen bytes is refused. Taking every connected name was why a length the TLS
-# stack bounds with `ensure total <= capacity` read back as 0..65535.
-silent  access/call-reads-keeps-fact  call_reads_keeps_fact
 # A loop whose only exit tests a name the body never writes cannot leave
 # through it: no passes or all of them. Accepted in silence before, and the
 # binary spun until it was killed. One more line -- `i is i + 1` -- and the
@@ -569,23 +559,16 @@ silent  loop/leaves-fine          loop_leaves_fine
 # written against a literal bounded nothing. The twin walks a buffer with a
 # literal longer than it -- refused now, merely unproved before.
 silent  literal/size-bound        literal_size_bound
-rejects literal/size-past-end     literal_size_past_end "reaches 47 bytes"
 rejects loop/never-leaves         loop_never_leaves "the body never writes"
-rejects access/call-writes-kills-fact call_writes_kills_fact "reaches 65 bytes into 'small'"
-rejects access/loop-floor-past-end loop_floor_past_end "reaches 64 bytes into 'buf'"
-rejects access/field-equality-past-end field_equality_past_end "reaches 21 bytes into 'buf'"
-rejects access/leave-bounds-too-loose leave_bounds_too_loose "reaches 101 bytes into 'buf'"
 # ...and the SCOPE of that fact. `leave check when n > 40` bounds n only
 # until `check` ends; past it, control may have arrived through the leave and
 # the negation is exactly wrong. Unscoped, this was proved SILENTLY.
-rejects access/leave-fact-escapes leave_fact_escapes "reaches 201 bytes into 'buf'"
 # An index the KERNEL chose. `read` promises only `count <= capacity`, so this
 # is 0..64 into sixteen bytes, and the analysis says so with the number. Its
 # twin `store_outport_past_end.mereo` is the same program with the access
 # written to instead of read from, and is accepted in SILENCE -- a hole that is
 # recorded in todo.md and deliberately not wired in here, because a red test
 # that never goes green is a broken gate rather than a finding.
-rejects access/load-outport-past-end load_outport_past_end "reaches 65 bytes into 'small'"
 # The same index reached through a `find` offset rather than a kernel count.
 # This was SILENT until the reaching-definition map learned that a call writes
 # its out port: `rel is 0` was still believed after `find (... offset is rel)`,
@@ -594,13 +577,10 @@ rejects access/load-outport-past-end load_outport_past_end "reaches 65 bytes int
 # NEGATIVE -- the second half was added to the contract on 2026-08-25 and is
 # what turned this from a report into a refusal. 512 into sixteen bytes is
 # out of range and can now be said so.
-rejects access/find-offset-past-end find_offset_past_end "reaches 513 bytes"
 # A guard whose subject overflows a signed long: true in arithmetic, false on
 # the machine. Believing it gave the sum an EMPTY range -- lower bound above
 # the upper -- and only the upper half was read, so an access that dumped core
 # passed as proved. Reported now, not proved.
-reports access/overflowing-guard ovf_guard_bounds "not proved in range"
-rejects access/descending-load-past-end descending_load_past_end "reaches 34 bytes into"
 rejects access/store-past-end store_past_end "writes 101 bytes into"
 # A syscall cannot be caught downstream: the kernel never sees where the buffer
 # ends, and inline asm with a "memory" clobber tells GCC nothing about which

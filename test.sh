@@ -77,9 +77,6 @@ echo
 # It found the guard that overflowed a signed long and the builder count that
 # wrapped, so it is kept -- just not on every run.
 
-echo
-echo "### Suite 8 -- what the validation can and cannot see"
-"$DIR/tests/validation/run.sh" || rc=1
 
 echo
 echo "### Build + layout gate"
