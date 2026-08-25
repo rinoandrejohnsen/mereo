@@ -6620,6 +6620,22 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
                     floors[m.group(1).strip()] = (
                         m.group(3).strip(), 1 if m.group(2) == "<=" else 0,
                         i, (s, e))
+                    # ...and it makes the loop a COUNTING-DOWN one, which was
+                    # only ever recognised from the loop's END condition
+                    # (`repeat when i >= 0`). Written at the TOP -- `leave walk
+                    # when i <= 0`, which is how every other loop in the corpus
+                    # is written -- it said the same thing and built no `desc`
+                    # entry, so a descending index had no CEILING and every
+                    # access through it was reported.
+                    # the floor the body runs under, which is one ABOVE the
+                    # value it leaves on: `leave walk when i <= 0` means the
+                    # body only sees `i >= 1`. Recording 0 instead put the
+                    # floor at -1 after a single decrement, and a negative
+                    # lower bound is reported rather than proved.
+                    lows.setdefault(m.group(1).strip(),
+                                    (f"({m.group(3).strip()}) + 1"
+                                     if m.group(2) == "<=" else m.group(3).strip(),
+                                     s))
         for name, (loexpr, from_i) in lows.items():
             decs, ok = [], True
             for i in range(s + 1, e):
@@ -6633,6 +6649,14 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
             cands = [(j, steps[j].get("expr")) for j in range(s)
                      if steps[j].get("type") == "assign" and steps[j].get("name") == name]
             if cands: entry = cands[-1]
+            # ...or the value it was DECLARED with. `i is 16` at the top of a
+            # program is an init, not an assign step, so a loop counting down
+            # from its declared value found no entry at all and the ceiling was
+            # never built. `-1` is the position `reaching` already uses for an
+            # init, and a declared value is a constant, so the position does
+            # not matter to reading it.
+            if entry is None and sinit.get(name) is not None:
+                entry = (-1, str(sinit[name]))
             if entry is None: continue
             for i in range(s + 1, e):
                 before = sum(k for pos, k in decs if pos < i)
@@ -7644,6 +7668,32 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
                 return True
         return False
 
+    def width_bound(e, at, depth=0):
+        """is this index bounded only by the WIDTH of a load behind it?
+
+        True when a name in it comes from a load and nothing in scope says
+        anything about that name -- no guard, no loop bound, no contract. Then
+        the ceiling is `2**(8*width) - 1` and means only "it is that many bytes
+        wide", which cannot support a refusal."""
+        if depth > 4:
+            return False
+        here = facts.get(at, {})
+        for n in set(re.findall(r"[A-Za-z_]\w*", str(e))):
+            if n in here or n in bnd or n in cbound or n in clow:
+                continue
+            for d, ex in reaching(n, at):
+                t = str(ex).strip()
+                # ONLY a bare load, or a bare name that leads to one. An
+                # expression that NARROWS -- `d & 31`, `d % 16` -- gets its
+                # ceiling from the operator, not from the width, and that is a
+                # real bound: `& 31` into sixteen bytes is a genuine violation
+                # and following through it stopped `s_mask_out` being refused.
+                if LOAD.match(t):
+                    return True
+                if re.fullmatch(r"[A-Za-z_]\w*", t) and width_bound(t, d, depth + 1):
+                    return True
+        return False
+
     def loose_bound(e, at):
         """was anything in this index bounded by a fact about a SUM?
 
@@ -7825,13 +7875,19 @@ def classify_accesses(definitions, slots, steps, skip_guard=None,
                 # above the copy -- was refused for saying so.
                 if verdict == "OUT" and loose_bound(idx, i):
                     verdict = "bound-unresolved"
-                if verdict == "OUT" and _accesses(idx):
+                if verdict == "OUT" and (_accesses(idx) or width_bound(idx, i)):
                     # The index reads memory, and a LOAD is bounded by its own
                     # WIDTH -- a 4-byte field is 0..4294967295 whatever it
                     # actually holds. That is an over-approximation, not a
                     # proof the value is that big, so it cannot support a
                     # refusal. Report it unproved and let the programmer say
                     # what bounds it.
+                    #
+                    # `_accesses` alone only sees a load written IN the index.
+                    # One name away -- `k is [buf : 2]` then `[small + k]` --
+                    # is the same over-approximation and was being REFUSED for
+                    # what the value might hold, which is the worse error of
+                    # the two the analysis can make.
                     verdict = "bound-unresolved"
                 out.append([verdict, bname, inner, ln, hi, size, width, lit,
                             origin])

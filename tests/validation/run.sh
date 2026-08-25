@@ -50,20 +50,11 @@ declare -A KNOWN=(
 
   # --- FALSE POSITIVE. The code says the WIDTH of a load is an over-approximation
   #     and cannot support a refusal. Assigning it to a name evades that rule.
-  [l_wire_unguarded]="refuses on a load width once it passes through a name"
 
   # --- CANNOT DECIDE. Seven of these are one capability: an out-port promise
   #     (`ensure offset <= length`) used as a bound on the index it produced.
-  [m_find_promise]="a find offset, checked, is still not a bound"
-  [m_find_at_end]="...so the unchecked form cannot be refused either"
-  [m_find_other_buffer]="...nor the one indexing a smaller buffer"
-  [m_measure]="measure answers within its limit; not used as a bound"
   [m_search_ok]="search offset, checked, is still not a bound"
   [m_json_ok]="an address held in a SCALAR: search hands equals `data + i`"
-  [l_template_chain]="a promise through two splices"
-  [l_template_chain_over]="...so its violation cannot be refused"
-  [s_loop_floor]="the floor under a descending counter"
-  [s_loop_floor_out]="...so starting past the end cannot be refused"
   [s_when_store]="the two values a conditional store can leave"
   [s_when_store_out]="...so the out-of-range branch cannot be refused"
 )
