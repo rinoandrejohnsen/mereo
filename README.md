@@ -19,6 +19,22 @@ end
 
 That builds to a 784-byte executable.
 
+## Unreleased, since 0.2
+
+Tagged releases are the reference; this is what `main` carries beyond `v0.2`.
+
+- **`new` means a fresh instance, and nothing else.** `NAME is blank CLASS` is
+  now `NAME is new CLASS`, and `new NAME is VALUE` on scalars is **removed** --
+  a unique name already says a scalar is meant to be fresh, so the keyword was
+  a second way to say one thing. Code written against 0.2 is told where it
+  went rather than "unrecognized program line".
+- **A docs gate that had stopped working.** `docs/build.py` refuses to write
+  when an example no longer transpiles, and it identified complete programs by
+  matching `program ... is`. The surface moved to `goes` during 0.2 and this
+  did not, so the count of examples checked was **zero** while the build
+  reported "18 pages checked". Both spellings match now; turning it back on
+  found a broken example that had shipped.
+
 ## What is new in 0.2
 
 - **Namespaces.** An `is` block holding a definition, with no keyword of its
@@ -29,7 +45,8 @@ That builds to a 784-byte executable.
   ambiguous in 0.1, plus `new` for the half of `NAME is VALUE` that could not
   be said: the plain form opens the name or assigns it and nothing said which.
 - **`already` borrows, `blank` zeroes.** One keyword was doing both jobs, and
-  the borrowing one wrote zeros over a field left unset.
+  the borrowing one wrote zeros over a field left unset. (`blank` became `new`
+  after 0.2 was tagged -- see *Unreleased* above.)
 - **A compile-time checking suite.** Ten mistakes written three ways -- mereo,
   C++ with concepts, Zig -- and mereo refuses every one at the mistake. Among
   them: a view over a backing too small for it, a syscall handed more room

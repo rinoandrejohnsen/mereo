@@ -5,7 +5,7 @@
 | **Paradigm** | Imperative, structured, function-free |
 | **Designed by** | Rino Andre Johnsen |
 | **Made by** | Claude Opus 5 (Anthropic) |
-| **Current version** | 0.2 |
+| **Current version** | 0.2 (`main` is ahead; see the README) |
 | **Typing discipline** | Values untyped; memory accesses typed |
 | **Memory management** | Static and stack only; scope-derived release |
 | **Platform** | Linux on x86-64 |
