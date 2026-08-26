@@ -108,25 +108,40 @@ declaration is an assignment to whatever that name already is:
                     -- mereo: n is 2.   C++: n is 1.
 ```
 
-And because a scalar's value is whatever anyone last wrote, a scope can read
-one a **sibling** left behind:
+That is the flat set doing what it is for: a scope reads its surroundings
+without plumbing anything through ports.
+
+A name the **parent** opened is exactly what that is for, and reading it is
+fine. The hazard is the other case: reading what a **sibling** left behind,
+which looks exactly like a fresh temporary. That is refused:
 
 ```
+  t is 0
   one goes
-    v is 7
+    v is 7          -- `v` is opened here
     t is t + v
   end
   two goes
-    t is t + v      -- v is 7 here, from `one`
+    t is t + v      -- and read here, before `two` writes it
     v is 100
   end
-                    -- mereo prints 14. C++ warns `v is used uninitialized`.
 ```
 
-That is the cost of the flat set, and it buys something real: a scope reads its
-surroundings without plumbing anything through ports. The sharpest case — two
-nested loops counted by the same scalar, where the inner one **resets** it — is
-refused outright ([Safety](safety.md) has it).
+    mereoc: error: line 11: 'two' reads 'v' before writing it, and 'v' was
+    opened in 'one' -- so this reads what 'one' left rather than a fresh
+    value. Scalars are one flat set per body, so a later assignment in 'two'
+    assigns that same name. Give this one its own name.
+
+Move `v is 0` up beside `t is 0` and it compiles: the parent opened it, both
+scopes are assigning a name that already exists, and nothing is being mistaken
+for a temporary. The check is about where the name was **opened**, not about
+sharing one.
+
+C++ gives each block its own `v` and warns that it is used uninitialised. mereo
+cannot warn the same way, because the name really **is** the same name — so it
+checks instead. The other sharp case, two nested loops counted by the same
+scalar where the inner one **resets** it, is refused for the same reason
+([Safety](safety.md) has it).
 
 ### The flat set stops at a template
 
