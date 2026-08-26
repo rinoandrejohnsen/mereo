@@ -41,16 +41,26 @@ outer one, and no flag is needed to carry the decision outwards:
 ```
 include "linux.mereo"
 
-program goes row is 0 col is 0
+program goes
+  row is 0
+  col is 0
 
-terminal is already linux.file (descriptor is 1)
+  terminal is already linux.file (descriptor is 1)
 
-rows goes col is 0 cols goes terminal.write (buffer is "#", count is 1) col is
-col + 1 leave rows when row == 1      -- out of BOTH scopes at once repeat cols
-when col < 3 end terminal.write (buffer is "\n", count is 1) row is row + 1
-repeat rows when row < 3 end
+  rows goes
+    col is 0
+    cols goes
+      terminal.write (buffer is "#", count is 1)
+      col is col + 1
+      leave rows when row == 1      -- out of BOTH scopes at once
+      repeat cols when col < 3
+    end
+    terminal.write (buffer is "\n", count is 1)
+    row is row + 1
+    repeat rows when row < 3
+  end
 
-terminal.write (buffer is "\n", count is 1)
+  terminal.write (buffer is "\n", count is 1)
 
 end
 ```
@@ -125,6 +135,8 @@ usable. Its locals are not the caller's: each splice gets its own, renamed per
 **call site**, so the same template used twice has two of everything.
 
 ```
+include "linux.mereo"
+
 label (answer) goes
   my_name is 3           -- the template's own
   my_name is my_name + 1
@@ -132,11 +144,19 @@ label (answer) goes
 end
 
 program goes
+  pair is 2 bytes
+  got is 0
   my_name is 100         -- the program's
   s goes
     my_name is 200       -- a plain scope: ASSIGNS the program's
   end
   label (answer is got)  -- a splice: its my_name is a fresh variable
+
+  terminal is already linux.file (descriptor is 1)
+  [pair : 1] is my_name
+  [pair + 1 : 1] is got
+  terminal.write (buffer is pair, count is 2)
+end
 ```
 
 `my_name` ends as 200 and `got` as 4, and the emitted C says why:
@@ -261,12 +281,16 @@ There does not need to be one. An `else` is a scope the `if` **leaves early**:
 ```
 include "linux.mereo"
 
-program (arguments) goes x is arguments.count
+program (arguments) goes
+  x is arguments.count
 
-output is already linux.file (descriptor is 1)
+  output is already linux.file (descriptor is 1)
 
-main goes x == 2 goes output.write (buffer is "hello from if\n", count is 14)
-leave main end
+  main goes
+    x == 2 goes
+      output.write (buffer is "hello from if\n", count is 14)
+      leave main
+    end
 
     output.write (buffer is "hello from else\n", count is 16)
   end

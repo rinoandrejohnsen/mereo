@@ -5,15 +5,17 @@ destructors, without an unwinder and without a runtime.
 ```ada
 include "linux.mereo"
 
-program goes buffer is 64 bytes count is 0
+program goes
+  buffer is 64 bytes
+  count is 0
 
-terminal is already linux.file (descriptor is 1)
+  terminal is already linux.file (descriptor is 1)
 
-source is linux.file (path is "lorem_ipsum.txt", flags is 0, mode is 0)
+  source is linux.file (path is "lorem_ipsum.txt", flags is 0, mode is 0)
 
-source.read (buffer is buffer, capacity is 11, count is count)
+  source.read (buffer is buffer, capacity is 11, count is count)
 
-terminal.write (buffer is buffer, count is count)
+  terminal.write (buffer is buffer, count is count)
 
 end
 ```
@@ -172,8 +174,9 @@ second:
   tty extends file is
     backup is 36 bytes
 
-acquire goes ioctl (descriptor is descriptor, request is 21505, argument is
-backup) end
+    acquire goes
+      ioctl (descriptor is descriptor, request is 21505, argument is backup)
+    end
 
     release goes
       ioctl (descriptor is descriptor, request is 21506, argument is backup)
@@ -197,11 +200,12 @@ Restore, then close, in reverse order of acquisition. A program says only:
 ```ada
 include "linux.mereo"
 
-program goes work is linux.terminal_settings
+program goes
+  work is linux.terminal_settings
 
-console is linux.tty (path is "/dev/tty", flags is 2, mode is 0)
+  console is linux.tty (path is "/dev/tty", flags is 2, mode is 0)
 
-console.snapshot (buffer is work)
+  console.snapshot (buffer is work)
 
 end
 ```

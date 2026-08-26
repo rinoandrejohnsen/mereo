@@ -143,15 +143,21 @@ a name for the operations that belong to the record:
 ```
 include "linux.mereo"
 
-record is tag is 1 bytes span is 2 bytes as big
+record is
+  tag is 1 bytes
+  span is 2 bytes as big
 
-fill (a, b) goes tag is a                   -- its own fields, by bare name
-span is b                  -- ...and byte order still holds end end
+  fill (a, b) goes
+    tag is a                   -- its own fields, by bare name
+    span is b                  -- ...and byte order still holds
+  end
+end
 
-program goes buf is 8 bytes
+program goes
+  buf is 8 bytes
 
-h is buf as record h.fill (a is 5, b is 4660)   -- 0x1234, stored most-
-significant first
+  h is buf as record
+  h.fill (a is 5, b is 4660)   -- 0x1234, stored most-significant first
 
   ensure h.tag == 5
   ensure [buf + 1 : 1] == 18   -- 0x12 first: the template kept network order

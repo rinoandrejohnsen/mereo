@@ -392,12 +392,20 @@ def check_examples(pages):
             # used to disable the check for the whole block, which is how a
             # broken example shipped in files.md.
             code = "\n".join(_uncomment(l) for l in block.split("\n"))
-            # A complete program opens with `program is` OR `program (PORTS)
-            # is`. Matching the bare literal missed every example that takes
+            # A complete program opens with `program goes` OR `program (PORTS)
+            # goes`. Matching the bare literal missed every example that takes
             # arguments -- they were printed, never compiled, and a broken one
             # would have shipped. Found by planting a bad `ensure` in one and
             # watching the build succeed.
-            if not re.search(r"^program\b.*\bis$", block, re.M) or "..." in code:
+            #
+            # And then it said `is` for eight months after the surface stopped
+            # saying `is`. `goes` for statements landed in 71a2b35 and this was
+            # not moved with it, so the count of examples checked went to ZERO
+            # and stayed there -- the build kept reporting "18 pages checked"
+            # while compiling none of them. Both spellings are matched now, so
+            # a future migration degrades rather than silently stops.
+            if (not re.search(r"^program\b.*\b(is|goes)$", block, re.M)
+                    or "..." in code):
                 continue
             tmp = root / f"_doccheck_{name}_{k}.mereo"
             tmp.write_text(block)
