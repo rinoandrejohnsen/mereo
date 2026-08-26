@@ -249,17 +249,11 @@ the exception. `v is 5` twice is one declaration and one assignment, so a
 uniqueness check has nothing to compare — which is why it shares silently where
 a buffer cannot.
 
-Where a scope wants a scalar of its own and means it, say so:
-
-```ada
-  s goes
-    new v is 5      -- refused if `v` is already taken
-  end
-```
-
-`new` is the half of `NAME is VALUE` that was missing: the plain form opens the
-name or assigns it and nothing says which, while `new` says which and is
-refused when the name is not free.
+Where a scope wants a scalar of its own, the way to say so is to give it a name
+nothing else uses. There is no keyword for it: a `new` on scalars existed
+briefly and was removed, because a unique name already says the same thing and
+one word doing one job is worth more than a second way to say it. `new` means a
+fresh zeroed instance and nothing else.
 
 | | mereo | C / C++ |
 | --- | --- | --- |

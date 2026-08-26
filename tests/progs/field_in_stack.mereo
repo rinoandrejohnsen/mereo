@@ -50,7 +50,7 @@ program goes
   c is 0
 
   page is already builder (data is room, count is 0, limit is 64)
-  h is blank holder
+  h is new holder
   screen is already linux.file (descriptor is 1)
 
   h.set (a is 7, b is 9)

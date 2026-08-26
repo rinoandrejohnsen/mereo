@@ -99,10 +99,12 @@ RESERVED = {"is", "already", "and", "in", "out", "end", "contains",   # `contain
             "goes", "likely", "when", "scope", "repeat", "leave", "pure",
             "arguments", "environment", "auxiliary", "as", "to",
             "high", "low", "atomic", "fence", "branchless", "clobbers"}
-# `new` and `blank` are not reserved either, for the same reason: `new NAME is
-# NUMBER` and `NAME is blank CLASS` each read the word in one position and
-# nowhere else, so a method or a field may still be called either. Reserving
-# `blank` broke `field.mereo`, which has a method by that name.
+# `new` is not reserved either: `NAME is new CLASS` reads the word in one
+# position and nowhere else, so a method or a field may still be called `new`.
+# It was `blank` until 2026-08-26, and there was a `new` on SCALARS beside it
+# -- `new NAME is NUMBER`, to say that a name was meant to be fresh. Both are
+# gone: one word doing one job, and a scalar that wants to be fresh says so by
+# having a name nothing else uses.
 # `bit`/`bits` are NOT reserved -- they are contextual, keywords only in the
 # field-declaration position (`X is bit N` / `X is bits N to M`), matched by
 # their own regexes; elsewhere they are ordinary names (bits.mereo's `bits`
@@ -2611,12 +2613,12 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                          " same word that reads a value as `signed` or `big`."
                          + (" `as adopted` is that same view, released on the way"
                             " out." if m.group(2) == "adopted" else ""))
-                # `NAME is blank CLASS` -- a fresh zeroed block of that shape,
+                # `NAME is new CLASS` -- a fresh zeroed block of that shape,
                 # which is a DECLARATION of storage and not a borrow. It takes no
                 # values: zero is the whole of what it says. `already` is the
                 # other job, and having one word for both is what let
                 # `already linux.file` mean standard input in silence.
-                m = re.match(r"^(\w+) is blank ([\w.]+)$", s)
+                m = re.match(r"^(\w+) is new ([\w.]+)$", s)
                 if m:
                     name_ok(m.group(1), n, "instance")
                     inst = {"kind": "instance", "name": m.group(1),
@@ -2708,31 +2710,6 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                          f"lay the view over it:\n    bits is N bytes in "
                          f"{m.group(3)}\n    {m.group(1)} is bits as "
                          f"{m.group(2)}")
-                # `new NAME is NUMBER` -- the same declaration, said out loud.
-                # `NAME is VALUE` opens the name if nothing has and assigns it if
-                # something has, and nothing in the line says which; `new` says
-                # which, and is refused when the name is already taken. It is the
-                # spelling to reach for when a scope wants a temporary of its
-                # own, since scalars are one flat set per body and a name a
-                # sibling used is the same name.
-                m = re.match(rf"^new (\w+) is ({_NUMLIT})$", s)
-                if m:
-                    nm = m.group(1)
-                    if nm in bound or any(sl.get("kind") == "scalar"
-                                          and sl["name"] == nm for sl in slots):
-                        fail(f"line {n}: `new {nm} is ...` asks for a name of "
-                             f"its own, and '{nm}' is already taken -- scalars "
-                             "are one flat set per body, so this would assign "
-                             "that one rather than open a new one. Pick another "
-                             f"name, or drop `new` if assigning '{nm}' is what "
-                             "was meant.")
-                    name_ok(nm, n, "slot")
-                    slots.append({"kind": "scalar", "name": nm,
-                                  "init": norm_int_c(m.group(2)), "line": n})
-                    if any(k == "loop" for k, _nm in scope_kinds):
-                        steps.append({"type": "assign", "name": nm,
-                                      "expr": m.group(2), "line": n})
-                    laststep = None
                     continue
                 m = re.match(rf"^(\w+) is ({_NUMLIT})$", s)
                 if m:
@@ -2861,6 +2838,17 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     steps.append(assign_step(nm, rhs, n))
                     laststep = None
                     continue
+                _nm = re.match(r"^new (\w+) is (.+)$", s)
+                if _nm:
+                    # `new NAME is VALUE` was a scalar declaration in 0.2, for
+                    # saying that a name was meant to be fresh. It is gone: one
+                    # word doing one job, and a scalar that wants to be fresh
+                    # says so by having a name nothing else uses.
+                    fail(f"line {n}: `{s}` -- `new` on a scalar is gone. Write "
+                         f"`{_nm.group(1)} is {_nm.group(2)}`, and if the point "
+                         "was a name of its own, give it one nothing else uses "
+                         "-- scalars are one flat set per body. `new` now means "
+                         "a fresh zeroed instance: `NAME is new CLASS`.")
                 fail(f"line {n}: unrecognized program line: {s!r}")
             fail(f"line {n}: unrecognized program line: {s!r}")
 
@@ -3684,7 +3672,7 @@ def check_slots(definitions, slots):
                 # about that thing and zero is not "unset" -- `descriptor is 0`
                 # is standard input, and `already linux.file` with the field
                 # left off wrote to it and exited 0. A fresh zeroed block is the
-                # other job and says so: `blank CLASS`.
+                # other job and says so: `new CLASS`.
                 if (slot.get("mode") == "adopted" and not slot.get("blank")
                         and not slot.get("lens")):
                     # a LENS is excluded: `X is BACKING as CLASS` borrows the
@@ -3697,7 +3685,7 @@ def check_slots(definitions, slots):
                              f"`already {slot['definition']}`, which borrows a "
                              "thing that already exists, so it must name every "
                              f"field -- missing {', '.join(_miss)}. For a fresh "
-                             f"zeroed one, write `blank {slot['definition']}`.")
+                             f"zeroed one, write `new {slot['definition']}`.")
                 _unset = unset_deref_fields(defn) - _given
                 if _unset:
                     _f = sorted(_unset)[0]

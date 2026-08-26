@@ -497,8 +497,7 @@ rejects msg/assign-bytes   msg_assign_bytes   "is a run of bytes"
 rejects scope/sibling-temp sibling_temp     "reads what 'one' left"
 # `new NAME is VALUE` is the half of the spelling that was missing: the plain
 # form opens or assigns and nothing says which, `new` says which.
-rejects scope/new-taken    new_taken        "is already taken"
-bb      scope/new-free     new_free  "" 0 "5"
+rejects scope/new-on-a-scalar   new_on_scalar  "`new` on a scalar is gone"
 
 # The surface changed on 2026-08-14 -- parens for arguments, `.` for members --
 # and messages kept recommending the old spellings for months, including "no

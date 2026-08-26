@@ -169,12 +169,12 @@ end
 source is linux.file (path is "x.txt")   -- own one -- released at the scope's end
 out is already linux.file (descriptor is 1)   -- borrow one -- names every field
 held is adopted linux.file (descriptor is fd) -- take ownership of something open
-entry is blank linux.dirent     -- a fresh zeroed block of that shape
+entry is new linux.dirent       -- a fresh zeroed block of that shape
 source.read (buffer is buf)     -- call a method
 ```
 
 `already` borrows a thing that exists, so it names every field — zero is not
-"unset", and `descriptor is 0` is standard input. `blank` is the other job and
+"unset", and `descriptor is 0` is standard input. `new` is the other job and
 takes no values.
 
 See [Defining a resource](Resources), [`open`](Library).

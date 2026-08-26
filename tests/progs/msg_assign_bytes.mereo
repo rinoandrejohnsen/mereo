@@ -9,6 +9,6 @@ holder is
   end
 end
 program goes
-  h is blank holder
+  h is new holder
   h.go ()
 end
