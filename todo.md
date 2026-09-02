@@ -12,6 +12,48 @@ decided it. `tests/validation` went with it.
 
 ## Open, actionable
 
+### `embedded` embeds ONE file; Go's `embed.FS` embeds a TREE
+
+`NAME is "path" embedded` shipped, and it is the equivalent of Go's
+`//go:embed file` with a `[]byte` -- one file, one backing, `NAME.size` for the
+length. What it is NOT yet is the equivalent of `embed.FS`, and that is the
+form people reach for: a whole directory embedded under one name, looked up BY
+PATH at run time, with the directory listable.
+
+What that needs, in this language's terms:
+
+  * **a pattern at compile time**, so one declaration takes many files --
+    `assets is "www/*" embedded`, or a directory name meaning everything under
+    it. The compiler already resolves the path against the declaring file, so
+    only the globbing is new.
+  * **a table the compiler emits beside the blob**: the files concatenated into
+    one `constant` backing, plus a record per file of (path offset, path
+    length, data offset, data length). `array` already expresses exactly that
+    table, and the record is a layout view -- no new machinery.
+  * **a lookup**, which is `text.equals` over the path column. Since the
+    compiler owns the table it can emit it SORTED by path, making the lookup a
+    binary search rather than a scan, and the caller supplies nothing.
+  * **a listing**, if it is wanted at all: `array` already counts records, so
+    walking them in order is the directory walk. Worth deciding whether that is
+    needed or whether lookup alone covers the demand -- Go ships both because
+    `fs.FS` demands it, which is not a reason here.
+
+Decisions to weigh before starting, none of them settled:
+
+  * a MISS has to be sayable. Every other reader in this project answers with a
+    `result` out-port, so `-1 not found` fits, and nothing needs to fault.
+  * paths are the SOURCE paths, forward slashes, as Go's are -- but `..`
+    escaping the declaring file's directory should be refused at compile time
+    rather than embedded, which is the analogue of Go refusing to embed outside
+    its module.
+  * the single-file form must keep working unchanged. `NAME.size` on a tree
+    would have to mean the total, or be refused; refusing it is probably
+    honest.
+
+Not needed for the SQLite reader, which embeds one database file and is served
+by what shipped. This is for the case that motivated `embed.FS`: a program
+carrying a directory of assets.
+
 ### Share the error-record formatter instead of splicing it
 
 `_write_value` is spliced into every error block. Making it a real
@@ -154,7 +196,7 @@ accepted only in a program body. So a lookup table cannot live beside the
 template that would use it -- it would have to be declared by the caller and
 passed in as a port. Worth fixing if a table is ever wanted in a library.
 
-### Clang is friendlier to mereo's emitted C -- until the program gets bigger
+### GCC's mereo builds stall on FETCH; Clang's do not -- and that decides which wins
 
 Same three binaries, same workload, same sweep, Clang 22.1.8. Cycles per
 iteration; all 15 binaries checksum-agree first.
@@ -328,6 +370,39 @@ mereo-against-the-C-twin at 0.95x on requests alone. What survives is what is
 big or what is stable: the class-table rewrite (a 42% instruction drop, and
 1.9x on the clock, far outside this band) and mereo's instruction count, which
 is 17% under the C reference on the combined workload.
+
+### The Clang question, answered: it is the fetch stall
+
+The bisection below found no single pass and stopped there. The slot accounting
+finishes it. On the HTTP+SQLite handler, with both compilers swept:
+
+| | issue slots | retiring | fetch-latency |
+| --- | --- | --- | --- |
+| mereo, GCC | 3168 | 71% | 186 |
+| mereo, Clang | 2920 | **96%** | **~0** |
+| the C twin, Clang | 3166 | 82% | 135 |
+
+Clang emits MORE instructions for mereo in every program measured -- 32% more
+on the HTTP+JSON handler, 16% more here -- and still wins here, because GCC's
+build loses 186 slots to instruction fetch and Clang's loses none. Which
+compiler is faster is therefore not a property of either: it is whether that
+stall is bigger than Clang's extra instructions for that particular program.
+
+Measured both ways, each side swept over -O2/-O3 x unroll, at its own best:
+
+    HTTP + JSON handler      gcc  983 / 4674     clang 1647 / 6187   clang 1.68x
+    HTTP + SQLite handler    gcc  536 / 2564     clang  491 / 2962   clang 0.92x
+
+**The 1.32x instruction figure recorded below survives a full sweep** -- it was
+first measured as clang -O2 against gcc's best, which was the same one-sided
+tuning error caught elsewhere in this file, so it was re-run properly: clang's
+own best on that program is 6187 against gcc's 4674, still 1.32x.
+
+This also explains `-falign-loops=32` being worth 20% to one program and 0.5%
+to the corpus: it attacks the fetch stall, and only a program that HAS one can
+be paid for it. And it is the first evidence that mereo's fetch problem is a
+GCC LAYOUT problem rather than an unavoidable cost of splicing everything into
+one function -- Clang compiles the same single function without the stall.
 
 ### Bisecting Clang's passes: no single pass is responsible
 

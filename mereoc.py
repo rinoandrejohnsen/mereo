@@ -106,7 +106,8 @@ RESERVED = {"is", "already", "and", "in", "out", "end", "contains",   # `contain
             "final", "adopted", "extends", "constant", "assembly", "helper",
             "goes", "likely", "when", "scope", "repeat", "leave", "pure",
             "arguments", "environment", "auxiliary", "as", "to",
-            "high", "low", "atomic", "fence", "branchless", "clobbers"}
+            "high", "low", "atomic", "fence", "branchless", "clobbers",
+            "embedded"}
 # `new` is not reserved either: `NAME is new CLASS` reads the word in one
 # position and nowhere else, so a method or a field may still be called `new`.
 # It was `blank` until 2026-08-26, and there was a `new` on SCALARS beside it
@@ -684,6 +685,10 @@ SYSCALL_ARITY = frozenset(range(7))
 
 
 CURRENT_FILE = None
+# basename -> the directory it was loaded from. `embedded` resolves a path
+# against this for the same reason `include` does: a path written in a file
+# means a path relative to THAT file, wherever the compiler was run from.
+SOURCE_DIR = {}
 
 
 def fail(msg):
@@ -826,6 +831,33 @@ def render_call(d):
             + ", ".join([str(prim["nr"])] + d["args"]) + ")")
 
 
+
+
+EMBED = re.compile(r'^(\w+) is "([^"]*)" embedded$')
+
+
+def embedded_bytes(path, ln):
+    """`NAME is "PATH" embedded` -> that file's bytes, read AT COMPILE TIME.
+
+    C23 spells this `#embed`, and the point is the same: a table, a key, a
+    database -- anything a program must CARRY rather than open -- becomes part
+    of the binary, without a build step that first turns it into a byte list.
+
+    It is always `constant`: the bytes land in .rodata and nothing may write
+    them. A mutable copy would need a stack or static image plus a loop to fill
+    it, which is a different feature and nothing has asked for it. `NAME.size`
+    answers the byte count, as it does for any other backing.
+
+    The path resolves against the FILE THAT WROTE IT, exactly as `include`
+    does, so a library can embed something sitting next to itself."""
+    base = SOURCE_DIR.get(CURRENT_FILE or "", ".")
+    full = os.path.join(base, path)
+    try:
+        with open(full, "rb") as f:
+            return f.read()
+    except OSError as e:
+        fail(f'line {ln}: cannot embed "{path}" -- {e.strerror} '
+             f'(resolved against {base}, where {CURRENT_FILE} was loaded from)')
 
 
 def _uncomment(line):
@@ -1488,6 +1520,7 @@ def load(path, loaded, stack, importer=None):
         sources += load(target, loaded, stack, path)
     stack.pop()
     loaded.add(real)
+    SOURCE_DIR[os.path.basename(path)] = os.path.dirname(path) or "."
     sources.append((os.path.basename(path), text))
     return sources
 
@@ -2044,6 +2077,14 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
             # `files`, `clock` and `identity` hold nothing on purpose, and this
             # is what keeps that true. A GROUP still may not hold one: a
             # namespace has members, not bytes (see docs/syntax.md).
+            m = EMBED.match(s)
+            if m:
+                name_ok(m.group(1), n, "buffer")
+                data = embedded_bytes(m.group(2), n)
+                slots.append({"kind": "buffer", "name": m.group(1),
+                              "size": str(len(data)), "init": list(data),
+                              "strlit": False, "const": True, "line": n})
+                continue
             m = re.match(r'^(\w+) is (constant )?(?:bytes (.+)|"(.*)")$', s)
             if m:
                 name_ok(m.group(1), n, "buffer")
@@ -2613,6 +2654,15 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     inblock = ("recover", laststep)
                     for _a in _arguments(m.group(1) or "", n):
                         take_arg(inblock, _a, n)
+                    continue
+                m = EMBED.match(s)
+                if m and m.group(1) not in bound:
+                    name_ok(m.group(1), n, "buffer")
+                    data = embedded_bytes(m.group(2), n)
+                    slots.append({"kind": "buffer", "name": m.group(1),
+                                  "size": str(len(data)), "init": list(data),
+                                  "strlit": False, "const": True, "line": n})
+                    laststep = None
                     continue
                 m = re.match(r'^(\w+) is (constant )?(?:bytes (.+)|"(.*)")$', s)
                 if m and m.group(1) in bound:

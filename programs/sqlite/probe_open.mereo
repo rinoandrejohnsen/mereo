@@ -1,0 +1,66 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+include "read.mereo"
+
+-- Read a database on stdin, open it, and print the header facts in a form a
+-- script can compare against sqlite3 itself:
+--
+--   R <result>        and, only when result is 0:
+--   P <page size>   N <page count>   E <text encoding>
+--   V <read version> S <reserved space>
+--   U <user version> C <schema cookie>     -- read through the VIEW, not the
+--                                             resource, so both paths are checked
+
+program goes
+  capacity is 1048576
+  wire is capacity bytes
+  total is 0
+  chunk is 0
+  page is 4096 bytes
+  outcome is 0
+
+  input is already linux.file (descriptor is 0)
+  gather goes
+    input.read (buffer is wire + total, capacity is capacity - total,
+                count is chunk)
+    leave gather when chunk == 0
+    total is total + chunk
+    repeat gather when total < capacity
+  end
+
+  db is already sqlite (data is wire, length is total, page_size is 0,
+                        page_count is 0, encoding is 0, reserved_space is 0,
+                        read_version is 0)
+  db.open (result is outcome)
+
+  writer is already builder (data is page, count is 0, limit is 4096)
+  writer.add (source is "R ", length is 2)
+  writer.number (value is outcome)
+  writer.byte (value is 10)
+
+  report goes
+    leave report when outcome != 0
+    writer.add (source is "P ", length is 2)
+    writer.number (value is db.page_size)
+    writer.add (source is " N ", length is 3)
+    writer.number (value is db.page_count)
+    writer.add (source is " E ", length is 3)
+    writer.number (value is db.encoding)
+    writer.byte (value is 10)
+    writer.add (source is "V ", length is 2)
+    writer.number (value is db.read_version)
+    writer.add (source is " S ", length is 3)
+    writer.number (value is db.reserved_space)
+    writer.byte (value is 10)
+
+    head is wire as sqlite_header
+    writer.add (source is "U ", length is 2)
+    writer.number (value is head.user_version)
+    writer.add (source is " C ", length is 3)
+    writer.number (value is head.schema_cookie)
+    writer.byte (value is 10)
+  end
+
+  screen is already linux.file (descriptor is 1)
+  screen.write (buffer is page, count is writer.count)
+end

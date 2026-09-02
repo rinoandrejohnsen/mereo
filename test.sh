@@ -87,6 +87,10 @@ echo "### 7. the HTTP request parser, against an oracle"
 "$DIR/tests/http/run.sh" || rc=1
 
 echo
+echo "### 8. the SQLite file-format reader, against sqlite3's own files"
+"$DIR/tests/sqlite/run.sh" || rc=1
+
+echo
 echo "### Build + layout gate"
 "$DIR/build.sh" >/dev/null 2>&1 && echo "  build + mereocheck: ok" \
     || { echo "  build FAIL"; rc=1; }

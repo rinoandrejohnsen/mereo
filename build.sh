@@ -71,7 +71,7 @@ mkdir -p "$OUT"
 SHOWCASES=" "
 
 # Every program directory. Everything here is gated the same way: transpile and
-SUBDIRS="examples tests/scopes programs/tls programs/http"
+SUBDIRS="examples tests/scopes programs/tls programs/http programs/sqlite"
 
 # argument list -> the programs to build; default is every `program` .mereo
 if [ $# -gt 0 ]; then

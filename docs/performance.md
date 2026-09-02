@@ -156,40 +156,46 @@ because the central claim is checked by disassembling what ships.
 ## The compiler is part of the result
 
 Every figure above is a GCC figure, and that is not a neutral choice. The same
-emitted C, compiled by Clang instead, swings by program — and swings far enough
-that a comparison drawn from one program will not hold for the next.
+emitted C, compiled by Clang instead, changes by a third in either direction
+depending on the program — so a comparison drawn from one program will not
+carry to the next.
 
-| Program | GCC | Clang | |
+Two programs, each compiler swept over `-O2`/`-O3` with and without
+`-funroll-loops`, each quoted at its own best:
+
+| | GCC | Clang | |
 | --- | --- | --- | --- |
-| An HTTP head parser | 3,583 | 3,531 | Clang 0.99x |
-| A JSON reader | 2,567 | 2,528 | Clang 0.98x |
-| Both, in one program | 4,794 | 6,339 | Clang **1.32x** |
+| An HTTP head and JSON body reader | 983 cycles, 4,674 instructions | 1,647 / 6,187 | Clang **1.68x** slower |
+| That parser plus a SQLite reader, serving a request | 536 cycles, 2,564 instructions | 491 / 2,962 | Clang **0.92x** — faster |
 
-Instructions retired per iteration, so code layout plays no part in the
-difference. Clang compiles either half as well as GCC does; only the
-combination degrades, and it degrades by a third.
+Clang emits **more** instructions for mereo in both cases — 32% more in the
+first, 16% in the second. In the first that decides it; in the second Clang
+still wins, because of what the slot accounting shows:
 
-The cause is structural rather than a construct Clang dislikes. mereo has no
-functions — every template is spliced, so a program is one `_start` — and the
-larger that single function grows, the further Clang's middle end falls behind
-GCC's at simplifying it. Clang's final IR for the combined program is 888
-instructions and its machine output 885, close to a one-to-one lowering, where
-GCC reaches 697 machine instructions from the same C. Bisecting the pass
-pipeline showed no single pass responsible: loop canonicalisation and unrolling
-are the only passes that grow the function, and disabling the unrollers makes
-the result worse, not better. The three passes that shrink it most —
-SimplifyCFG, SROA and InstCombine — are not failing; together they simply
-arrive somewhere worse.
+| | issue slots | retiring | fetch-latency stalls |
+| --- | --- | --- | --- |
+| mereo, GCC | 3,168 | 71% | 186 |
+| mereo, Clang | 2,920 | **96%** | **~0** |
+| the hand-written C twin, Clang | 3,166 | 82% | 135 |
 
-The same flip does not happen to the hand-written C twin, which Clang compiles
-*better* than GCC does. So this is about what mereo emits meeting a particular
-optimiser, not about either compiler being weaker.
+**GCC's builds of mereo stall on instruction fetch and Clang's do not.** That
+is the whole of the difference. mereo has no functions — every template is
+spliced, so a program is one `_start` — and GCC lays that single large function
+out in a way the front end keeps having to catch up with. Where that stall is
+larger than Clang's extra instructions, Clang wins; where it is not, GCC does.
 
-Two things follow. Build with GCC, which is what `build.sh` does. And treat any
-figure here as a claim about one compiler on one program: on this hardware a
-single build's cycle count moves by up to a third on code layout alone, which
-is larger than most of the differences worth arguing about, so instruction
-counts are the stable measure and cycles are quoted only from a swept build.
+The same effect explains why `-falign-loops=32` is worth 20% to one mereo
+program and 0.5% to the rest of the corpus: it attacks the fetch stall, and
+only a program that has one can be paid for it.
+
+Two things follow. `build.sh` uses GCC, and that is the right default — but a
+mereo program that turns out to be fetch-bound may do better under Clang, and
+the way to find out is the topdown slot accounting above rather than a guess.
+And treat any figure here as a claim about one compiler on one program: on this
+hardware a single build's cycle count moves by up to a third on code layout
+alone, which is larger than most of the differences worth arguing about. So
+instruction counts are the stable measure, and cycles are quoted only from a
+swept build.
 
 ## What has not been measured
 

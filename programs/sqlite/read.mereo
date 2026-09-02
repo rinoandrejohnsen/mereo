@@ -1,0 +1,396 @@
+include "../../core.mereo"
+
+-- Reading the SQLite file format, over bytes that are already in hand.
+--
+-- This is NOT SQLite. It is a reader for the file format SQLite writes, which
+-- is a published, stable, documented layout -- and a layout is the thing this
+-- language says best: fixed offsets, big-endian fields, and every answer a
+-- span into bytes the caller already owns.
+--
+-- WHERE THE BYTES COME FROM IS NOT THIS READER'S BUSINESS. It sees an address
+-- and a length, so the same code serves all three sources:
+--
+--   blob is "app.db" embedded          -- .rodata, nothing owns it
+--   region is linux.mapping (...)      -- the tower unmaps it
+--   buffer is 65536 bytes              -- read off a socket, the scope frees it
+--
+-- That is why `sqlite` is adopted with `already` and has no `release`: it owns
+-- nothing, exactly as `span`, `json` and `files` own nothing. Making it an
+-- owning resource would need a lie of a `release` for the embedded case and
+-- would own the mapping twice for the file case.
+
+-- The 100-byte file header, as a layout the CALLER lays over the first page:
+--
+--   head is blob as sqlite_header
+--   n is head.page_count
+--
+-- It is written here rather than inside the resource because a lens resolves
+-- before anything is spliced, so a method cannot lay one over its own state
+-- (see todo.md). The resource reads the same bytes with plain accesses; this
+-- view is for the reader of the program.
+sqlite_header is
+  magic is 16 bytes                  -- "SQLite format 3\0"
+  page_size is 2 bytes as big        -- 1 means 65536
+  write_version is 1 bytes
+  read_version is 1 bytes            -- 1 rollback journal, 2 WAL
+  reserved_space is 1 bytes          -- bytes reserved at the end of each page
+  max_payload is 1 bytes             -- must be 64
+  min_payload is 1 bytes             -- must be 32
+  leaf_payload is 1 bytes            -- must be 32
+  change_counter is 4 bytes as big
+  page_count is 4 bytes as big       -- trustworthy only under the rule below
+  freelist_first is 4 bytes as big
+  freelist_count is 4 bytes as big
+  schema_cookie is 4 bytes as big
+  schema_format is 4 bytes as big
+  cache_size is 4 bytes as big
+  vacuum_root is 4 bytes as big
+  text_encoding is 4 bytes as big    -- 1 UTF-8, 2 UTF-16le, 3 UTF-16be
+  user_version is 4 bytes as big
+  incremental_vacuum is 4 bytes as big
+  application_id is 4 bytes as big
+  unused is 20 bytes
+  version_valid_for is 4 bytes as big
+  library_version is 4 bytes as big
+end
+
+-- The reader itself: state, no ownership.
+--
+--   db is already sqlite (data is blob, length is blob.size, page_size is 0,
+--                         page_count is 0, encoding is 0, reserved_space is 0,
+--                         read_version is 0)
+--   db.open (result is ok)
+--
+-- `open` READS AND CHECKS the header, and after it answers 0 the four numbers
+-- the rest of the reader needs are in the resource. It answers a reason rather
+-- than a boolean, because "this is not a database" and "this is a database I
+-- cannot read" are different problems for a caller:
+--
+--    0  usable
+--   -1  fewer than 100 bytes -- not enough to hold a header
+--   -2  the magic is not "SQLite format 3"
+--   -3  the page size is not 512..65536 and a power of two
+--   -4  the read version is past 2, so a newer format than this understands
+--   -5  the text encoding is not 1, 2 or 3
+--   -6  the file is shorter than its own page count claims
+sqlite is
+  data is 8 bytes
+  length is 8 bytes
+  page_size is 8 bytes
+  page_count is 8 bytes
+  encoding is 8 bytes
+  reserved_space is 8 bytes
+  read_version is 8 bytes
+
+  open (result) goes
+    ok is 0
+    raw is 0
+    counter is 0
+    valid_for is 0
+    claimed is 0
+    fits is 0
+    size_now is 0
+    counted is 0
+    result is 0
+
+    check goes
+      result is -1 when length < 100
+      leave check when length < 100
+
+      text.equals (data is data, length is 15, other is "SQLite format 3",
+                   other_length is 15, result is ok)
+      result is -2 when ok == 0
+      leave check when ok == 0
+      raw is [data + 15 : 1]
+      result is -2 when raw != 0
+      leave check when raw != 0
+
+      -- the page size: 1 stands for 65536, which does not fit in the field
+      raw is [data + 16 : 2] as big
+      size_now is raw
+      size_now is 65536 when raw == 1
+      page_size is size_now
+      fits is 1
+      fits is 0 when page_size < 512
+      fits is 0 when page_size > 65536
+      fits is 0 when (page_size & (page_size - 1)) != 0
+      result is -3 when fits == 0
+      leave check when fits == 0
+
+      read_version is [data + 19 : 1]
+      result is -4 when read_version > 2
+      leave check when read_version > 2
+
+      reserved_space is [data + 20 : 1]
+
+      encoding is [data + 56 : 4] as big
+      result is -5 when encoding < 1
+      leave check when encoding < 1
+      result is -5 when encoding > 3
+      leave check when encoding > 3
+
+      -- The in-header page count counts only when it is non-zero AND the
+      -- change counter matches the version-valid-for number; otherwise the
+      -- file's own length decides, which is what a reader must do for a
+      -- database an older library wrote.
+      claimed is [data + 28 : 4] as big
+      counter is [data + 24 : 4] as big
+      valid_for is [data + 92 : 4] as big
+      counted is length / page_size
+      counted is claimed when claimed != 0 && counter == valid_for
+      page_count is counted
+
+      result is -6 when page_count * page_size > length
+      leave check when page_count * page_size > length
+    end
+  end
+end
+
+
+-- A VARINT: SQLite's 1..9 byte big-endian integer. The top bit of each byte
+-- says "another follows"; the ninth byte, if it comes, contributes all eight
+-- of its bits rather than seven.
+varint (data, at, value, next) goes
+  i is at
+  c is 0
+  v is 0
+  k is 0
+  value is 0
+  next is at
+  read goes
+    step goes
+      c is [data + i : 1]
+      leave step when k == 8
+      v is v * 128 + (c & 127)
+      i is i + 1
+      k is k + 1
+      leave read when c < 128
+      repeat step
+    end
+    v is v * 256 + c
+    i is i + 1
+  end
+  value is v
+  next is i
+end
+
+-- A record is a header of varints -- its own byte length, then one SERIAL TYPE
+-- per column -- followed by the values back to back. `column` walks to the one
+-- asked for and says what it found:
+--
+--   kind 0 null   1 integer   2 float   3 text   4 blob
+--
+-- Text and blobs come back as a SPAN into the payload; nothing is copied and
+-- nothing is decoded, so a UTF-16 database hands back UTF-16 bytes and says so
+-- through the database's own `encoding`.
+--
+-- An INTEGER PRIMARY KEY column is stored as a null and the real value is the
+-- ROWID, which the cursor already hands back. That is not a quirk this reader
+-- can paper over: the caller has both, and which one it wants is its business.
+record is
+  column (payload, payload_length, index, kind, number, at, size, result) goes
+    header_size is 0
+    cursor is 0
+    body is 0
+    serial is 0
+    width is 0
+    k is 0
+    raw is 0
+    j is 0
+    past is 0
+    kind is 0
+    number is 0
+    at is payload
+    size is 0
+    result is -1
+
+    walk goes
+      leave walk when payload_length < 1
+      varint (data is payload, at is 0, value is header_size, next is cursor)
+      leave walk when header_size > payload_length
+      body is header_size
+
+      find goes
+        leave find when cursor >= header_size
+        varint (data is payload, at is cursor, value is serial, next is past)
+        cursor is past
+
+        width is 0
+        width is 1 when serial == 1
+        width is 2 when serial == 2
+        width is 3 when serial == 3
+        width is 4 when serial == 4
+        width is 6 when serial == 5
+        width is 8 when serial == 6
+        width is 8 when serial == 7
+        width is (serial - 12) / 2 when serial >= 12
+
+        leave find when k == index
+        body is body + width
+        k is k + 1
+        repeat find
+      end
+      leave walk when k != index
+      leave walk when body + width > payload_length
+
+      -- integers are big-endian and SIGNED, so the top bit of the first byte
+      -- carries into every bit above it
+      whole_number goes
+        leave whole_number when serial < 1
+        leave whole_number when serial > 6
+        raw is [payload + body : 1]
+        number is raw - 256 when raw > 127
+        number is raw when raw < 128
+        j is 1
+        more goes
+          leave more when j >= width
+          number is number * 256 + [payload + body + j : 1]
+          j is j + 1
+          repeat more
+        end
+        kind is 1
+        result is 0
+        leave walk
+      end
+
+      kind is 0 when serial == 0
+      result is 0 when serial == 0
+      leave walk when serial == 0
+
+      -- 8 and 9 are the constants zero and one, carrying no bytes at all
+      shorthand goes
+        leave shorthand when serial < 8
+        leave shorthand when serial > 9
+        kind is 1
+        number is serial - 8
+        result is 0
+        leave walk
+      end
+
+      leave walk when serial < 12
+      at is payload + body
+      size is width
+      kind is 4
+      kind is 3 when (serial & 1) == 1
+      result is 0
+    end
+  end
+end
+
+
+-- A CURSOR over a table b-tree, walked with an explicit stack because mereo
+-- refuses recursion -- and because a recursive descent over a file a stranger
+-- wrote is how a parser gets a stack overflow for a bug report.
+--
+-- The stack is the caller's: sixteen bytes per level, a page number and the
+-- cell index reached within it. `depth_limit` is therefore also the deepest
+-- b-tree this will follow, and a deeper one is refused rather than run off the
+-- end of the buffer.
+--
+--   nest is 1024 bytes
+--   depth is 1
+--   [nest : 8] is root
+--   [nest + 8 : 8] is 0
+--   more goes
+--     rows.step (data is blob, page_size is db.page_size,
+--                reserved is db.reserved_space, stack is nest,
+--                depth_limit is 64, depth is depth, rowid is id,
+--                payload_at is p, payload_length is n, result is got)
+--     leave more when got != 1
+--     ...one row: rowid `id`, record at `p` for `n` bytes...
+--     repeat more
+--   end
+--
+--   result  1 a row    0 the table is exhausted   -1 malformed
+--          -2 the row overflows onto overflow pages, which this does not follow
+rows is
+  step (data, page_size, reserved, stack, depth_limit, depth,
+        rowid, payload_at, payload_length, result) goes
+    top is 0
+    page is 0
+    cell is 0
+    base is 0
+    hdr is 0
+    kind is 0
+    ncell is 0
+    hlen is 0
+    spot is 0
+    cell_at is 0
+    child is 0
+    usable is 0
+    most is 0
+    past_size is 0
+    past_rowid is 0
+    after is 0
+    rowid is 0
+    payload_at is data
+    payload_length is 0
+    result is 0
+
+    walk goes
+      leave walk when depth == 0
+      top is depth - 1
+      page is [stack + top * 16 : 8]
+      cell is [stack + top * 16 + 8 : 8]
+
+      result is -1 when page < 1
+      leave walk when page < 1
+      base is (page - 1) * page_size
+      hdr is base
+      hdr is base + 100 when page == 1
+      kind is [data + hdr : 1]
+      ncell is [data + hdr + 3 : 2] as big
+
+      -- a LEAF: hand back one cell, or pop and let the parent go on
+      leaf goes
+        leave leaf when kind != 13
+        after is depth - 1
+        depth is after when cell >= ncell
+        leave walk when cell >= ncell
+        hlen is 8
+        spot is [data + hdr + hlen + cell * 2 : 2] as big
+        cell_at is base + spot
+        [stack + top * 16 + 8 : 8] is cell + 1
+        varint (data is data, at is cell_at, value is payload_length,
+                next is past_size)
+        varint (data is data, at is past_size, value is rowid,
+                next is past_rowid)
+        payload_at is data + past_rowid
+        -- a payload longer than the page can hold spills onto overflow pages,
+        -- and a reader that ignores that hands back half a row
+        usable is page_size - reserved
+        most is usable - 35
+        result is -2 when payload_length > most
+        leave walk when payload_length > most
+        result is 1
+        leave walk
+      end
+
+      -- an INTERIOR page: descend into the child this cell points at, and
+      -- after the last one into the right-most pointer
+      interior goes
+        leave interior when kind != 5
+        after is depth - 1
+        depth is after when cell > ncell
+        leave walk when cell > ncell
+        result is -1 when depth >= depth_limit
+        leave walk when depth >= depth_limit
+        hlen is 12
+        child is [data + hdr + 8 : 4] as big
+        descend goes
+          leave descend when cell >= ncell
+          spot is [data + hdr + hlen + cell * 2 : 2] as big
+          cell_at is base + spot
+          child is [data + cell_at : 4] as big
+        end
+        [stack + top * 16 + 8 : 8] is cell + 1
+        [stack + depth * 16 : 8] is child
+        [stack + depth * 16 + 8 : 8] is 0
+        depth is depth + 1
+        repeat walk
+      end
+
+      result is -1
+    end
+  end
+end

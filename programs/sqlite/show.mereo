@@ -1,0 +1,48 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+include "read.mereo"
+
+-- The whole point, in one program: a database CARRIED IN THE BINARY, opened
+-- and read with no file, no descriptor and no allocation.
+--
+-- `embedded` puts demo.db in .rodata at compile time; `sqlite_header` is laid
+-- straight over those bytes as a view; and `sqlite` validates them. Nothing is
+-- opened, so nothing is released -- the reader owns nothing by design, which
+-- is what will let the same code read a mapped file later without changing.
+
+blob is "demo.db" embedded
+
+program goes
+  page is 4096 bytes
+  outcome is 0
+
+  db is already sqlite (data is blob, length is blob.size, page_size is 0,
+                        page_count is 0, encoding is 0, reserved_space is 0,
+                        read_version is 0)
+  db.open (result is outcome)
+  ensure outcome == 0
+
+  head is blob as sqlite_header
+
+  writer is already builder (data is page, count is 0, limit is 4096)
+  writer.add (source is "carried in the binary: ", length is 23)
+  writer.number (value is blob.size)
+  writer.add (source is " bytes", length is 6)
+  writer.byte (value is 10)
+  writer.add (source is "page size ", length is 10)
+  writer.number (value is db.page_size)
+  writer.add (source is ", pages ", length is 8)
+  writer.number (value is db.page_count)
+  writer.add (source is ", text encoding ", length is 16)
+  writer.number (value is db.encoding)
+  writer.add (source is " (1 = UTF-8)", length is 12)
+  writer.byte (value is 10)
+  writer.add (source is "user version ", length is 13)
+  writer.number (value is head.user_version)
+  writer.add (source is ", schema cookie ", length is 16)
+  writer.number (value is head.schema_cookie)
+  writer.byte (value is 10)
+
+  screen is already linux.file (descriptor is 1)
+  screen.write (buffer is page, count is writer.count)
+end

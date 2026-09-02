@@ -1,0 +1,94 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+include "read.mereo"
+
+-- Walk the schema table (root page 1) of a database on stdin and print every
+-- row, so it can be compared against `sqlite3 db .schema` directly:
+--
+--   ROW <rowid> | <col0> | <col1> | <col2> | <col3>
+--
+-- Text columns print as text, integers as numbers, nulls as `-`.
+
+program goes
+  capacity is 1048576
+  wire is capacity bytes
+  total is 0
+  chunk is 0
+  page is 65536 bytes
+  nest is 1024 bytes
+  outcome is 0
+  got is 0
+  depth is 0
+  rowid is 0
+  payload_at is 0
+  payload_length is 0
+  index is 0
+  kind is 0
+  number is 0
+  at is 0
+  size is 0
+  ok is 0
+
+  input is already linux.file (descriptor is 0)
+  gather goes
+    input.read (buffer is wire + total, capacity is capacity - total,
+                count is chunk)
+    leave gather when chunk == 0
+    total is total + chunk
+    repeat gather when total < capacity
+  end
+
+  db is already sqlite (data is wire, length is total, page_size is 0,
+                        page_count is 0, encoding is 0, reserved_space is 0,
+                        read_version is 0)
+  db.open (result is outcome)
+  ensure outcome == 0
+
+  writer is already builder (data is page, count is 0, limit is 65536)
+
+  depth is 1
+  [nest : 8] is 1
+  [nest + 8 : 8] is 0
+
+  more goes
+    rows.step (data is wire, page_size is db.page_size,
+               reserved is db.reserved_space, stack is nest,
+               depth_limit is 64, depth is depth, rowid is rowid,
+               payload_at is payload_at, payload_length is payload_length,
+               result is got)
+    leave more when got != 1
+    writer.add (source is "ROW ", length is 4)
+    writer.number (value is rowid)
+    index is 0
+    columns goes
+      leave columns when index >= 5
+      record.column (payload is payload_at, payload_length is payload_length,
+                     index is index, kind is kind, number is number,
+                     at is at, size is size, result is ok)
+      leave columns when ok != 0
+      writer.add (source is " | ", length is 3)
+      show goes
+        kind == 0 goes
+          writer.byte (value is 45)
+          leave show
+        end
+        kind == 1 goes
+          writer.number (value is number)
+          leave show
+        end
+        writer.add (source is at, length is size)
+      end
+      index is index + 1
+      repeat columns
+    end
+    writer.byte (value is 10)
+    repeat more
+  end
+
+  writer.add (source is "END ", length is 4)
+  writer.number (value is got)
+  writer.byte (value is 10)
+
+  screen is already linux.file (descriptor is 1)
+  screen.write (buffer is page, count is writer.count)
+end

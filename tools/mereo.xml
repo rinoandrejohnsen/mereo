@@ -34,7 +34,7 @@
   The previous definition keyed every rule on `where` and on exact 2/4/6-space
   indentation, so those two rendered nothing alike.
 -->
-<language name="Mereo" section="Sources" version="55" kateversion="5.62"
+<language name="Mereo" section="Sources" version="56" kateversion="5.62"
           extensions="*.mereo" mimetype="text/x-mereo"
           author="rino" license="MIT" casesensitive="1">
   <highlighting>
@@ -88,7 +88,7 @@
       <item>register</item>
       <item>noinline</item>
       <item>cold</item>
-      <item>container</item>
+      <item>container</item><item>embedded</item>
       <item>branchless</item>
       <item>bit</item>
       <item>bits</item>
