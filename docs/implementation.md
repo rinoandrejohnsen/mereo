@@ -17,6 +17,29 @@ constraints spelled out, and the entry point is `_start` rather than `main`.
 Nothing in the output calls a library function, because there is no library to
 call.
 
+**There is exactly one function in the file, and it is `_start`.** The helpers
+the transpiler injects — the syscall wrappers, the record formatter, the byte
+scanner, the descriptor guard — are **macros**, not `static inline
+__attribute__((always_inline))` functions. The distinction is not cosmetic. A
+function goes through GCC's static branch predictor *as a function*, and the
+`early return (on trees)` heuristic marks the branch guarding an early `return`
+as unlikely — a claim about a function boundary that stops existing the moment
+the body is inlined. The descriptor guard's early return is in fact the common
+case, so the prediction was backwards, and the caller was laid out around it.
+Written as macros, the whole corpus came out 134 instructions smaller and no
+binary was slower; a 60 KB run of `span` went from 475,296 to 468,795
+instructions with no change the clock can see.
+
+The two things a macro must do that a function did for free are worth stating,
+because both are silent when forgotten. A parameter carries no type, so each one
+is used as `(long)(x)` — the conversion the prototype used to perform, and
+without which a negative `int` reaching a `"D"` operand arrives in `edi` with
+its sign bits gone. And a parameter is *text*: it is substituted everywhere in
+the replacement list, including into an asm operand **name**, so the parameters
+are underscored (`_descriptor`) while the operand keeps the port's name
+(`[descriptor]`). mereo names may not begin with an underscore, which is what
+keeps the two apart.
+
 The build flags state what the program is rather than tuning it.
 `-fno-tree-loop-distribute-patterns` prevents GCC recognising a byte-copy loop
 and rewriting it into a `memcpy` call that would then fail to link.

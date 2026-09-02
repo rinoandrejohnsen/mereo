@@ -16,8 +16,12 @@ program goes
 
   sink is linux.file (path is "copy_out.txt", flags is 577, mode is 420)
 
-  source.read (buffer is buffer, capacity is capacity, count is count)
+  pass goes
+    source.read (buffer is buffer, capacity is capacity, count is count)
+    leave pass when count == 0
 
-  sink.write (buffer is buffer, count is count, written is written)
+    sink.write (buffer is buffer, count is count, written is written)
+    repeat pass
+  end
 
 end

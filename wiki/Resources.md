@@ -122,7 +122,20 @@ boundary would be a guess:
 add `acquired` after that call
 ```
 
-A **single-call** acquire needs no marker: the boundary is unambiguous. And
+**Every acquire writes it**, including one whose single call leaves no room for
+doubt. That case is refused too:
+
+```
+'holder' must say where ownership begins -- add `acquired` on its own line
+after the call in `acquire`
+```
+
+The boundary being obvious is not the same as its being stated. Written always,
+it is one greppable word for the moment a resource begins to hold its thing
+rather than a shape to be read off the body — and a second call arriving later
+(a `bind`, a seek, an `ioctl`) does not turn a resource that compiled into one
+that does not. It costs a line.
+
 `release` carries no test at any step — a failed release cannot reroute
 anything.
 
@@ -176,6 +189,7 @@ second:
 
     acquire goes
       ioctl (descriptor is descriptor, request is 21505, argument is backup)
+      acquired
     end
 
     release goes
@@ -222,11 +236,13 @@ close(3)              = 0
 
 ## Interruption
 
-A program that owns something installs a handler for `SIGINT` and `SIGTERM`
-whose stub simply returns, so the interrupted system call comes back `EINTR`,
-the ordinary failure path runs, and the tower releases what is open on the way
-out. A program that owns nothing installs no such handler, and correspondingly
-does not test for `EINTR` — there is none to see.
+A program that owns something installs a handler for `SIGHUP`, `SIGINT` and
+`SIGTERM` whose stub simply returns, so the interrupted system call comes back
+`EINTR`, the ordinary failure path runs, and the tower releases what is open on
+the way out. Once it has, the program dies of the signal it was sent, so its
+parent reads a wait status rather than a report of success. A program that owns
+nothing installs no such handler, and correspondingly does not test for `EINTR`
+— there is none to see. See [Being a good Linux citizen](Citizen).
 
 ## What ownership may not do
 

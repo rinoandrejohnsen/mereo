@@ -608,12 +608,15 @@ bb   branch/leave-hot  branch_leave ""  0  "-"   -- x
 # ... but a road has no START -- it is entered by the dispatch
 rejects likely/named-scope likely_named_scope "'pick' is a scope name with none"
 
-# `acquired when` marks where ownership BEGINS in a multi-call acquire -- the
-# test before which a fault releases nothing and after which it releases the one
-# thing. Its four refusals, none of which had a test:
+# `acquired` marks where ownership BEGINS -- the test before which a fault
+# releases nothing and after which it releases the one thing. It is written in
+# EVERY acquire, including one whose single call leaves no room for doubt: the
+# boundary is then stated rather than inferred, and a second call arriving later
+# does not turn a program that compiled into one that does not.
 # ...and the conditional form still works, and still closes what it took.
 bb   acquired/condition  acquired_condition "" 0 "ok"
 
+rejects acquired/unmarked   acquired_unmarked   "must say where ownership begins"
 rejects acquired/missing    acquired_missing    "which one takes ownership"
 rejects acquired/twice      acquired_twice      "already marks an acquisition"
 rejects acquired/in-release acquired_in_release "belongs in \`acquire\`"

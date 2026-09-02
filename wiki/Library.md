@@ -19,7 +19,7 @@ a bounded `strlen`; `copy` and `fill` are `memcpy` and `memset`; `upper` and
 both ways, and `hex`, `hexbytes` and `unhex` do the same for base 16.
 
 Three of these — `find`, `equals` and `format` — are irreducible machine loops
-kept as always-inline C helpers. `search` and `number` are composed from them in
+kept as C helper macros. `search` and `number` are composed from them in
 mereo rather than in C, so the logic stays in the language.
 
 **The two views**, `span` and `builder`, described under

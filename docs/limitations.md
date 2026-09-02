@@ -43,9 +43,15 @@ of bytes only when it is wider than a register. Both rules are right on their
 own; sharing a spelling is not, and the collision compiles rather than
 complaining.
 
-**No editor support beyond highlighting.** There is no language server. Syntax
-highlighting for Kate and a standalone highlighter are kept in step with the
-compiler by a gate.
+**The editor knows names, not colours.** `mereolsp.py` serves diagnostics — the
+compiler's own refusals, on the line they name — plus go to definition, hover,
+completion and references, and a gate drives it over stdio. It serves no
+semantic tokens on purpose: Kate maps a server's token types onto seven theme
+styles and discards the modifier field, which reaches three of the twelve looks
+the scheme uses, so `tools/mereo.xml` keeps the colours. Rename, formatting and
+call hierarchy are not implemented. A port used as a receiver — `screen.write`
+inside a template that takes `screen` — has no definition to offer, because
+what it holds is decided at the call site.
 
 ## Scale
 

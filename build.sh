@@ -24,9 +24,10 @@ OUT=${OUT:-$DIR/build}
 # -fwhole-program: this IS the whole program -- one translation unit, no library
 # behind it. It needs `externally_visible` on _start/_run (mereoc emits it), or
 # the entry symbol is internalized and deleted. Measured: all 60 binaries came
-# out byte-identical, because every helper is already `static inline
-# always_inline` -- there is no external linkage left for it to exploit. Kept as
-# a true statement of the build, not for a win it cannot deliver.
+# out byte-identical, because there is no other function in the file for it to
+# exploit -- every helper mereoc injects is a MACRO, so `_start` is the only
+# function there is. Kept as a true statement of the build, not for a win it
+# cannot deliver.
 #
 # -fno-strict-aliasing: a byte-grain field access lowers to C's punning idiom --
 # `*(unsigned short *)(buf + 1)` over a `char[8]` -- which is formally UB under
@@ -70,7 +71,7 @@ mkdir -p "$OUT"
 SHOWCASES=" "
 
 # Every program directory. Everything here is gated the same way: transpile and
-SUBDIRS="examples tests/scopes programs/tls"
+SUBDIRS="examples tests/scopes programs/tls programs/http"
 
 # argument list -> the programs to build; default is every `program` .mereo
 if [ $# -gt 0 ]; then

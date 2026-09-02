@@ -36,6 +36,7 @@ watcher is
 
   acquire (path) goes
     linux.open (path is path, flags is 0, mode is 0, descriptor is descriptor)
+    acquired
   end
 
   arm (events) goes                    -- opens with a STORE, and does no call

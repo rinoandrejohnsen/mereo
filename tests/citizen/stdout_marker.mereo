@@ -1,0 +1,13 @@
+-- Owns a descriptor, then writes to standard output. With fd 1 closed at
+-- startup and no guard, `open` hands the program descriptor 1 and the marker
+-- lands INSIDE the file it opened.
+include "../../linux.mereo"
+
+program goes
+  marker is "MARKER\n"
+
+  target is linux.file (path is "/tmp/mereo_citizen_target", flags is 577, mode is 420)
+
+  output is already linux.file (descriptor is 1)
+  output.write (buffer is marker, count is 7)
+end

@@ -54,14 +54,15 @@ LAYERS. A resource owns exactly ONE acquirable thing -- but `acquire` may
 take SEVERAL steps to get it into a usable state (open then bind then
 setsockopt), and `release` may take several to let it go (unmap then
 close). What is fixed is the count of things owned, not the count of
-calls. In a multi-step `acquire` exactly one call carries `acquired when
-COND`: that test IS the ownership boundary, so a fault BEFORE it releases
-nothing and a fault AFTER it releases the one thing. Each acquire call
-becomes its own layer, and the resource's cleanup rides on the marked one,
-so the existing per-layer floors give the mid-sequence transition for
-free. A single-call acquire needs no marker (the boundary is
-unambiguous). `release` carries no test at any step -- a failed release
-cannot reroute. Several things
+calls. In an `acquire` exactly one call carries `acquired`: that call's
+test IS the ownership boundary, so a fault BEFORE it releases nothing and
+a fault AFTER it releases the one thing. Each acquire call becomes its own
+layer, and the resource's cleanup rides on the marked one, so the existing
+per-layer floors give the mid-sequence transition for free. The marker is
+REQUIRED even where there is one call and the boundary is already obvious:
+it is then written rather than inferred, greppable, and unchanged by a
+second call arriving later. `release` carries no test at any step -- a
+failed release cannot reroute. Several things
 are owned by LAYERING with `extends`, which takes any number of bases
 (`extends A and B and C`). The layer list is built base-first: each base
 contributes its own layers in the order written, then the resource's own
@@ -77,9 +78,16 @@ parameter alike is therefore rejected at elaboration, since the shared
 name would quietly wire two unrelated acquires to one value.
 
 The transpiler knows only the primitive table (target-ABI mechanism).
-Everything lowers into one flat `_start`: no functions (always_inline
-wrappers), no unwinder, no drop flags -- so there is no recursion and no
-dynamic dispatch. A method is either ONE primitive call (with `ensure`
+Everything lowers into one flat `_start`: no functions AT ALL -- every
+helper the emitter injects is a MACRO, so the C holds one function and it
+is the entry point -- no unwinder, no drop flags, so there is no recursion
+and no dynamic dispatch. Macros rather than `static inline
+__attribute__((always_inline))` because the two are not the same to GCC:
+the attribute asks the inliner, and the code that reaches it has already
+been through the static branch predictor as a FUNCTION -- an early
+`return` fires the "early return (on trees)" heuristic, which predicts
+that branch unlikely and then lays the caller out around a claim that
+stopped being true the moment the body was inlined. See `macro`. A method is either ONE primitive call (with `ensure`
 postconditions) or a `procedure` body that is spliced at each call site.
 """
 
@@ -321,6 +329,32 @@ def render_cond(cond, scalars, buffers, ln):
 EMITTED = {"_write_value", "_status", "_sink"}
 
 
+def macro(sig, body):
+    """One `#define` from a block of C. The generated program has NO functions
+    in it -- not even always_inline ones that GCC would fold away -- so every
+    helper the emitter injects is a macro, and every macro is written here as
+    ordinary indented C with the line continuations added on the way out. The
+    reader (and the writer) sees the code rather than the backslashes.
+
+    Two rules follow from a macro not being a function, and both are kept by
+    hand in the bodies below:
+
+      * a parameter carries NO type, so each one is used as `(long)(x)` where
+        the function's prototype used to convert it -- an `int` operand under
+        an "D" constraint would otherwise reach the kernel in `edi`, and a
+        negative one (AT_FDCWD is -100) would arrive without its sign bits;
+      * a parameter is TEXT, so one named twice in a body is evaluated twice.
+        Anything used more than once is bound to a local first.
+
+    A macro that yields a value is a statement expression `({ ... })`; a void
+    one is `do { ... } while (0)`, which is also what makes an early `return`
+    expressible -- inside a macro it would return from `_start`, so it becomes
+    `break`."""
+    lines = [l.rstrip() for l in body.strip("\n").split("\n")]
+    return " \\\n".join(["#define " + sig + " " + lines[0].lstrip()]
+                       + lines[1:])
+
+
 def error_label(stage, ref):
     """The cold block's label: the stage ordinal (matching the stderr record)
     plus the failing step's reference, so `goto error_3_write_terminal;` says
@@ -333,31 +367,110 @@ def error_label(stage, ref):
 # code): all five digits are computed, the start offset is a sum of
 # comparisons, the sign slot is written unconditionally and included
 # only when negative. Values print up to 5 digits (errno's hard bound
-# is 4095). always_inline like the syscall wrappers -- one definition,
-# expanded into every cold block, no call/ret at any -O level.
+# is 4095). A macro like every other helper -- one definition, expanded into
+# every cold block, no call/ret at any -O level.
 # The transpiler's OWN syscalls -- the citizenship plumbing it generates around
 # the happy path -- expressed as raw inline `syscall`, the same asm form
 # linux.mereo now uses. Just the two the transpiler itself needs: write (for the
 # stderr diagnostic records and _write_value) and rt_sigaction (SIGINT/SIGTERM/
 # SIGPIPE disposition). No generic syscallN wrapper is injected any more.
-SYS_WRITE = (
-    'static inline __attribute__((always_inline)) long _write(long _fd, '
-    'long _buf, long _len) {\n'
-    '    long _r;\n'
-    '    __asm__ volatile ("syscall" : "=a"(_r)\n'
-    '        : "a"(1), "D"(_fd), "S"(_buf), "d"(_len) : "rcx", "r11", "memory");\n'
-    '    return _r;\n'
-    '}')
-SYS_SIGACTION = (
-    'static inline __attribute__((always_inline)) long _sigaction(long _sig, '
-    'long _act) {\n'
-    '    long _r;\n'
-    '    register long _r10 __asm__("r10") = 8;   /* sizeof(sigset_t) */\n'
-    '    __asm__ volatile ("syscall" : "=a"(_r)\n'
-    '        : "a"(13), "D"(_sig), "S"(_act), "d"(0), "r"(_r10)\n'
-    '        : "rcx", "r11", "memory");\n'
-    '    return _r;\n'
-    '}')
+SYS_WRITE = macro('_write(_fd, _buf, _len)', '''
+({
+    long _r;
+    __asm__ volatile ("syscall" : "=a"(_r)
+        : "a"(1), "D"((long)(_fd)), "S"((long)(_buf)), "d"((long)(_len))
+        : "rcx", "r11", "memory");
+    _r; })
+''')
+SYS_SIGACTION = macro('_sigaction(_sig, _act)', '''
+({
+    long _r;
+    register long _r10 __asm__("r10") = 8;   /* sizeof(sigset_t) */
+    __asm__ volatile ("syscall" : "=a"(_r)
+        : "a"(13), "D"((long)(_sig)), "S"((long)(_act)), "d"(0), "r"(_r10)
+        : "rcx", "r11", "memory");
+    _r; })
+''')
+
+# ...and the same syscall asked the other way: what is the disposition NOW,
+# change nothing. Its own wrapper rather than a third parameter on the one
+# above, because every install passes a literal zero there and the parameter
+# made GCC allocate registers differently in programs that never query at all --
+# two instructions on `index_fast`, which owns nothing and reads no disposition.
+SYS_SIGQUERY = macro('_sigquery(_sig, _old)', '''
+({
+    long _r;
+    register long _r10 __asm__("r10") = 8;   /* sizeof(sigset_t) */
+    __asm__ volatile ("syscall" : "=a"(_r)
+        : "a"(13), "D"((long)(_sig)), "S"(0), "d"((long)(_old)), "r"(_r10)
+        : "rcx", "r11", "memory");
+    _r; })
+''')
+
+# The three standard descriptors, made to be the three standard descriptors.
+# A program started with one of them CLOSED gets it back from its own `open` --
+# descriptors are handed out lowest-free-first -- and from then on everything it
+# writes to "standard output" goes into the file it opened, and its diagnostics
+# into whatever took descriptor 2. Nothing in the program can see this: the
+# numbers 0, 1 and 2 are all it has to go on. So the runtime settles it before
+# the program's first step, the way sudo, systemd and OpenSSH all do.
+#
+# One `poll` answers for all three at once: POLLNVAL comes back for a closed
+# descriptor whatever the requested events, and a zero timeout means it cannot
+# block. Walking upward matters -- `open` returns the lowest free descriptor, so
+# repairing 0 before 1 lands each on the number it is meant to have. Emitted
+# only for a program that can OPEN something (see signal_prologue), because a
+# program that opens nothing cannot be confused about which descriptor is which.
+#
+# If /dev/null cannot be opened -- no /dev in a chroot, or no descriptors left
+# -- the program stops instead of running blind, and it stops silently, because
+# the descriptor it would have explained itself on is the broken one.
+SYS_STDFD = macro('_stdfd()', r'''
+do {
+    struct { int fd; short events, revents; } _p[3] =
+        { { 0, 0, 0 }, { 1, 0, 0 }, { 2, 0, 0 } };
+    long _r;
+    __asm__ volatile ("syscall" : "=a"(_r)
+        : "a"(7), "D"((long)_p), "S"(3L), "d"(0L)
+        : "rcx", "r11", "memory");
+    if (_r <= 0) break;
+    for (long _i = 0; _i < 3; _i++) {
+        if (!(_p[_i].revents & 0x20)) continue;      /* POLLNVAL */
+        __asm__ volatile ("syscall" : "=a"(_r)
+            : "a"(2), "D"((long)"/dev/null"), "S"(2L), "d"(0L)
+            : "rcx", "r11", "memory");               /* O_RDWR */
+        if (_r != _i) {
+            __asm__ volatile ("syscall" : : "a"(231), "D"(1L) : "memory");
+            __builtin_unreachable();
+        }
+    }
+} while (0)
+''')
+
+# Dying the way you were asked to die. A program that catches a fatal signal so
+# that it can clean up owes its parent the truth about why it stopped: a shell
+# loop must not walk on past a Ctrl-C, `xargs` and `make` must stop, and a
+# supervisor must not read a shutdown as a finished job. Exiting 0 -- or even
+# 130 -- says none of that; only WIFSIGNALED does. So once the tower has run,
+# the program puts the signal's default disposition back, unblocks it, and
+# sends it to itself: the wait status the parent reads is then the one it would
+# have read had mereo never caught the signal at all.
+SYS_RERAISE = macro('_reraise(_sig)', r'''
+do {
+    long _dfl[4] = { 0, 0, 0, 0 };                   /* SIG_DFL */
+    long _none = 0, _pid, _r;
+    long _who = (long)(_sig);                        /* read twice below */
+    register long _r10 __asm__("r10") = 8;
+    _sigaction(_who, (long)_dfl);
+    __asm__ volatile ("syscall" : "=a"(_r)
+        : "a"(14), "D"(2L), "S"((long)&_none), "d"(0L), "r"(_r10)
+        : "rcx", "r11", "memory");                   /* SIG_SETMASK, {} */
+    __asm__ volatile ("syscall" : "=a"(_pid) : "a"(39)
+        : "rcx", "r11", "memory");
+    __asm__ volatile ("syscall" : "=a"(_r)
+        : "a"(62), "D"(_pid), "S"(_who) : "rcx", "r11", "memory");
+} while (0)
+''')
 
 # The number in a diagnostic record. It is spliced into every error block, so
 # its size is multiplied by how many steps a program can fail at -- which is why
@@ -369,21 +482,23 @@ SYS_SIGACTION = (
 # whole signed range -- it negates into an UNSIGNED accumulator, so the one
 # value whose negation does not fit (LONG_MIN) prints correctly too. Cold code
 # either way: nothing on a success path reaches it.
-WRITE_VALUE = (
-    'static inline __attribute__((always_inline)) void _write_value(long _e) {\n'
-    '    char _d[24];\n'
-    '    long _n = _e < 0;\n'
-    '    long _i = 22;\n'
-    '    unsigned long _u = _n ? -(unsigned long)_e : (unsigned long)_e;\n'
-    "    _d[23] = '\\n';\n"
-    '    do {\n'
-    "        _d[_i] = '0' + _u % 10;\n"
-    '        _u = _u / 10;\n'
-    '        _i = _i - 1;\n'
-    '    } while (_u);\n'
-    "    if (_n) { _d[_i] = '-'; _i = _i - 1; }\n"
-    '    _write(2, (long)_d + _i + 1, 23 - _i);\n'
-    '}')
+WRITE_VALUE = macro('_write_value(_e)', r'''
+do {
+    char _d[24];
+    long _v = (long)(_e);                    /* read three times below */
+    long _n = _v < 0;
+    long _i = 22;
+    unsigned long _u = _n ? -(unsigned long)_v : (unsigned long)_v;
+    _d[23] = '\n';
+    do {
+        _d[_i] = '0' + _u % 10;
+        _u = _u / 10;
+        _i = _i - 1;
+    } while (_u);
+    if (_n) { _d[_i] = '-'; _i = _i - 1; }
+    _write(2, (long)_d + _i + 1, 23 - _i);
+} while (0)
+''')
 
 # The interrupt stub. Registered for SIGINT/SIGTERM so Ctrl-C (or `kill`) no
 # longer kills the process at the default disposition; instead the kernel enters
@@ -396,43 +511,54 @@ WRITE_VALUE = (
 # Before returning, the stub also blocks the shutdown signals so the teardown it
 # triggers cannot itself be interrupted -- ATOMICALLY, with no window: registered
 # with SA_SIGINFO, the kernel hands the ucontext pointer in %rdx, and the stub
-# ORs SIGINT|SIGTERM (0x4002) into the saved signal mask (uc_sigmask, at +296 on
-# x86-64). rt_sigreturn then restores that modified mask as it resumes the main
-# flow, so the mask is set by the same transition that delivers the -EINTR. A
-# second Ctrl-C during cleanup is held pending and dies with the process at exit.
+# ORs SIGHUP|SIGINT|SIGTERM (0x4003) into the saved signal mask (uc_sigmask, at
+# +296 on x86-64). rt_sigreturn then restores that modified mask as it resumes
+# the main flow, so the mask is set by the same transition that delivers the
+# -EINTR. A second Ctrl-C during cleanup is held pending and dies with the
+# process at exit.
+#
+# It also records WHICH signal asked, in the one place a signal handler and the
+# main flow can both reach. The number is what `_reraise` needs at the far end
+# of the tower to die the way it was asked to; the kernel puts it in %edi under
+# SA_SIGINFO, and a `movl` into a word that starts at zero leaves the high half
+# alone. Nothing else writes it, so no ordering question arises.
 SIGSTUB = (
+    '__attribute__((externally_visible)) volatile long mereo_signo;\n'
     '__asm__(\n'
     '  ".globl mereo_sigstub\\n"\n'
     '  "mereo_sigstub:\\n"\n'
-    '  "  orq $0x4002, 296(%rdx)\\n"  /* uc_sigmask |= SIGINT|SIGTERM   */\n'
-    '  "  add $8, %rsp\\n"            /* drop the unused pretcode slot  */\n'
-    '  "  movl $15, %eax\\n"          /* __NR_rt_sigreturn              */\n'
+    '  "  movl %edi, mereo_signo(%rip)\\n"  /* which signal asked us to stop */\n'
+    '  "  orq $0x4003, 296(%rdx)\\n"        /* uc_sigmask |= HUP|INT|TERM    */\n'
+    '  "  add $8, %rsp\\n"                  /* drop the unused pretcode slot */\n'
+    '  "  movl $15, %eax\\n"                /* __NR_rt_sigreturn            */\n'
     '  "  syscall\\n"\n'
     ');\n'
     'extern void mereo_sigstub(void);')
 
 # The entry-view lengths. envp and auxv have no count handed to us (unlike argc):
-# they are NULL-terminated, so we walk them. always_inline like the other
-# helpers -- no call/ret at any -O level. envp is a vector of pointers;
+# they are NULL-terminated, so we walk them. Macros like the other helpers --
+# no call/ret at any -O level, and none to elide. envp is a vector of pointers;
 # auxv is (type,value) long pairs ending at an AT_NULL (type 0) entry.
-VECLEN = (
-    'static inline __attribute__((always_inline)) long _veclen(char **_v) {\n'
-    '    long _n = 0;\n'
-    '    while (_v[_n]) _n++;\n'
-    '    return _n;\n'
-    '}')
-AUXLEN = (
-    'static inline __attribute__((always_inline)) long _auxlen(long *_a) {\n'
-    '    long _n = 0;\n'
-    '    while (_a[_n]) _n += 2;\n'
-    '    return _n;\n'
-    '}')
+VECLEN = macro('_veclen(_v)', r'''
+({
+    char **_vec = (char **)(_v);
+    long _n = 0;
+    while (_vec[_n]) _n++;
+    _n; })
+''')
+AUXLEN = macro('_auxlen(_a)', r'''
+({
+    long *_aux = (long *)(_a);
+    long _n = 0;
+    while (_aux[_n]) _n += 2;
+    _n; })
+''')
 
 # C-helper primitives: the byte/text layer. A `NAME is helper CFUNC`
-# declaration binds a mereo primitive to one of these always_inline functions
-# (the third primitive kind, next to `call` and `asm`). All args are `long`
-# (the same convention as the syscall wrappers); a pointer is passed as
-# (long)&thing and cast back inside. No call/ret survives inlining.
+# declaration binds a mereo primitive to one of these macros (the third
+# primitive kind, next to `call` and `asm`). Every argument is used as
+# `(long)(x)`, which is the conversion the prototype used to do; a pointer is
+# passed as (long)&thing and cast back inside. There is no call to survive.
 # Whether this machine has AVX2, asked once at start-up and answered into a
 # flag `_scan` branches on. Three checks, in the order the manual requires: the
 # OS must have enabled XSAVE (CPUID.1:ECX.27), it must be saving the XMM and YMM
@@ -442,31 +568,42 @@ AUXLEN = (
 #
 # CPUID rather than `__builtin_cpu_supports`, which needs libgcc's model
 # initialiser -- a constructor, and there are none here.
-CPU_PROBE = (
-    'static int _mereo_avx2 = 0;\n'
-    'static inline __attribute__((always_inline)) void _mereo_cpu(void) {\n'
-    '    unsigned int _a, _b, _c, _d, _lo, _hi;\n'
-    '    __asm__ volatile ("cpuid" : "=a"(_a), "=b"(_b), "=c"(_c), "=d"(_d)\n'
-    '                      : "a"(1u), "c"(0u));\n'
-    '    if (!(_c & (1u << 27))) return;            /* OSXSAVE */\n'
-    '    __asm__ volatile ("xgetbv" : "=a"(_lo), "=d"(_hi) : "c"(0u));\n'
-    '    if ((_lo & 6u) != 6u) return;              /* XMM and YMM state saved */\n'
-    '    __asm__ volatile ("cpuid" : "=a"(_a), "=b"(_b), "=c"(_c), "=d"(_d)\n'
-    '                      : "a"(7u), "c"(0u));\n'
-    '    _mereo_avx2 = (int)((_b >> 5) & 1u);       /* AVX2 */\n'
-    '}')
+CPU_PROBE = 'static int _mereo_avx2 = 0;\n' + macro('_mereo_cpu()', r'''
+do {
+    unsigned int _a, _b, _c, _d, _lo, _hi;
+    __asm__ volatile ("cpuid" : "=a"(_a), "=b"(_b), "=c"(_c), "=d"(_d)
+                      : "a"(1u), "c"(0u));
+    if (!(_c & (1u << 27))) break;             /* OSXSAVE */
+    __asm__ volatile ("xgetbv" : "=a"(_lo), "=d"(_hi) : "c"(0u));
+    if ((_lo & 6u) != 6u) break;               /* XMM and YMM state saved */
+    __asm__ volatile ("cpuid" : "=a"(_a), "=b"(_b), "=c"(_c), "=d"(_d)
+                      : "a"(7u), "c"(0u));
+    _mereo_avx2 = (int)((_b >> 5) & 1u);       /* AVX2 */
+} while (0)
+''')
 
 HELPER_C = {
     # memchr-as-offset: index of byte _b in _p[0.._len), or _len if absent.
-    "_scan":
-        'static inline __attribute__((always_inline)) long _scan(long _pp, long _len, long _b) {\n'
-        '    const unsigned char *_p = (const unsigned char *)_pp;\n'
-        '    long _i = 0;\n'
+    "_scan": macro('_scan(_pp, _len, _b)',
+        # The one helper with an early exit from INSIDE a loop, which is what a
+        # macro cannot spell: `return` here would return from `_start`. So the
+        # body is a `do { } while (0)` whose `break` is the old `return`, and
+        # the loop's own hit sets `_hit` to say which of the two it was. Both
+        # parameters are read several times, so both are bound first -- text
+        # substituted twice is evaluated twice.
+        '({\n'
+        '    const unsigned char *_p = (const unsigned char *)(_pp);\n'
+        '    long _slen = (long)(_len);\n'
+        '    long _sbyte = (long)(_b);\n'
+        '    long _i = 0, _hit = 0;\n'
+        '    do {\n'
         # THIRTY-TWO bytes a step where the machine has AVX2, which is a 3x to 6x
         # difference on this loop alone and the largest single win measured in
         # the project. Written as one asm block rather than intrinsics for two
-        # reasons: intrinsics need `target("avx2")` on the function, which cannot
-        # be combined with `always_inline` into a baseline caller, and keeping the
+        # reasons: intrinsics need `target("avx2")` on a FUNCTION, and there is
+        # no function here to put it on -- nor was there one to put it on when
+        # this was `always_inline`, which the attribute cannot combine with --
+        # and keeping the
         # broadcast and the loop in one block stops the compiler reusing ymm1
         # between iterations.
         #
@@ -479,7 +616,7 @@ HELPER_C = {
         # `vzeroupper` cost even when the body cannot run once, and a scan over a
         # short field is the common case. Without it, a 16-byte scan measured
         # slower than the word-at-a-time it replaced.
-        '    if (_mereo_avx2 && _len >= 32) {\n'
+        '    if (_mereo_avx2 && _slen >= 32) {\n'
         '        __asm__ volatile (\n'
         '            "vmovd        %k[bv], %%xmm1\\n\\t"\n'
         '            "vpbroadcastb %%xmm1, %%ymm1\\n\\t"\n'
@@ -500,8 +637,8 @@ HELPER_C = {
         '            "2:\\n\\t"\n'
         '            "vzeroupper\\n\\t"\n'
         '            : [i] "+r" (_i)\n'
-        '            : [pp] "r" (_p), [ln] "r" (_len),\n'
-        '              [bv] "r" ((unsigned int)(_b & 0xff))\n'
+        '            : [pp] "r" (_p), [ln] "r" (_slen),\n'
+        '              [bv] "r" ((unsigned int)(_sbyte & 0xff))\n'
         '            : "rax", "rdx", "xmm0", "xmm1", "cc", "memory");\n'
         # The loop above examines whole vectors only, so it has looked at
         # exactly [0, _len & ~31) -- a match is therefore below that bound and
@@ -514,7 +651,7 @@ HELPER_C = {
         # what `tzcnt` established. That was every successful vector scan in the
         # program it was measured on -- 266k of them, and the constants show up as
         # `movabs $0x2020202020202020` once per line.
-        '        if (_i < (_len & ~31L)) return _i;\n'
+        '        if (_i < (_slen & ~31L)) break;\n'
         '    }\n'
         # Word at a time: XOR a word against the broadcast byte and the one
         # that matched becomes zero, which the has-a-zero-byte test finds
@@ -522,64 +659,28 @@ HELPER_C = {
         # every `find`, `search`, `measure` and `until` comes through here.
         '    const unsigned long _o = 0x0101010101010101UL;\n'
         '    const unsigned long _h = 0x8080808080808080UL;\n'
-        '    const unsigned long _bb = (unsigned long)(_b & 0xff) * _o;\n'
-        '    while (_i + 8 <= _len) {\n'
+        '    const unsigned long _bb = (unsigned long)(_sbyte & 0xff) * _o;\n'
+        '    while (_i + 8 <= _slen) {\n'
         '        unsigned long _w;\n'
         '        __builtin_memcpy(&_w, _p + _i, 8);\n'
         '        unsigned long _z = _w ^ _bb;\n'
         '        unsigned long _t = (_z - _o) & ~_z & _h;\n'
-        '        if (_t) return _i + (long)(__builtin_ctzl(_t) >> 3);\n'
+        '        if (_t) { _i += (long)(__builtin_ctzl(_t) >> 3);\n'
+        '                  _hit = 1; break; }\n'
         '        _i += 8;\n'
         '    }\n'
-        '    while (_i < _len && (long)_p[_i] != _b) _i++;\n'
-        '    return _i;\n'
-        '}',
+        '    if (_hit) break;\n'
+        '    while (_i < _slen && (long)_p[_i] != _sbyte) _i++;\n'
+        '    } while (0);\n'
+        '    _i; })'),
     # equal bytes: 1 if _p[0.._pl) and _q[0.._ql) have the same length AND bytes.
 }
 
-SYSCALL_WRAPPER = {
-    0: 'static inline __attribute__((always_inline)) long syscall0(long n) {\n'
-       '    long ret;\n'
-       '    __asm__ volatile ("syscall" : "=a"(ret) : "a"(n)'
-       ' : "rcx", "r11", "memory");\n'
-       '    return ret;\n}',
-    1: 'static inline __attribute__((always_inline)) long syscall1(long n, long a1) {\n'
-       '    long ret;\n'
-       '    __asm__ volatile ("syscall" : "=a"(ret) : "a"(n), "D"(a1)'
-       ' : "rcx", "r11", "memory");\n'
-       '    return ret;\n}',
-    2: 'static inline __attribute__((always_inline)) long syscall2(long n, long a1, long a2) {\n'
-       '    long ret;\n'
-       '    __asm__ volatile ("syscall" : "=a"(ret) : "a"(n), "D"(a1), "S"(a2)'
-       ' : "rcx", "r11", "memory");\n'
-       '    return ret;\n}',
-    3: 'static inline __attribute__((always_inline)) long syscall3(long n, long a1, long a2, long a3) {\n'
-       '    long ret;\n'
-       '    __asm__ volatile ("syscall" : "=a"(ret) : "a"(n), "D"(a1), "S"(a2), "d"(a3)'
-       ' : "rcx", "r11", "memory");\n'
-       '    return ret;\n}',
-    4: 'static inline __attribute__((always_inline)) long syscall4(long n, long a1, long a2, long a3, long a4) {\n'
-       '    long ret;\n'
-       '    register long r10 __asm__("r10") = a4;\n'
-       '    __asm__ volatile ("syscall" : "=a"(ret) : "a"(n), "D"(a1), "S"(a2), "d"(a3), "r"(r10)'
-       ' : "rcx", "r11", "memory");\n'
-       '    return ret;\n}',
-    5: 'static inline __attribute__((always_inline)) long syscall5(long n, long a1, long a2, long a3, long a4, long a5) {\n'
-       '    long ret;\n'
-       '    register long r10 __asm__("r10") = a4;\n'
-       '    register long r8 __asm__("r8") = a5;\n'
-       '    __asm__ volatile ("syscall" : "=a"(ret) : "a"(n), "D"(a1), "S"(a2), "d"(a3), "r"(r10), "r"(r8)'
-       ' : "rcx", "r11", "memory");\n'
-       '    return ret;\n}',
-    6: 'static inline __attribute__((always_inline)) long syscall6(long n, long a1, long a2, long a3, long a4, long a5, long a6) {\n'
-       '    long ret;\n'
-       '    register long r10 __asm__("r10") = a4;\n'
-       '    register long r8 __asm__("r8") = a5;\n'
-       '    register long r9 __asm__("r9") = a6;\n'
-       '    __asm__ volatile ("syscall" : "=a"(ret) : "a"(n), "D"(a1), "S"(a2), "d"(a3), "r"(r10), "r"(r8), "r"(r9)'
-       ' : "rcx", "r11", "memory");\n'
-       '    return ret;\n}',
-}
+# The arities the x86-64 syscall ABI has argument registers for. This was a
+# table of `syscallN` wrapper FUNCTIONS until the primitives all became `asm`
+# ones with their own emitted macro -- nothing has injected a generic wrapper
+# for a long time, so what is left is the range check that used its keys.
+SYSCALL_ARITY = frozenset(range(7))
 
 
 CURRENT_FILE = None
@@ -633,21 +734,33 @@ NARROWABLE = {"read": ("buffer", "capacity", "+m"),
 
 
 def emit_asm_wrapper(name, prim):
-    """Generate an always_inline wrapper for one asm primitive: the same
-    shape as the syscall wrappers, but with the declared template, named
-    operands, and clobbers. Directions become constraint prefixes
-    (is/into -> input/=output). volatile unless `pure`."""
+    """Generate the MACRO for one asm primitive: the declared template, named
+    operands, and clobbers. Directions become constraint prefixes (is/into ->
+    input/=output). volatile unless `pure`. One with a result is a statement
+    expression, one without is `do { } while (0)`; every parameter is used as
+    `(long)(x)`, which is the conversion the function prototype used to do and
+    which nothing else would do for a macro -- an `int` field read reaching a
+    "D" operand uncast arrives in `edi`, so a negative one (AT_FDCWD is -100)
+    would lose its sign bits on the way to the kernel."""
     for ref in re.findall(r"%\[(\w+)\]", prim["template"]):
         if ref not in prim["constraints"]:
             fail(f"assembly '{name}': template uses %[{ref}] but there is no "
                  "such operand")
     constvals = prim.get("constvals", {})
-    # the wrapper's parameters are the value inputs; a CONSTANT operand
-    # (`number is N in rax`) is baked into the asm, not a parameter
+    # the macro's parameters are the value inputs; a CONSTANT operand
+    # (`number is N in rax`) is baked into the asm, not a parameter.
+    #
+    # The parameter is the port name UNDERSCORED, and that underscore is not
+    # cosmetic: an asm operand NAME is written `[descriptor] "D" (...)`, and to
+    # the preprocessor that is just the token `descriptor` in the replacement
+    # list. A macro parameter of the same name is substituted into it, so
+    # `_assembly_linux_write(*(int *)(terminal + 0), ...)` produced
+    # `[(*(int *)(terminal + 0))] "D" (...)` and the compiler asked for an
+    # identifier. A function had no such problem: its parameter was a NAME in
+    # scope over expressions, and an operand name is not an expression. mereo
+    # names may not begin with an underscore (see name_ok), so the prefixed
+    # form cannot collide with anything a program can write either.
     ins = [p for k, p in prim["args"] if k != "const"]
-    sig = ", ".join(f"long {p}" for p in ins) or "void"
-    ret = "long" if prim["out"] else "void"
-    noret = " __attribute__((noreturn))" if prim["noreturn"] else ""
     vol = " volatile" if prim["volatile"] else ""
     out_ops = []
     if prim["out"]:
@@ -658,7 +771,9 @@ def emit_asm_wrapper(name, prim):
     # syscall4/5/6 wrappers use for the 4th-6th argument.
     pre, in_ops = [], []
     for k, p in prim["args"]:
-        val = str(constvals[p]) if k == "const" else p
+        # a baked constant is already a literal; a PARAMETER is macro text, so
+        # it is converted here the way the old prototype converted it
+        val = str(constvals[p]) if k == "const" else f"(long)(_{p})"
         reg = prim["constraints"][p]
         if reg in HARDREG:
             pre.append(f'    register long _hr_{p} __asm__("{reg}") = {val};')
@@ -675,14 +790,11 @@ def emit_asm_wrapper(name, prim):
         have = {p for _k, p in prim["args"]}
         if "memory" in clobbers and ptr in have and ext in have:
             clobbers.remove("memory")
-            cell = f"(*(char (*)[{ext}])(char *){ptr})"
+            cell = f"(*(char (*)[(long)(_{ext})])(char *)(long)(_{ptr}))"
             (out_ops if mode.startswith("+") else in_ops).append(
                 f'"{mode}" {cell}')
     clob = ", ".join(f'"{c}"' for c in clobbers)
-    # the C function is prefixed so a syscall named like a libc/GCC builtin
-    # (exit, read, write, open, close, ...) never collides with it
-    lines = [f"static inline __attribute__((always_inline)){noret} "
-             f"{ret} _assembly_{csym(name)}({sig}) {{"]
+    lines = ["({" if prim["out"] else "do {"]
     if prim["out"]:
         lines.append("    long _r;")
     lines.extend(pre)
@@ -690,12 +802,16 @@ def emit_asm_wrapper(name, prim):
     lines.append(f'        : {", ".join(out_ops)}')
     lines.append(f'        : {", ".join(in_ops)}')
     lines.append(f'        : {clob});')
-    if prim["out"]:
-        lines.append("    return _r;")
     if prim["noreturn"]:
+        # a macro carries no `__attribute__((noreturn))`. This is what said the
+        # same thing to the optimizer in the function form too -- the attribute
+        # was the redundant half, since the body ends here either way.
         lines.append("    __builtin_unreachable();")
-    lines.append("}")
-    return "\n".join(lines)
+    lines.append("    _r; })" if prim["out"] else "} while (0)")
+    # the macro is prefixed so a syscall named like a libc/GCC builtin
+    # (exit, read, write, open, close, ...) never collides with it
+    return macro(f"_assembly_{csym(name)}({', '.join('_' + i for i in ins)})",
+                 "\n".join(lines))
 
 
 def render_call(d):
@@ -1921,6 +2037,30 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     fail(f"line {n}: constant '{cname}' redefined")
                 CONSTANTS[cname] = _int_value(m.group(2))
                 continue
+            # A run of bytes named at the left margin, which is the same idea
+            # as the number above with more than one of them: a lookup table a
+            # library's own templates read. It must be `constant`, because the
+            # mutable form would be shared state a library has no way to own --
+            # `files`, `clock` and `identity` hold nothing on purpose, and this
+            # is what keeps that true. A GROUP still may not hold one: a
+            # namespace has members, not bytes (see docs/syntax.md).
+            m = re.match(r'^(\w+) is (constant )?(?:bytes (.+)|"(.*)")$', s)
+            if m:
+                name_ok(m.group(1), n, "buffer")
+                if not m.group(2):
+                    fail(f"line {n}: `{s}` -- a run of bytes at the left "
+                         "margin must be `constant`. Without it this is "
+                         "mutable state shared by every program that includes "
+                         "the file, which nothing here can own; say "
+                         f"`{m.group(1)} is constant ...`, or declare it "
+                         "inside the program that writes it.")
+                raw = m.group(3) if m.group(3) is not None else f'"{m.group(4)}"'
+                data = parse_bytes_literal(raw, n)
+                slots.append({"kind": "buffer", "name": m.group(1),
+                              "size": str(len(data)), "init": data,
+                              "strlit": raw.strip().startswith('"'),
+                              "const": True, "line": n})
+                continue
             fail(f"line {n}: unrecognized top-level line: {s!r} -- at the "
                  "left margin a line opens a definition (`NAME is`, or `NAME "
                  "extends BASE is`), a template (`NAME (PORTS) goes`, "
@@ -3109,7 +3249,7 @@ def validate_method(defn, meth, check_params=True):
             missing = [p for p in argnames if p not in meth["bind"]]
             fail(f"line {meth['line']}: '{meth['prim']}' needs every operand "
                  f"bound (missing: {', '.join(missing)})")
-    elif len(bound) not in SYSCALL_WRAPPER:
+    elif len(bound) not in SYSCALL_ARITY:
         fail(f"line {meth['line']}: '{meth['prim']}' needs "
              f"syscall{len(bound)}; only syscall1..6 are defined")
     if check_params:                         # a multi-step body checks the
@@ -3399,6 +3539,33 @@ def elaborate_classes(definitions):
                     if call["ensure"]:
                         fail(f"line {call['ensure'][0][3]}: release may not "
                              "carry `ensure` (a failed release cannot reroute)")
+        # THE MARKER IS NOT OPTIONAL. Every `acquire` names the call that takes
+        # ownership -- with one call the boundary is inferable, but inferable is
+        # not the same as WRITTEN. Three things come of writing it always: where
+        # a resource starts owning its thing is one greppable word rather than
+        # a shape to be read off the body; adding a second call later does not
+        # turn a working acquire into a refusal; and the tower reads the same
+        # key whatever the acquire looks like. It costs one line per resource.
+        _acq = defn["methods"].get("acquire")
+        if (_acq is not None and _acq["calls"]
+                and not any(c.get("marker") for c in _acq["calls"])):
+            if len(_acq["calls"]) > 1:
+                fail(f"line {_acq['line']}: '{cname}' acquires in several "
+                     "steps, so it must say which one takes ownership -- "
+                     "add `acquired` after that call. That marker IS the "
+                     "boundary: before it a fault releases nothing, after "
+                     "it a fault releases. It keeps the test the call "
+                     "already carries; `acquired when <result> <cmp> "
+                     "<value>` is only for a boundary that differs, and it "
+                     "REPLACES that test rather than adding to it")
+            fail(f"line {_acq['line']}: '{cname}' must say where ownership "
+                 "begins -- add `acquired` on its own line after the call in "
+                 "`acquire`. One call makes the boundary obvious, not stated: "
+                 "the marker is where a resource says it now holds the thing, "
+                 "and it is what the release tower routes on. `acquired` keeps "
+                 "the test the call already carries; `acquired when <result> "
+                 "<cmp> <value>` is only for a boundary that differs, and it "
+                 "REPLACES that test rather than adding to it")
         chain = []
         rel = next((m for m in defn["methods"].values()
                     if m["role"] == "release"), None)
@@ -3438,20 +3605,11 @@ def elaborate_classes(definitions):
             acq = defn["methods"].get("acquire")
             acalls = (acq or {}).get("calls", [])
             if len(acalls) > 1:
-                # Several acquisition steps. Exactly one is marked `acquired
-                # when`: that call takes the resource's cleanup, so a fault BEFORE
-                # it routes to the floor below (nothing of ours released) and a
-                # fault AFTER it routes to our floor (release the one thing).
-                marked = [c for c in acalls if c.get("marker")]
-                if not marked and chain:
-                    fail(f"line {acq['line']}: '{cname}' acquires in several "
-                         "steps, so it must say which one takes ownership -- "
-                         "add `acquired` after that call. That marker IS the "
-                         "boundary: before it a fault releases nothing, after "
-                         "it a fault releases. It keeps the test the call "
-                         "already carries; `acquired when <result> <cmp> "
-                         "<value>` is only for a boundary that differs, and it "
-                         "REPLACES that test rather than adding to it")
+                # Several acquisition steps. Exactly one carries the marker
+                # (required above): that call takes the resource's cleanup, so a
+                # fault BEFORE it routes to the floor below (nothing of ours
+                # released) and a fault AFTER it routes to our floor (release
+                # the one thing).
                 own = [{"init": c, "owner": cname,
                         "cleanup": chain if c.get("marker") else []}
                        for c in acalls]
@@ -3537,9 +3695,12 @@ def lens_target(slot, definitions, buffers, psize, scalars=None):
     # the compiler checks against. This is the only way to view a record whose
     # address is a runtime value; a named backing is a fixed block, and a scalar
     # holding an address is one register word with nothing after it.
-    m = re.match(r"^\[\s*(.+?)\s*:\s*(\d+)\s*\]$", back)
+    m = re.match(r"^\[\s*(.+?)\s*:\s*([\w.]+)\s*\]$", back)
     if m:
-        addr, width = m.group(1), int(m.group(2))
+        # the width may be `record.size`, which is what lets a record array be
+        # written without the stride appearing as a bare number twice
+        addr = m.group(1)
+        width = const_offset(m.group(2), definitions, buffers, slot["line"])
         if str(slot.get("lens_off", "0")) != "0":
             fail(f"line {slot['line']}: '{slot['name']}' views "
                  f"`[{addr} : {width}]`, which already says where it starts -- "
@@ -4047,7 +4208,17 @@ def parse_bytes_literal(rest, ln):
     return out
 
 
-def signal_prologue(sigpipe_on, interrupts_on, scan_used=False):
+# The signals a program that owns something takes over, and what each one is.
+# SIGHUP belongs here with the other two: it is what closing a terminal window
+# and dropping a connection send, so leaving it at its default -- terminate,
+# past the tower -- meant the ordinary way a session ends was the one way the
+# tower did not run. SIGQUIT stays at its default on purpose: dumping core is
+# the whole point of it, and a program that tidied up first would be hiding the
+# state someone asked to see.
+SHUTDOWN_SIGNALS = ((1, "SIGHUP "), (2, "SIGINT "), (15, "SIGTERM"))
+
+
+def signal_prologue(sigpipe_on, interrupts_on, scan_used=False, opens_fds=False):
     """The rt_sigaction dispositions, emitted ahead of every declaration.
 
     Kept in one place because WHERE these land is load-bearing: `_sigaction` is
@@ -4058,6 +4229,11 @@ def signal_prologue(sigpipe_on, interrupts_on, scan_used=False):
         # before anything scans, and it is one CPUID pair -- see CPU_PROBE
         out.append("    _mereo_cpu();")
         out.append("")
+    if opens_fds:
+        # before the program can open anything, because after that it is too
+        # late to tell its own file from standard output -- see SYS_STDFD
+        out.append("    _stdfd();")
+        out.append("")
     if sigpipe_on:
         # ignore SIGPIPE (signal 13) so a write to a vanished reader returns
         # -EPIPE instead of killing the process; SIG_IGN = 1, and with no handler
@@ -4067,16 +4243,29 @@ def signal_prologue(sigpipe_on, interrupts_on, scan_used=False):
         out.append("    _sigaction(13, (long)_sigign);  /* SIGPIPE */")
         out.append("")
     if interrupts_on:
-        # install the stub for SIGINT (Ctrl-C) and SIGTERM (kill). The kernel
-        # C `struct sigaction` on x86-64 is {handler, flags, restorer, mask};
-        # a long[4] lays it out with no C type of our own. Flags: SA_RESTORER (0x4000000,
+        # install the stub for the shutdown signals. The kernel C `struct
+        # sigaction` on x86-64 is {handler, flags, restorer, mask}; a long[4]
+        # lays it out with no C type of our own. Flags: SA_RESTORER (0x4000000,
         # the flag x86-64 requires) | SA_SIGINFO (0x4, so the stub gets the
         # ucontext in %rdx to mask the shutdown signals); NO SA_RESTART, so the
         # interrupted syscall faults -EINTR rather than restarting.
+        #
+        # ...but only over a disposition that is not already SIG_IGN. An
+        # inherited ignore is an instruction from whoever started the program --
+        # it is what `nohup` sets, and what a shell without job control leaves on
+        # a background job so a terminal Ctrl-C does not reach it -- and taking
+        # the signal anyway overrides a decision that was not the program's to
+        # make. Only SIG_DFL and SIG_IGN survive an execve, so the one value
+        # worth testing for is SIG_IGN. The disposition is READ first rather than
+        # swapped and put back: two syscalls where one would do, and no window
+        # in which the ignore is not in force.
         out.append("    long _sigact[4] = "
                    "{ (long)mereo_sigstub, 0x4000004, 0, 0 };")
-        out.append("    _sigaction(2, (long)_sigact);   /* SIGINT  */")
-        out.append("    _sigaction(15, (long)_sigact);  /* SIGTERM */")
+        out.append("    long _sigold[4] = { 0, 0, 0, 0 };")
+        for num, name in SHUTDOWN_SIGNALS:
+            out.append(f"    _sigquery({num}, (long)_sigold);")
+            out.append(f"    if (_sigold[0] != 1) "
+                       f"_sigaction({num}, (long)_sigact);  /* {name} */")
         out.append("")
     return out
 
@@ -4454,6 +4643,12 @@ def flag_field_c(actual, buffers, ln):
 # from expression rendering and has neither in scope. A template holding a
 # layout port could not ask how big a field is without this.
 FIELD_SIZES = {}
+# A layout or flag view's own byte size, by type name. `const_offset` has
+# always answered `record.size` inside a lens offset, by reading `psize` off
+# the definition; the expression parser could not, so the same words meant a
+# number in one place and "not a buffer, view, or literal" in the other. One
+# table, filled where the layouts are elaborated, makes them agree.
+VIEW_SIZES = {}
 
 
 def size_of_c(actual, scalars, buffers, ln):
@@ -4474,6 +4669,8 @@ def size_of_c(actual, scalars, buffers, ln):
         return str(len(parse_bytes_literal(target, ln)))
     if target in FIELD_SIZES:
         return str(FIELD_SIZES[target])
+    if target in VIEW_SIZES:                 # `record.size` -- the TYPE's size
+        return str(VIEW_SIZES[target])
     if re.fullmatch(r"\w+", target) and target in buffers:
         # Whatever `buffer_size` puts in the array's brackets IS the size, and
         # it answers for a scalar-sized buffer too: the dimension is fixed at the
@@ -4939,7 +5136,7 @@ def call_parts(meth, valmap):
             # stating the floor cost a branch in every `find` -- which the
             # `versus` suite caught as an extra syscall.
             if prim.get("kind") == "helper" and val not in meth["bind"]:
-                # ANALYSIS ONLY. A helper is `always_inline` C, so GCC has its
+                # ANALYSIS ONLY. A helper is a C macro, so GCC has its
                 # body and can derive the range itself -- saying it again is
                 # the one thing measured to buy nothing and cost something:
                 # one such promise measured +10,995 instructions for a fact the
@@ -6379,6 +6576,12 @@ def hoist_guard_bounds(steps, slots):
 
 def plan(definitions, slots, steps, overrides):
     elaborate_classes(definitions)
+    VIEW_SIZES.clear()
+    for _name, _defn in definitions.items():
+        if "psize" in _defn:
+            VIEW_SIZES[_name] = _defn["psize"]
+        elif "bitwidth" in _defn:
+            VIEW_SIZES[_name] = _defn["bitwidth"]
     FIELD_SIZES.clear()
     for _sl in slots:
         if _sl.get("kind") != "instance":
@@ -7550,6 +7753,10 @@ def transpile(sources, prog):
         out.append(SYS_WRITE)
     if sigpipe_on or interrupts_on:
         out.append(SYS_SIGACTION)
+    if interrupts_on:
+        out.append(SYS_SIGQUERY)   # a disposition already SIG_IGN is left alone
+        out.append(SYS_STDFD)      # a program that opens can misplace 0/1/2
+        out.append(SYS_RERAISE)    # ...and one that catches owes a wait status
     out += [emit_asm_wrapper(p, PRIMITIVES[p]) for p in sorted(used)
             if PRIMITIVES[p].get("kind") == "asm"]
     _helpers = sorted({PRIMITIVES[p]["cfunc"] for p in used
@@ -7608,7 +7815,8 @@ def transpile(sources, prog):
     # Below it, GCC folds the dead zeroing away and the two forms are
     # byte-identical -- same zero-filled semantics, no instructions.
     body.extend(signal_prologue(sigpipe_on, interrupts_on,
-                                scan_used="_scan" in "\n".join(out)))
+                                scan_used="_scan" in "\n".join(out),
+                                opens_fds=interrupts_on))
     bufnames = {s["name"] for s in slots if s["kind"] == "buffer"
                 or (s["kind"] == "instance"
                     and definitions[s["definition"]].get("playout")
@@ -7694,6 +7902,13 @@ def transpile(sources, prog):
                             f"{path.replace(' ', '_')} = {init};")
     if fallible and stage_slot == "_status":
         body.append("    long _status = 0;")
+    if interrupts_on:
+        # which signal, if any, is the REASON this program is unwinding. Written
+        # only where a fault turns out to be -EINTR, read only at the tower's
+        # floor. A local rather than a global because every one of those places
+        # is in this one function -- `mereo_signo` has to be a global only
+        # because the signal stub, which cannot see a local, is what fills it.
+        body.append("    long _dying = 0;")
     if "_sink" in scalars:
         body.append("    long _sink = 0;")   # discarded out-ports land here
 
@@ -7807,6 +8022,18 @@ def transpile(sources, prog):
             # normal exit enters at the outermost-scope top; if inner-scope
             # floors sit above it (loop/block/method resources already released
             # at their own scope exit), jump past them -- they stay for faults.
+            #
+            # This `goto` reads like the happy path paying for the tower, and it
+            # does not: it is a jump whose target is known at compile time past
+            # blocks whose only predecessors are cold. Checked across all 46
+            # programs that emit one, by walking the DWARF line table for the
+            # instructions attributed to this exact line: ZERO, every time. GCC
+            # either folds it into the conditional above (inverting the branch),
+            # or drops it once block reordering has put the target next, or
+            # deletes the skipped floor entirely as unreachable. Straightening
+            # it in the emitter -- floors past the exit, each ending in a jump
+            # back -- would move a jump from a hot path that does not have one
+            # onto a cold path that does not need one.
             if cascade and (not exit_top or exit_top != cascade[0]["name"]):
                 body.append(f"    goto release_{exit_top};" if exit_top
                             else f"    goto {p['label']};")
@@ -7822,6 +8049,24 @@ def transpile(sources, prog):
                     body.append(f"    goto release_{f['chain']};" if f["chain"]
                                 else f"    goto {p['label']};")
             body.append(f"{p['label']}:")
+            if interrupts_on:
+                # the floor of the tower, and the last thing before the program
+                # is gone: everything it owned is released, so it can now die
+                # the way it was asked to rather than reporting success.
+                #
+                # UNLIKELY, like every other failure test here. This one sits on
+                # the path EVERY run takes -- the tower is the only way out --
+                # so without the hint GCC put `_reraise`'s twenty instructions
+                # on the fall-through and made the success path a taken branch
+                # over them. With it the exit is one linear run into
+                # `exit_group` and `_reraise` goes out of line. Measured: no
+                # program's instruction count TO COMPLETION moves (the test and
+                # its branch are there either way -- 128 against 128 on `copy`
+                # and `catview`, 326 on `ls`, 117 on `showcase`); what moves is
+                # +12 instructions of out-of-lining across 7 of 91 binaries,
+                # all of it in the cold copy.
+                body.append("    if (__builtin_expect(_dying, 0)) "
+                            "_reraise(_dying);")
         body.append(f"    {stmt}")
         if p["noreturn"]:
             body.append("    __builtin_unreachable();")
@@ -7906,13 +8151,18 @@ def transpile(sources, prog):
         # (-EPIPE). Skip the record and the status store (status keeps its
         # success value) and drop to the same tower floor -- graceful, exit 0.
         # Cold, so the happy path pays nothing.
-        graceful = ([("-4", "EINTR")] if interrupts_on else []) + \
-                   ([("-32", "EPIPE")] if sigpipe_on else [])
-        if graceful:
-            cond = " || ".join(f"{p['errsrc']} == {v}" for v, _ in graceful)
-            names = "/".join(n for _, n in graceful)
-            body.append(f"    if ({cond}) goto {p['target']};"
-                        f"   /* -{names}: graceful shutdown */")
+        # ...and the two are not the same event. A broken pipe is nobody's
+        # fault and nobody is waiting to hear about it, so it releases and
+        # exits 0. An interrupt is somebody's instruction: it releases the same
+        # way, and then says so in the wait status (see _reraise). Both skip
+        # the record and the status store and drop to the same tower floor.
+        if interrupts_on:
+            body.append(f"    if ({p['errsrc']} == -4) "
+                        f"{{ _dying = mereo_signo; goto {p['target']}; }}"
+                        f"   /* -EINTR: wind down, then die by the signal */")
+        if sigpipe_on:
+            body.append(f"    if ({p['errsrc']} == -32) goto {p['target']};"
+                        f"   /* -EPIPE: graceful shutdown */")
         body.append(f'    _write(2, (long)"{esc}", {len(text.encode())});')
         body.append(f"    _write_value({p['errsrc']});")
         body.append(f"    {stage_slot} = {p['code']};")

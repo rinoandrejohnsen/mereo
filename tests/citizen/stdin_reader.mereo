@@ -1,0 +1,18 @@
+-- Owns a descriptor opened for READING, then reads standard input. With fd 0
+-- closed at startup and no guard, `open` hands the program descriptor 0 and the
+-- read comes back with the file's contents instead of the caller's input.
+include "../../linux.mereo"
+
+program goes
+  capacity is 16
+  buffer is capacity bytes
+  count is 0
+
+  source is linux.file (path is "/tmp/mereo_citizen_source", flags is 0, mode is 0)
+
+  input is already linux.file (descriptor is 0)
+  output is already linux.file (descriptor is 1)
+
+  input.read (buffer is buffer, capacity is capacity, count is count)
+  output.write (buffer is buffer, count is count)
+end

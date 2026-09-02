@@ -1,44 +1,15 @@
 include "../linux.mereo"
 
 -- Socket demo: connect a TCP socket to a local server, read the bytes it
--- sends, and write them to the terminal. `connection` is a resource whose
--- lifecycle is socket() to open and close() to release; `reach` runs
--- connect(). Everything is a file descriptor, so once connected we read()
--- it like any file.
+-- sends, and write them to the terminal. The socket is linux.mereo's `socket`
+-- -- one descriptor, opened by socket(2) and closed by the release tower on
+-- every exit and every fault -- so this program declares no resource of its
+-- own. It used to carry a `connection` resource written out here, and
+-- server.mereo carried a second copy of the same thing.
 --
 -- The peer address is linux.mereo's `sockaddr_in` laid over 16 bytes. It used to
 -- be spelled out as a hex string, with a comment explaining which fields were
 -- network order -- the layout says that instead, and says it in one place.
-
-connection is
-  descriptor is -1
-  status is 0
-
-  acquire (domain, type, protocol) goes
-    linux.socket (domain is domain,
-                  type is type,
-                  protocol is protocol,
-                  descriptor is descriptor)
-  end
-
-  reach (address, length) goes
-    linux.connect (descriptor is descriptor,
-                   address is address,
-                   length is length,
-                   result is status)
-  end
-
-  read (buffer, capacity, count) goes
-    linux.read (descriptor is descriptor,
-                buffer is buffer,
-                capacity is capacity,
-                count is count)
-  end
-
-  release goes
-    linux.close (descriptor is descriptor)
-  end
-end
 
 program goes
   capacity is 4096
@@ -54,9 +25,9 @@ program goes
 
   terminal is already linux.file (descriptor is 1)
 
-  link is connection (domain is 2, type is 1, protocol is 0)
+  link is linux.socket (domain is 2, type is 1, protocol is 0)
 
-  link.reach (address is host, length is host.size)
+  link.connect (address is host, length is host.size)
 
   link.read (buffer is buffer, capacity is capacity, count is count)
 

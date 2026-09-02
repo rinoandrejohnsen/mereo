@@ -57,6 +57,15 @@
 # (the record format, the stage numbering, which errno values end a program
 # cleanly) is not the same as copying its instruction selection.
 #
+# One thing IS held constant on purpose, because it is a C idiom rather than a
+# choice about the program: the scaffolding in `_twin.h` is macros, as mereoc's
+# is. `static inline __attribute__((always_inline))` is not the same thing to
+# GCC -- an early `return` fires the `early return (on trees)` predictor, which
+# lays the caller out around a function boundary that inlining then removes --
+# and a case measuring that heuristic would not be measuring the two programs.
+# Converting the twins cost nothing (all nine at the same instruction count,
+# five byte-identical), which is the point: the comparison did not move.
+#
 # THE BASELINE. `baseline.txt` records where each case stands today. The suite
 # fails on DRIFT, in either direction, because a case getting better is as much
 # a thing to look at as a case getting worse. `--bless` rewrites it, and the

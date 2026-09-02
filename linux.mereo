@@ -7,6 +7,7 @@
 --   the syscall ABI    each one a raw `assembly "syscall"`, no injected wrapper
 --   file               THE acquired resource: a descriptor, closed by its scope
 --   directory          the same, opened with O_DIRECTORY and read by getdents64
+--   socket             one descriptor, opened by socket(2) -- connect, or bind/listen/accept
 --   mapping            mmap/munmap as an owned region
 --   files              the path operations -- stat, remove, rename, link, chmod
 --   clock              the time, and sleeping
@@ -617,6 +618,7 @@ linux is
                   flags is flags,
                   mode is mode,
                   descriptor is descriptor)
+      acquired
     end
 
     read (buffer, capacity, count) goes
@@ -624,6 +626,37 @@ linux is
                   buffer is buffer,
                   capacity is capacity,
                   count is count)
+    end
+
+    -- `read` hands back what had ARRIVED, which for a pipe, a socket or a
+    -- terminal is whatever the kernel found when it looked: four bytes of an
+    -- eight-byte message, 8192 of a 200000-byte stream. `write` above refuses
+    -- exactly that on the way out (`ensure written == count`); `fill` is the
+    -- same refusal on the way in. It comes back short only at end of stream, so
+    -- `count < capacity` MEANS the stream ended and nothing else -- which is
+    -- what lets a caller ask for a fixed-size header, or a whole small file, and
+    -- believe the answer.
+    --
+    --   header is 16 bytes
+    --   got is 0
+    --   source.fill (buffer is header, capacity is 16, count is got)
+    --   ensure got == 16
+    --
+    -- A stream whose length is not known still wants the outer refill loop --
+    -- see examples/wcl.mereo -- because `fill` bounds itself by the buffer it
+    -- was given, as any read must.
+    fill (buffer, capacity, count) goes
+      chunk is 0
+      count is 0
+      filling goes
+        read (descriptor is descriptor,
+                    buffer is buffer + count,
+                    capacity is capacity - count,
+                    count is chunk)
+        leave filling when chunk == 0
+        count is count + chunk
+        repeat filling when count < capacity
+      end
     end
 
     write (buffer, count, written) goes
@@ -740,6 +773,7 @@ linux is
              request is 21505,
              argument is backup,
              result is status)
+      acquired
     end
 
     snapshot (buffer) goes
@@ -814,6 +848,7 @@ linux is
                     flags is 65536,
                     mode is 0,
                     descriptor is descriptor)
+      acquired
     end
 
     read (buffer, capacity, count) goes
@@ -821,6 +856,120 @@ linux is
                         buffer is buffer,
                         capacity is capacity,
                         count is count)
+    end
+
+    release goes
+      close (descriptor is descriptor)
+    end
+  end
+
+  -- A socket: one descriptor, opened by socket(2) and closed by its scope like any
+  -- other. ONE resource is both a client and a server -- which it becomes is
+  -- which methods get called, and a method never called emits no code:
+  --
+  --   link is linux.socket (domain is 2, type is 1, protocol is 0)
+  --   link.connect (address is host, length is host.size)
+  --   link.read (buffer is buffer, capacity is capacity, count is count)
+  --
+  -- `read` hands back what had ARRIVED and `fill` refuses anything short --
+  -- the pair `file` carries, for a sharper reason here. A stream socket is
+  -- entitled to split a message across reads, so a fixed-size header read with
+  -- `read` is a bug that shows up only under load. Ask for one with `fill`.
+  --
+  -- `accept` hands back a DESCRIPTOR and not a resource, because a method
+  -- cannot make one. The caller adopts it, and the scope that adopted it is
+  -- what closes it -- so accepting inside a loop body releases each client at
+  -- the end of its own iteration, and the listener outlives them all:
+  --
+  --   server.accept (address is 0, length is 0, connection is peer)
+  --   client is adopted linux.socket (descriptor is peer)
+  --
+  -- Passing `address is 0, length is 0` says the peer's address is not wanted.
+  -- To learn it, pass a 16-byte backing and a scalar holding its size, and read
+  -- the answer through `sockaddr_in`.
+  --
+  -- Every fallible method carries a `result` out-port, for the reason every
+  -- `files` method does: leaving it unbound is the usual case, since the
+  -- primitive's own contract has already decided the call succeeded, and
+  -- binding it is what lets `or continue` repair one.
+  socket is
+    descriptor is 4 bytes as signed
+
+    acquire (domain, type, protocol) goes
+      socket (domain is domain,
+              type is type,
+              protocol is protocol,
+              descriptor is descriptor)
+      acquired
+    end
+
+    connect (address, length, result) goes
+      connect (descriptor is descriptor,
+               address is address,
+               length is length,
+               result is result)
+    end
+
+    bind (address, length, result) goes
+      bind (descriptor is descriptor,
+            address is address,
+            length is length,
+            result is result)
+    end
+
+    listen (backlog, result) goes
+      listen (descriptor is descriptor,
+              backlog is backlog,
+              result is result)
+    end
+
+    accept (address, length, connection) goes
+      accept (descriptor is descriptor,
+              address is address,
+              length is length,
+              connection is connection)
+    end
+
+    read (buffer, capacity, count) goes
+      read (descriptor is descriptor,
+            buffer is buffer,
+            capacity is capacity,
+            count is count)
+    end
+
+    -- capacity bytes or the stream ended: `count < capacity` MEANS the peer
+    -- stopped sending, and nothing else.
+    fill (buffer, capacity, count) goes
+      chunk is 0
+      count is 0
+      filling goes
+        read (descriptor is descriptor,
+              buffer is buffer + count,
+              capacity is capacity - count,
+              count is chunk)
+        leave filling when chunk == 0
+        count is count + chunk
+        repeat filling when count < capacity
+      end
+    end
+
+    write (buffer, count, written) goes
+      write (descriptor is descriptor,
+             buffer is buffer,
+             count is count,
+             written is written)
+      ensure written == count
+    end
+
+    -- setsockopt(2) -- `name` rather than `optname`, which is the syscall's own
+    -- abbreviation and not this library's.
+    option (level, name, value, length, result) goes
+      setsockopt (descriptor is descriptor,
+                  level is level,
+                  optname is name,
+                  value is value,
+                  length is length,
+                  result is result)
     end
 
     release goes
@@ -978,6 +1127,7 @@ linux is
                   descriptor is -1,
                   offset is 0,
                   address is address)
+      acquired
     end
 
     release goes
@@ -1224,7 +1374,7 @@ linux is
 
       passwd is file (path is "/etc/passwd", flags is 0, mode is 0)
 
-      passwd.read (buffer is buffer, capacity is capacity, count is count)
+      passwd.fill (buffer is buffer, capacity is capacity, count is count)
 
       text.format (value is uid, buffer is key, length is keylen)
 

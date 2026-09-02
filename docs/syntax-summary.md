@@ -159,6 +159,7 @@ file is                        -- define one
   descriptor is 4 bytes as signed
   acquire (path) goes
     open (path is path, descriptor is descriptor)
+    acquired                     -- ownership begins here; every acquire says so
   end
   release goes
     close (descriptor is descriptor)

@@ -82,7 +82,10 @@ giving up.
 Two errno values end a program without a diagnostic, because neither is a fault
 in the program: `EPIPE`, when the reader of a pipe has gone, and `EINTR`, which
 is how an interrupt reaches a program that owns something. Both route to the
-release tower like any other exit.
+release tower like any other exit — and then part company. A broken pipe exits
+0: nobody is waiting to hear about it. An interrupt dies of the signal that
+caused it, because a shell loop, `xargs` and any supervisor read a status of 0
+as work that finished.
 
 ## What this rules out
 

@@ -1,0 +1,327 @@
+include "../../core.mereo"
+
+-- A JSON reader for a body that arrived over the network: SINGLE PASS,
+-- ZERO COPY, no recursion, no allocation, and validating.
+--
+-- `core.mereo` already has a `json`, and this is not a replacement for it so
+-- much as the other half of the trade. That one finds a key by scanning and
+-- reads what follows -- fast, and it accepts `not json at all "name": "x"`
+-- without complaint, which is fine for a document you wrote and wrong for one
+-- a stranger sent. This one walks the document and refuses what is not JSON.
+--
+-- It hands back EVENTS rather than a tree, because a tree needs either an
+-- allocator or a mutated document and mereo wants neither:
+--
+--   kind 0  the document is complete       5  a string
+--        1  `{`   2  `}`                   6  a number
+--        3  `[`   4  `]`                   7 true  8 false  9 null
+--
+-- Every span points into the caller's own buffer -- nothing is copied and the
+-- document is never written to, so the same bytes can be walked twice and the
+-- HTTP head they arrived with stays intact beside them.
+--
+-- NESTING IS AN EXPLICIT STACK, one byte per level in a backing the caller
+-- supplies (1 = inside an object, 0 = inside an array), because mereo refuses
+-- general recursion and a hand-rolled recursive descent is exactly what it
+-- refuses. `depth_limit` is therefore also the maximum nesting -- a document
+-- deeper than that is refused rather than smashing the stack, which is the
+-- failure mode a network parser must not have.
+--
+--   nest is 64 bytes
+--   depth is 0
+--   mode is 0
+--   at is 0
+--   walk goes
+--     document.step (data is body, length is n, offset is at,
+--                    stack is nest, depth_limit is 64,
+--                    depth is depth, mode is mode,
+--                    kind is kind, key_at is k, key_length is klen,
+--                    value_at is v, value_length is vlen, result is at)
+--     leave walk when at < 0            -- -1 malformed, -2 wants more bytes
+--     leave walk when kind == 0         -- done
+--     ...
+--     repeat walk
+--   end
+--
+-- `mode` is the caller's too: 0 = a value is expected, or the close of an empty
+-- container; 1 = a value has just been read, so a comma or a close comes next;
+-- 2 = a comma has just been read, so a value MUST come next -- which is what
+-- makes `[1,]` malformed rather than a two-element array.
+--
+-- ESCAPES ARE VALIDATED, NOT DECODED. A string's span is the raw bytes between
+-- the quotes, so `\n` is still two bytes when you get it. Decoding needs
+-- somewhere to put the result, and that is the caller's buffer to choose.
+document is
+
+  -- the span INSIDE the quotes of the string at `at`, and the offset past its
+  -- closing quote. Escapes are stepped over so a `\"` does not end the string;
+  -- a raw control byte does not belong in one and is refused.
+  string_span (data, length, at, start, size, result) goes
+    i is at
+    c is 0
+    result is -2
+    start is 0
+    size is 0
+    read goes
+      i is i + 1
+      start is i
+      body goes
+        leave body when i >= length
+        c is [data + i : 1]
+        leave body when c == 34
+        result is -1 when c < 32
+        leave read when c < 32
+        i is i + 1 when c == 92
+        result is -1 when i >= length
+        leave read when i >= length
+        i is i + 1
+        repeat body
+      end
+      leave read when i >= length
+      size is i - start
+      result is i + 1
+    end
+  end
+
+  step (data, length, offset, stack, depth_limit, depth, mode,
+        kind, key_at, key_length, value_at, value_length, result) goes
+    i is offset
+    c is 0
+    d is 0
+    at is 0
+    size is 0
+    ok is 0
+    outcome is 0
+
+    kind is 0
+    key_at is data
+    key_length is 0
+    value_at is data
+    value_length is 0
+    result is -2
+
+    walk goes
+
+      blanks goes
+        leave blanks when i >= length
+        c is [data + i : 1]
+        leave blanks when c != 32 && c != 9 && c != 13 && c != 10
+        i is i + 1
+        repeat blanks
+      end
+
+      -- out of bytes: complete only if the root value has been read
+      ended goes
+        leave ended when i < length
+        result is i when depth == 0 && mode == 1
+        leave step
+      end
+
+      c is [data + i : 1]
+
+      -- a closing bracket, which must match what the stack says is open
+      closes goes
+        leave closes when c != 125 && c != 93
+        result is -1 when depth == 0
+        leave step when depth == 0
+        result is -1 when mode == 2
+        leave step when mode == 2
+        d is [stack + depth - 1 : 1]
+        ok is 1
+        ok is 0 when c == 125 && d != 1
+        ok is 0 when c == 93 && d != 0
+        result is -1 when ok == 0
+        leave step when ok == 0
+        depth is depth - 1
+        mode is 1
+        kind is 2 when c == 125
+        kind is 4 when c == 93
+        result is i + 1
+        leave step
+      end
+
+      -- a comma separates, and then a value MUST follow
+      commas goes
+        leave commas when c != 44
+        result is -1 when mode != 1
+        leave step when mode != 1
+        mode is 2
+        i is i + 1
+        repeat walk
+      end
+
+      -- anything else is a value, and one may not follow another
+      result is -1 when mode == 1
+      leave step when mode == 1
+
+      -- inside an object every value is preceded by a key and a colon
+      member goes
+        leave member when depth == 0
+        d is [stack + depth - 1 : 1]
+        leave member when d != 1
+        result is -1 when c != 34
+        leave step when c != 34
+        document.string_span (data is data, length is length, at is i,
+                              start is at, size is size, result is outcome)
+        result is outcome when outcome < 0
+        leave step when outcome < 0
+        key_at is data + at
+        key_length is size
+        i is outcome
+        gap goes
+          leave gap when i >= length
+          c is [data + i : 1]
+          leave gap when c != 32 && c != 9 && c != 13 && c != 10
+          i is i + 1
+          repeat gap
+        end
+        leave step when i >= length
+        c is [data + i : 1]
+        result is -1 when c != 58
+        leave step when c != 58
+        i is i + 1
+        after goes
+          leave after when i >= length
+          c is [data + i : 1]
+          leave after when c != 32 && c != 9 && c != 13 && c != 10
+          i is i + 1
+          repeat after
+        end
+        leave step when i >= length
+        c is [data + i : 1]
+      end
+
+      -- an object or an array opens: push what it is, and expect a value
+      opens goes
+        leave opens when c != 123 && c != 91
+        result is -1 when depth >= depth_limit
+        leave step when depth >= depth_limit
+        d is 1 when c == 123
+        d is 0 when c == 91
+        [stack + depth : 1] is d
+        depth is depth + 1
+        mode is 0
+        kind is 1 when c == 123
+        kind is 3 when c == 91
+        result is i + 1
+        leave step
+      end
+
+      -- a string
+      strings goes
+        leave strings when c != 34
+        document.string_span (data is data, length is length, at is i,
+                              start is at, size is size, result is outcome)
+        result is outcome when outcome < 0
+        leave step when outcome < 0
+        value_at is data + at
+        value_length is size
+        kind is 5
+        mode is 1
+        result is outcome
+        leave step
+      end
+
+      -- the three literals, each spelled out so a prefix cannot pass
+      words goes
+        leave words when c != 116 && c != 102 && c != 110
+        at is i
+        size is 4
+        size is 5 when c == 102
+        leave step when i + size > length
+        ok is 0
+        pick goes
+          c == 116 goes
+            text.equals (data is data + i, length is 4, other is "true",
+                         other_length is 4, result is ok)
+            leave pick
+          end
+          c == 102 goes
+            text.equals (data is data + i, length is 5, other is "false",
+                         other_length is 5, result is ok)
+            leave pick
+          end
+          text.equals (data is data + i, length is 4, other is "null",
+                       other_length is 4, result is ok)
+        end
+        result is -1 when ok == 0
+        leave step when ok == 0
+        kind is 7 when c == 116
+        kind is 8 when c == 102
+        kind is 9 when c == 110
+        value_at is data + i
+        value_length is size
+        mode is 1
+        result is i + size
+        leave step
+      end
+
+      -- a number: an optional sign, digits, an optional fraction, an optional
+      -- exponent. Every part is checked for at least one digit, so `-`, `1.`
+      -- and `1e` are all refused.
+      numbers goes
+        at is i
+        result is -1 when c != 45 && (c < 48 || c > 57)
+        leave step when c != 45 && (c < 48 || c > 57)
+        i is i + 1 when c == 45
+        ok is 0
+        integral goes
+          leave integral when i >= length
+          c is [data + i : 1]
+          leave integral when c < 48 || c > 57
+          ok is 1
+          i is i + 1
+          repeat integral
+        end
+        result is -1 when ok == 0
+        leave step when ok == 0
+        fraction goes
+          leave fraction when i >= length
+          c is [data + i : 1]
+          leave fraction when c != 46
+          i is i + 1
+          ok is 0
+          digits goes
+            leave digits when i >= length
+            c is [data + i : 1]
+            leave digits when c < 48 || c > 57
+            ok is 1
+            i is i + 1
+            repeat digits
+          end
+          result is -1 when ok == 0
+          leave step when ok == 0
+        end
+        exponent goes
+          leave exponent when i >= length
+          c is [data + i : 1]
+          leave exponent when c != 101 && c != 69
+          i is i + 1
+          skip goes
+            leave skip when i >= length
+            c is [data + i : 1]
+            leave skip when c != 43 && c != 45
+            i is i + 1
+          end
+          ok is 0
+          more goes
+            leave more when i >= length
+            c is [data + i : 1]
+            leave more when c < 48 || c > 57
+            ok is 1
+            i is i + 1
+            repeat more
+          end
+          result is -1 when ok == 0
+          leave step when ok == 0
+        end
+        value_at is data + at
+        value_length is i - at
+        kind is 6
+        mode is 1
+        result is i
+        leave step
+      end
+    end
+  end
+end

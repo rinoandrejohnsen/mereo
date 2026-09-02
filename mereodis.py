@@ -39,7 +39,7 @@ def dwarf_names(binary):
     in the binary?" needs: mereocheck read the lossy map and reported a road that
     was laid out perfectly as dissolved.
 
-    Inlined instances (the always_inline syscall wrappers) carry no name of
+    Expanded helper macros (the syscall wrappers) carry no name of
     their own -- they point at the abstract DIE via DW_AT_abstract_origin --
     so this is two passes: DIE offset -> name first, then locations."""
     text = run(["objdump", "--dwarf=info", binary]).splitlines()

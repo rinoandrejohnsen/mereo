@@ -1,0 +1,25 @@
+include "../../linux.mereo"
+
+-- A single-call `acquire` with no `acquired`. The boundary is obvious here --
+-- there is only one call it could be -- and it is still refused, because
+-- obvious and STATED are not the same thing. Writing it makes the point where
+-- a resource begins to hold its thing one greppable word, and it means adding
+-- a second call later (a bind, a seek, an ioctl) does not turn a program that
+-- compiled into one that does not.
+
+holder is
+  descriptor is 4 bytes as signed
+
+  acquire (path) goes
+    linux.open (path is path, flags is 0, mode is 0, descriptor is descriptor)
+  end
+
+  release goes
+    linux.close (descriptor is descriptor)
+  end
+end
+
+program goes
+  h is holder (path is "/dev/null")
+  ensure h.descriptor >= 0
+end

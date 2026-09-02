@@ -2,6 +2,11 @@ include "../linux.mereo"
 
 -- copy: file-to-file, two owned `file` resources; the derived release tower
 -- closes them in reverse (sink then source).
+--
+-- The loop is what makes it a copy rather than a first-4096-bytes: `read` is
+-- bounded by the buffer it was given, so a file bigger than one buffer takes
+-- more than one pass, and a `read` from anything but a regular file can come
+-- back short before end of stream besides.
 
 program goes
   capacity is 4096
@@ -13,8 +18,12 @@ program goes
 
   sink is linux.file (path is "copy_out.txt", flags is 577, mode is 420)
 
-  source.read (buffer is buffer, capacity is capacity, count is count)
+  pass goes
+    source.read (buffer is buffer, capacity is capacity, count is count)
+    leave pass when count == 0
 
-  sink.write (buffer is buffer, count is count, written is written)
+    sink.write (buffer is buffer, count is count, written is written)
+    repeat pass
+  end
 
 end

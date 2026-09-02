@@ -23,6 +23,19 @@ That builds to a 784-byte executable.
 
 Tagged releases are the reference; this is what `main` carries beyond `v0.2`.
 
+- **Six things a Linux program owes its surroundings, now covered.** The three
+  standard descriptors are guaranteed to be the standard descriptors, so a
+  program started with one of them closed no longer writes its output into the
+  file it opened. `SIGHUP` joins `SIGINT`/`SIGTERM`, because closing a terminal
+  is the ordinary way a session ends and it was the one way the release tower
+  did not run. None of the three is taken over where it arrived already
+  ignored, so `nohup` and a background job mean what they say. An interrupted
+  program now dies of the signal once the tower has run, so a shell loop,
+  `xargs` and a supervisor can tell a shutdown from a finished job. And
+  `file.fill` gives `read` the completeness `write` always had, with the
+  examples that are filters looping as filters must. `tests/citizen/run.sh` is
+  a sixth suite, and it observes all of it from outside the process. Ctrl-Z is
+  the one left open: see [the doc](docs/citizen.md).
 - **`new` means a fresh instance, and nothing else.** `NAME is blank CLASS` is
   now `NAME is new CLASS`, and `new NAME is VALUE` on scalars is **removed** --
   a unique name already says a scalar is meant to be fresh, so the keyword was
@@ -115,7 +128,7 @@ is kept -- a syscall's contract, stated to GCC as an assumption, which is worth
 ./test.sh                          # everything: parity, black box, build gate
 ```
 
-`./test.sh` is the gate that matters. It runs five suites and a build gate:
+`./test.sh` is the gate that matters. It runs six suites and a build gate:
 
 | suite | what it proves |
 | --- | --- |
@@ -124,6 +137,7 @@ is kept -- a syscall's contract, stated to GCC as an assumption, which is worth
 | `tests/versus/run.sh` | what an abstraction costs, against hand-written C doing the same job |
 | `tests/namespaces/run.sh` | that a namespace means what C++ means by one, on nine questions |
 | `tests/checking/run.sh` | what the compiler catches, against C++ with concepts and Zig |
+| `tests/citizen/run.sh` | what the program does when the system does something to it: signals, closed descriptors, short reads |
 | `./build.sh` | every program compiles, and every crossroad's layout holds on the assembly |
 
 ## The guide

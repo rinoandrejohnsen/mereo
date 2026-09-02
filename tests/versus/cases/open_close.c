@@ -7,13 +7,14 @@
 
 __attribute__((force_align_arg_pointer, externally_visible))
 void _start() {
+    GUARD_STDFD();
     IGNORE_SIGPIPE();
     CLEANUP_ON_INTERRUPT();
 
     unsigned char buffer[64];
     long count = 0;
     int terminal = 1;
-    long status = 0, sink = 0;
+    long status = 0, dying = 0, sink = 0;
 
     int source = _sys3(SYS_open, (long)"lorem_ipsum.txt", 0, 0);
     if (__builtin_expect(!(source >= 0), 0)) goto err_open;
@@ -27,22 +28,26 @@ void _start() {
 release_source:
     _sys1(SYS_close, source);
 out:
+    DIE_AS_ASKED(dying);
     _exit_group(status);
 
 err_open:
-    if (source == -4 || source == -32) goto out;
+    if (source == -4) { dying = twin_signo; goto out; }
+    if (source == -32) goto out;
     RECORD("open_close: 1: source \"lorem_ipsum.txt\": ", source);
     status = 1;
     goto out;
 
 err_read:
-    if (count == -4 || count == -32) goto release_source;
+    if (count == -4) { dying = twin_signo; goto release_source; }
+    if (count == -32) goto release_source;
     RECORD("open_close: 2: read source: ", count);
     status = 1;
     goto release_source;
 
 err_write:
-    if (sink == -4 || sink == -32) goto release_source;
+    if (sink == -4) { dying = twin_signo; goto release_source; }
+    if (sink == -32) goto release_source;
     RECORD("open_close: 3: write terminal: ", sink);
     status = 1;
     goto release_source;

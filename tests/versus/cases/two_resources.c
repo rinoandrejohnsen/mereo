@@ -13,13 +13,14 @@
 
 __attribute__((force_align_arg_pointer, externally_visible))
 void _start() {
+    GUARD_STDFD();
     IGNORE_SIGPIPE();
     CLEANUP_ON_INTERRUPT();
 
     unsigned char buffer[64];
     long count = 0;
     int terminal = 1;
-    long status = 0, sink = 0;
+    long status = 0, dying = 0, sink = 0;
 
     int first = _sys3(SYS_open, (long)"lorem_ipsum.txt", 0, 0);
     if (__builtin_expect(!(first >= 0), 0)) goto err_first;
@@ -38,28 +39,33 @@ release_second:
 release_first:
     _sys1(SYS_close, first);
 out:
+    DIE_AS_ASKED(dying);
     _exit_group(status);
 
 err_first:
-    if (first == -4 || first == -32) goto out;
+    if (first == -4) { dying = twin_signo; goto out; }
+    if (first == -32) goto out;
     RECORD("two_resources: 1: first \"lorem_ipsum.txt\": ", first);
     status = 1;
     goto out;
 
 err_second:
-    if (second == -4 || second == -32) goto release_first;
+    if (second == -4) { dying = twin_signo; goto release_first; }
+    if (second == -32) goto release_first;
     RECORD("two_resources: 2: second \"lorem_ipsum.txt\": ", second);
     status = 1;
     goto release_first;
 
 err_read:
-    if (count == -4 || count == -32) goto release_second;
+    if (count == -4) { dying = twin_signo; goto release_second; }
+    if (count == -32) goto release_second;
     RECORD("two_resources: 3: read second: ", count);
     status = 1;
     goto release_second;
 
 err_write:
-    if (sink == -4 || sink == -32) goto release_second;
+    if (sink == -4) { dying = twin_signo; goto release_second; }
+    if (sink == -32) goto release_second;
     RECORD("two_resources: 4: write terminal: ", sink);
     status = 1;
     goto release_second;

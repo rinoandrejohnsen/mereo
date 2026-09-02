@@ -9,6 +9,7 @@ sib_a is
   fd_a is 101
   acquire goes
     linux.close (descriptor is 201)
+    acquired
   end
   release goes
     linux.close (descriptor is fd_a)
@@ -19,6 +20,7 @@ sib_b is
   fd_b is 102
   acquire goes
     linux.close (descriptor is 202)
+    acquired
   end
   release goes
     linux.close (descriptor is fd_b)
@@ -29,6 +31,7 @@ sib_c is
   fd_c is 103
   acquire goes
     linux.close (descriptor is 203)
+    acquired
   end
   release goes
     linux.close (descriptor is fd_c)

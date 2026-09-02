@@ -1,0 +1,568 @@
+include "../../core.mereo"
+
+-- An HTTP/1.x REQUEST parser: zero-copy, no allocation, and re-runnable on a
+-- buffer that is still filling.
+--
+-- Written from RFC 9112, with the answer shape the well-known C parsers use,
+-- because it is the shape that suits a stream:
+--
+--   result >= 0   the head is complete, and this many bytes long
+--   result == -2  what is here so far is VALID but not finished -- read more
+--                 and call again with the longer buffer
+--   result == -1  malformed, and reading further will not repair it
+--
+-- Nothing is copied. `method`, `path` and every header name and value come
+-- back as an ADDRESS into the caller's own buffer plus a length, so the
+-- parse costs one pass and no memory. The caller must keep that buffer alive
+-- and unmoved for as long as it reads the answers.
+--
+-- `request.parse` and `response.parse` differ only in their first line: after
+-- it, both hand off to `message.headers`, which is where the field lines are
+-- actually read. RFC 9112 calls both of them a MESSAGE, and so does this.
+--
+-- WHAT BOUNDS THE WORK, which a parser fed by the network has to say out loud:
+--
+--   * the parser never reads past `length`, so the CALLER'S BUFFER is the outer
+--     bound. A server that keeps growing a buffer while `-2` says "read more"
+--     has removed that bound and must put back one of its own.
+--   * `line_limit` caps any single line -- the request or status line, and each
+--     field line -- measured to its CR, not counting the CRLF. 8192 is the
+--     usual choice. A line over it is malformed, not incomplete: no amount of
+--     further reading repairs it.
+--   * `limit` caps how many header records will be written.
+--
+-- `body` is where the message's content begins -- the byte after the empty line
+-- that ends the head. It is the same place `result` names, handed over as an
+-- ADDRESS so it goes straight into a body parser without the caller redoing the
+-- arithmetic. It means something only once `result >= 0`; HOW MANY bytes are
+-- there is the caller's business, out of `Content-Length` or the chunked
+-- decoder.
+--
+-- The line check is made once per line rather than once per byte, so it does
+-- not touch the scan loops. That is safe because the scan is already bounded
+-- by `length`: the worst a peer buys is one pass over bytes the caller had
+-- already accepted into its own buffer.
+--
+-- Headers land in a table the caller owns, as `field` records. Read them back
+-- with `array`, which counts records rather than bytes:
+--
+--   rows is already array (data is slots, count is seen, limit is 64,
+--                          stride is field.size)
+--   rows.at (index is i, address is where)
+--   one is [where : field.size] as field
+--
+-- The parser itself writes those records with raw `[...]` stores rather than
+-- through `array`, and not by preference: a lens may not be laid over a
+-- TEMPLATE LOCAL, because lenses are resolved before anything is spliced and
+-- the local does not exist yet. So the view serves the reader and the stores
+-- serve the writer. See todo.md.
+--
+-- STRICT where the RFC allows a choice, since a parser that guesses is where
+-- request smuggling comes from:
+--
+--   * CRLF only. A bare LF is refused; §2.2 makes recognising it optional.
+--   * obs-fold (a header continued on an indented line) is refused, which
+--     §5.2 permits and recommends -- it falls out of the token rule, since a
+--     leading space is not a token character.
+--   * a header with an empty name is refused; an empty VALUE is allowed.
+
+-- One parsed header: two spans into the caller's buffer.
+field is
+  name is 8 bytes
+  name_length is 8 bytes
+  value is 8 bytes
+  value_length is 8 bytes
+end
+
+-- One entry per byte value, three class bits in each:
+--
+--   1  an RFC 9110 token character  -- a method name, a field name
+--   2  allowed in a field value     -- VCHAR / SP / HTAB / obs-text, not DEL
+--   4  allowed in a request target  -- printable, not space, not DEL
+--
+-- One load answers what four compares and four branches used to, which is
+-- worth 1,495 instructions per parse on a 287-byte request -- see todo.md,
+-- where the measurement is. A CR scores 0 in every class, so the scan loops
+-- stop on it without testing for it, and which of "the value ended" or "that
+-- byte is illegal" happened is settled once, after the loop, instead of twice
+-- per byte inside it.
+--
+-- Generated, and on one line because the only place a mereo line continues is
+-- an open argument list.
+token_class is constant bytes 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 7, 6, 7, 7, 7, 7, 7, 6, 6, 7, 7, 6, 7, 7, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 6, 7, 6, 7, 0, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6
+
+-- What a request and a response share: the token test, and the field lines.
+message is
+
+  -- RFC 9110 §5.6.2 token: ALPHA / DIGIT / "!#$%&'*+-.^_`|~", answered by one
+  -- load. Method names and field names are both tokens, and between them they
+  -- are most of the bytes this parser inspects one at a time.
+  token (byte, result) goes
+    result is [token_class + byte : 1] & 1
+  end
+
+  -- The field lines and the empty line that ends them, starting at `offset`.
+  -- `result` is the whole message head's length when it completes, so a caller
+  -- adds nothing to it.
+  headers (data, length, offset, line_limit, slots, limit, count, body,
+           result) goes
+    i is offset
+    start is 0
+    c is 0
+    d is 0
+    ok is 0
+    stop is 0
+    value_at is 0
+    value_end is 0
+    edge is 0
+    line_at is 0
+    result is -2
+    count is 0
+    body is data
+
+    fields goes
+      line_at is i
+      leave headers when i + 1 >= length
+      c is [data + i : 1]
+      d is [data + i + 1 : 1]
+      stop is (c == 13) & (d == 10)
+      i is i + 2 when stop == 1
+      body is data + i when stop == 1
+      result is i when stop == 1
+      leave headers when stop == 1
+
+        -- the NAME: token characters, then a colon
+      start is i
+      scan_name goes
+        leave scan_name when i >= length
+        c is [data + i : 1]
+        leave scan_name when c == 58
+        message.token (byte is c, result is ok)
+        result is -1 when ok == 0
+        leave headers when ok == 0
+        i is i + 1
+        repeat scan_name
+      end
+      leave headers when i >= length
+      result is -1 when i == start
+      leave headers when i == start
+      [slots + count * field.size + 0 : 8] is data + start
+      [slots + count * field.size + 8 : 8] is i - start
+      i is i + 1
+
+      -- optional whitespace, which belongs to neither side
+      skip goes
+        leave skip when i >= length
+        c is [data + i : 1]
+        leave skip when c != 32 && c != 9
+        i is i + 1
+        repeat skip
+      end
+      leave headers when i >= length
+
+      -- the VALUE: up to the CR, refusing control characters
+      value_at is i
+      scan_value goes
+        leave scan_value when i >= length
+        c is [data + i : 1]
+        leave scan_value when ([token_class + c : 1] & 2) == 0
+        i is i + 1
+        repeat scan_value
+      end
+      leave headers when i + 1 >= length
+      edge is [data + i : 1]
+      result is -1 when edge != 13
+      leave headers when edge != 13
+      d is [data + i + 1 : 1]
+      result is -1 when d != 10
+      leave headers when d != 10
+      result is -1 when i - line_at > line_limit
+      leave headers when i - line_at > line_limit
+
+      -- trailing whitespace is not part of the value either
+      value_end is i
+      trim goes
+        leave trim when value_end <= value_at
+        c is [data + value_end - 1 : 1]
+        leave trim when c != 32 && c != 9
+        value_end is value_end - 1
+        repeat trim
+      end
+      [slots + count * field.size + 16 : 8] is data + value_at
+      [slots + count * field.size + 24 : 8] is value_end - value_at
+
+      -- the table is the caller's, and running past it is the caller's
+      -- mistake to hear about, not a fault to die of
+      count is count + 1
+      result is -1 when count > limit
+      leave headers when count > limit
+      i is i + 2
+      repeat fields
+    end
+  end
+end
+
+request is
+
+  parse (data, length, line_limit, method, method_length, path, path_length,
+         minor, slots, limit, count, body, result) goes
+    i is 0
+    start is 0
+    c is 0
+    d is 0
+    ok is 0
+    bad is 0
+    gap is 0
+
+    result is -2
+    count is 0
+    body is data
+    method is data
+    method_length is 0
+    path is data
+    path_length is 0
+    minor is 0
+
+    head goes
+
+      -- the METHOD: token characters, then one space
+      start is i
+      scan_method goes
+        leave scan_method when i >= length
+        c is [data + i : 1]
+        leave scan_method when c == 32
+        message.token (byte is c, result is ok)
+        result is -1 when ok == 0
+        leave head when ok == 0
+        i is i + 1
+        repeat scan_method
+      end
+      leave head when i >= length
+      method is data + start
+      method_length is i - start
+      result is -1 when method_length == 0
+      leave head when method_length == 0
+      i is i + 1
+
+      -- the TARGET: anything the target class allows, then one space
+      start is i
+      scan_path goes
+        leave scan_path when i >= length
+        c is [data + i : 1]
+        leave scan_path when ([token_class + c : 1] & 4) == 0
+        i is i + 1
+        repeat scan_path
+      end
+      leave head when i >= length
+      gap is [data + i : 1]
+      result is -1 when gap != 32
+      leave head when gap != 32
+      path is data + start
+      path_length is i - start
+      result is -1 when path_length == 0
+      leave head when path_length == 0
+      i is i + 1
+
+      -- the VERSION: `HTTP/1.` a digit, then CRLF -- ten bytes exactly, so
+      -- fewer than ten left is INCOMPLETE and not yet wrong
+      leave head when i + 10 > length
+      ok is 0
+      text.equals (data is data + i, length is 7,
+                   other is "HTTP/1.", other_length is 7, result is ok)
+      result is -1 when ok == 0
+      leave head when ok == 0
+      i is i + 7
+      c is [data + i : 1]
+      text.digit (byte is c, result is ok)
+      result is -1 when ok == 0
+      leave head when ok == 0
+      minor is c - 48
+      i is i + 1
+      c is [data + i : 1]
+      d is [data + i + 1 : 1]
+      bad is (c != 13) | (d != 10)
+      result is -1 when bad == 1
+      leave head when bad == 1
+      result is -1 when i > line_limit
+      leave head when i > line_limit
+      i is i + 2
+
+      message.headers (data is data, length is length, offset is i,
+                       line_limit is line_limit, body is body,
+                       slots is slots, limit is limit, count is count,
+                       result is result)
+    end
+  end
+end
+
+-- A RESPONSE differs from a request only in its first line: the version comes
+-- first, then a three-digit status, then a reason phrase that may be empty.
+--
+--   HTTP/1.1 404 Not Found
+--
+-- The reason phrase is taken VERBATIM between the space and the CR -- unlike a
+-- field value it is not trimmed, because RFC 9112 §4 gives it no OWS rule and
+-- inventing one would silently change what a server said. The space after the
+-- status code IS required here, so `HTTP/1.1 200` with nothing after it is
+-- refused; the RFC requires it, and being lenient about it is one line to
+-- change if a real peer ever needs it.
+response is
+
+  parse (data, length, line_limit, minor, status, reason, reason_length,
+         slots, limit, count, body, result) goes
+    i is 0
+    start is 0
+    c is 0
+    d is 0
+    ok is 0
+    bad is 0
+    one is 0
+    ten is 0
+    hundred is 0
+
+    result is -2
+    count is 0
+    body is data
+    minor is 0
+    status is 0
+    reason is data
+    reason_length is 0
+
+    head goes
+
+      -- `HTTP/1.` a digit, a space, three digits, a space: fifteen bytes at
+      -- least, counting the CRLF that a reason phrase of nothing still needs
+      leave head when i + 15 > length
+      ok is 0
+      text.equals (data is data + i, length is 7,
+                   other is "HTTP/1.", other_length is 7, result is ok)
+      result is -1 when ok == 0
+      leave head when ok == 0
+      i is i + 7
+      c is [data + i : 1]
+      text.digit (byte is c, result is ok)
+      result is -1 when ok == 0
+      leave head when ok == 0
+      minor is c - 48
+      i is i + 1
+      c is [data + i : 1]
+      result is -1 when c != 32
+      leave head when c != 32
+      i is i + 1
+
+      -- the STATUS: exactly three digits, which is the whole of the code
+      hundred is [data + i : 1]
+      ten is [data + i + 1 : 1]
+      one is [data + i + 2 : 1]
+      bad is (hundred < 48) | (hundred > 57) | (ten < 48) | (ten > 57)
+      bad is 1 when one < 48
+      bad is 1 when one > 57
+      result is -1 when bad == 1
+      leave head when bad == 1
+      status is (hundred - 48) * 100 + (ten - 48) * 10 + one - 48
+      i is i + 3
+      c is [data + i : 1]
+      result is -1 when c != 32
+      leave head when c != 32
+      i is i + 1
+
+      -- the REASON PHRASE: the field-value class, up to the CR, kept as sent
+      start is i
+      scan_reason goes
+        leave scan_reason when i >= length
+        c is [data + i : 1]
+        leave scan_reason when ([token_class + c : 1] & 2) == 0
+        i is i + 1
+        repeat scan_reason
+      end
+      leave head when i + 1 >= length
+      c is [data + i : 1]
+      d is [data + i + 1 : 1]
+      bad is (c != 13) | (d != 10)
+      result is -1 when bad == 1
+      leave head when bad == 1
+      reason is data + start
+      reason_length is i - start
+      result is -1 when i > line_limit
+      leave head when i > line_limit
+      i is i + 2
+
+      message.headers (data is data, length is length, offset is i,
+                       line_limit is line_limit, body is body,
+                       slots is slots, limit is limit, count is count,
+                       result is result)
+    end
+  end
+end
+
+-- CHUNKED transfer coding (RFC 9112 §7.1), decoded as a stream.
+--
+-- This is the one part that must remember something between calls, because a
+-- chunk can be split across reads. That state -- which part of the grammar we
+-- are in, and how much of the current chunk is still owed -- is carried in two
+-- PORTS the caller holds, rather than in a resource's fields, so the decoder
+-- owns nothing and two bodies can be decoded at once without two of it:
+--
+--   phase is 0
+--   remaining is 0
+--   at is 0
+--   more goes
+--     chunked.step (data is buf, length is n, offset is at,
+--                   phase is phase, remaining is remaining,
+--                   body_offset is p, body_length is m,
+--                   finished is done, result is at)
+--     leave more when at < 0
+--     ...the m bytes at `buf + p` are body...
+--     leave more when done == 1
+--     repeat more
+--   end
+--
+-- Nothing is copied, which is the difference from the usual in-place decoder:
+-- `step` hands back an OFFSET into the caller's own buffer and a length, and a
+-- chunk split over two reads simply comes back as two spans. An offset rather
+-- than an address because it composes with `result`, which is one too. `result` is the offset to
+-- carry into the next call, or -1 malformed, or -2 for "no progress possible
+-- with these bytes, read more". `body_length` of 0 is normal and means the
+-- call made structural progress without reaching body bytes.
+--
+-- Chunk extensions are parsed and ignored, which RFC 9112 §7.1.1 permits.
+-- TRAILER fields are consumed and discarded rather than reported -- §7.1.2
+-- lets a recipient drop them, and reporting them would need the caller's table
+-- threaded through a second time. If they are ever wanted, that is the change.
+chunked is
+
+  step (data, length, offset, phase, remaining, body_offset, body_length,
+        finished, result) goes
+    i is offset
+    c is 0
+    d is 0
+    value is 0
+    digits is 0
+    take is 0
+    left is 0
+    next_phase is 0
+
+    body_offset is i
+    body_length is 0
+    finished is 0
+    result is -2
+
+    finished is 1 when phase == 4
+    result is i when phase == 4
+    leave step when phase == 4
+
+    -- 1. the chunk-size line, with any extension after a semicolon
+    size_line goes
+      leave size_line when phase != 0
+      hex goes
+        leave hex when i >= length
+        c is [data + i : 1]
+        d is 16
+        d is c - 48 when c >= 48 && c <= 57
+        d is c - 87 when c >= 97 && c <= 102
+        d is c - 55 when c >= 65 && c <= 70
+        leave hex when d == 16
+        result is -1 when digits >= 16
+        leave step when digits >= 16
+        value is value * 16 + d
+        digits is digits + 1
+        i is i + 1
+        repeat hex
+      end
+      leave step when i >= length
+      result is -1 when digits == 0
+      leave step when digits == 0
+
+      -- an extension runs to the CR and says nothing this needs
+      skip_ext goes
+        leave skip_ext when i >= length
+        c is [data + i : 1]
+        leave skip_ext when c == 13
+        i is i + 1
+        repeat skip_ext
+      end
+      leave step when i + 1 >= length
+      c is [data + i : 1]
+      d is [data + i + 1 : 1]
+      result is -1 when c != 13
+      leave step when c != 13
+      result is -1 when d != 10
+      leave step when d != 10
+      i is i + 2
+
+      remaining is value
+      next_phase is 1
+      next_phase is 3 when value == 0
+      phase is next_phase
+      result is i
+      leave step
+    end
+
+    -- 2. chunk data: whatever of it is here, which may be none of it
+    in_data goes
+      leave in_data when phase != 1
+      left is length - i
+      leave step when left == 0
+      take is remaining
+      take is left when left < remaining
+      body_offset is i
+      body_length is take
+      remaining is remaining - take
+      i is i + take
+      next_phase is 1
+      next_phase is 2 when remaining == 0
+      phase is next_phase
+      result is i
+      leave step
+    end
+
+    -- 3. the CRLF that closes chunk data
+    after_data goes
+      leave after_data when phase != 2
+      leave step when i + 1 >= length
+      c is [data + i : 1]
+      d is [data + i + 1 : 1]
+      result is -1 when c != 13
+      leave step when c != 13
+      result is -1 when d != 10
+      leave step when d != 10
+      i is i + 2
+      phase is 0
+      result is i
+      leave step
+    end
+
+    -- 4. the trailer: field lines until the empty one, all discarded
+    trailer goes
+      leave trailer when phase != 3
+      leave step when i + 1 >= length
+      c is [data + i : 1]
+      d is [data + i + 1 : 1]
+      lines goes
+        leave lines when c != 13
+        result is -1 when d != 10
+        leave step when d != 10
+        i is i + 2
+        phase is 4
+        finished is 1
+        result is i
+        leave step
+      end
+      -- a field line: consume it, checking only that it ends in CRLF
+      walk goes
+        leave walk when i >= length
+        c is [data + i : 1]
+        leave walk when c == 13
+        i is i + 1
+        repeat walk
+      end
+      leave step when i + 1 >= length
+      d is [data + i + 1 : 1]
+      result is -1 when d != 10
+      leave step when d != 10
+      i is i + 2
+      result is i
+      leave step
+    end
+  end
+end

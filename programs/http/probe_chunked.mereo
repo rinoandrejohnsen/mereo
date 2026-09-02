@@ -1,0 +1,73 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+include "parse.mereo"
+
+-- Decode a chunked body on stdin and print what came out:
+--
+--   R <result>     the last result: -1 malformed, -2 wants more, else an offset
+--   F <finished>   1 if the terminating chunk and trailer were seen
+--   B <hex body>   every body byte the decoder handed back, in order
+
+program goes
+  capacity is 65536
+  wire is capacity bytes
+  total is 0
+  chunk is 0
+  chunk_at is 0
+  chunk_len is 0
+  taken is 0
+  taken_at is 0
+  page is 65536 bytes
+  hexed is 65536 bytes
+  hexlen is 0
+  gathered is 65536 bytes
+  got is 0
+
+  at is 0
+  finished is 0
+  outcome is 0
+
+  input is already linux.file (descriptor is 0)
+  gather goes
+    input.read (buffer is wire + total, capacity is capacity - total,
+                count is chunk)
+    leave gather when chunk == 0
+    total is total + chunk
+    repeat gather when total < capacity
+  end
+
+  phase is 0
+  remaining is 0
+
+  drain goes
+    chunked.step (data is wire, length is total, offset is at,
+                  phase is phase, remaining is remaining,
+                  body_offset is chunk_at, body_length is chunk_len,
+                  finished is finished, result is outcome)
+    leave drain when outcome < 0
+    taken is chunk_len
+    taken_at is chunk_at
+    text.copy (source is wire + taken_at, target is gathered + got,
+               length is taken)
+    got is got + taken
+    at is outcome
+    leave drain when finished == 1
+    repeat drain
+  end
+
+  writer is already builder (data is page, count is 0, limit is 65536)
+  writer.add (source is "R ", length is 2)
+  writer.number (value is outcome)
+  writer.byte (value is 10)
+  writer.add (source is "F ", length is 2)
+  writer.number (value is finished)
+  writer.byte (value is 10)
+  writer.add (source is "B ", length is 2)
+  text.hexbytes (data is gathered, count is got, buffer is hexed,
+                 length is hexlen)
+  writer.add (source is hexed, length is hexlen)
+  writer.byte (value is 10)
+
+  screen is already linux.file (descriptor is 1)
+  screen.write (buffer is page, count is writer.count)
+end

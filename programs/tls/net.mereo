@@ -12,6 +12,7 @@ stream is
                   type is type,
                   protocol is protocol,
                   descriptor is descriptor)
+    acquired
   end
 
   dial (address, length) goes

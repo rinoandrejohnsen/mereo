@@ -1,0 +1,10 @@
+-- Owns a descriptor, then fails a check so the diagnostic goes to standard
+-- error. With fd 2 closed at startup and no guard, the record lands INSIDE the
+-- file the program opened.
+include "../../linux.mereo"
+
+program goes
+  target is linux.file (path is "/tmp/mereo_citizen_target", flags is 577, mode is 420)
+
+  missing is linux.file (path is "/nonexistent/mereo/citizen", flags is 0, mode is 0)
+end

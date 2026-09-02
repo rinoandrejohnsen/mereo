@@ -11,6 +11,7 @@ chain_a is
   fd_a is 101
   acquire goes
     linux.close (descriptor is 201)
+    acquired
   end
   release goes
     linux.close (descriptor is fd_a)
@@ -21,6 +22,7 @@ chain_b extends chain_a is
   fd_b is 102
   acquire goes
     linux.close (descriptor is 202)
+    acquired
   end
   release goes
     linux.close (descriptor is fd_b)
@@ -32,6 +34,7 @@ chain_c extends chain_b is
   probe is 0
   acquire goes
     linux.read (descriptor is 199, buffer is fd_c, capacity is 1, count is probe)
+    acquired
   end
   release goes
     linux.close (descriptor is fd_c)

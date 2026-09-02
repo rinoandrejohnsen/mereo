@@ -4,6 +4,12 @@
 -- as-value ((c >= 97) & (c <= 122)) yields 0/1, so we just subtract 32 * that.
 -- No per-byte branch, no C helper: raw loads, stores, and arithmetic.
 --
+-- The loop is not decoration. A `read` hands back what had ARRIVED, not what
+-- was asked for -- from a pipe that is whatever the writer had got round to
+-- sending -- so a filter that reads once passes on the first fragment and drops
+-- the rest of the stream while exiting 0. Top-tested, so an empty input falls
+-- straight out.
+--
 --   echo hello WORLD | ./upper_bin   ->  HELLO WORLD
 
 include "../linux.mereo"
@@ -18,10 +24,13 @@ program goes
 
   output is already linux.file (descriptor is 1)
 
-  input.read (buffer is buffer, capacity is capacity, count is count)
+  pass goes
+    input.read (buffer is buffer, capacity is capacity, count is count)
+    leave pass when count == 0
 
-  text.upper (data is buffer, length is count)
-
-  output.write (buffer is buffer, count is count)
+    text.upper (data is buffer, length is count)
+    output.write (buffer is buffer, count is count)
+    repeat pass
+  end
 
 end

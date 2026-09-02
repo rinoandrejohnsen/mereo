@@ -12,6 +12,7 @@ transform is
                   type is type,
                   protocol is protocol,
                   descriptor is descriptor)
+    acquired
   end
 
   attach (address, length) goes

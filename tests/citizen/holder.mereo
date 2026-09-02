@@ -1,0 +1,17 @@
+-- Owns one descriptor and then blocks. Every signal test drives this: the file
+-- is what the release tower has to close, and the blocking read is what the
+-- signal has to interrupt.
+include "../../linux.mereo"
+
+program goes
+  capacity is 16
+  buffer is capacity bytes
+  count is 0
+
+  scratch is linux.file (path is "/tmp/mereo_citizen_hold", flags is 577, mode is 420)
+
+  input is already linux.file (descriptor is 0)
+
+  input.read (buffer is buffer, capacity is capacity, count is count)
+
+end

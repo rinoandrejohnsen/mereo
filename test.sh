@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The full test run -- five suites plus the build gate.
+# The full test run -- six suites plus the build gate.
 #
 #   1. UNIT tests for RAII + error handling  (tests/scopes/run.sh)
 #      Small mereo programs paired with equivalent C++; strace both and assert
@@ -33,6 +33,18 @@
 #      the docs claim, since the figures drifted once already while nobody was
 #      measuring.
 #
+#   7. THE HTTP REQUEST PARSER                (tests/http/run.sh)
+#      programs/http/parse.mereo run as a black box against an oracle: every
+#      well-formed request, every PREFIX of one (which must read as incomplete,
+#      never as malformed), a mutation set, and several thousand random inputs.
+#
+#   6. BEING A GOOD LINUX CITIZEN            (tests/citizen/run.sh)
+#      Signals, the standard descriptors, and short reads -- each observed from
+#      OUTSIDE the process, the way a parent sees it. Suite 2 runs the binary as
+#      a box with an input and an output; this one does things TO it while it
+#      runs, which is the half no other suite reaches (suite 3 says so itself:
+#      "nothing here sends a SIGNAL").
+#
 # Also runs build.sh (mereocheck hot/cold layout gate) and checks every declared
 # syscall number against <asm/unistd_64.h>.
 set -u
@@ -60,6 +72,19 @@ echo
 # differently. Zig is optional -- its column is skipped when it is not installed.
 echo "### Suite 5 -- compile-time checking versus C++ and Zig"
 "$DIR/tests/checking/run.sh" || rc=1
+
+echo
+# What the program owes the system AROUND it, observed the way a parent sees it:
+# wait status, the file it wrote, the terminal it was driving. The other suites
+# ask whether a program is correct, what it costs and what is caught; this one
+# asks whether it behaves like a Unix program when the system does something to
+# it -- a signal, a closed descriptor, a read that comes back short.
+echo "### Suite 6 -- being a good Linux citizen"
+"$DIR/tests/citizen/run.sh" || rc=1
+
+echo
+echo "### 7. the HTTP request parser, against an oracle"
+"$DIR/tests/http/run.sh" || rc=1
 
 echo
 echo "### Build + layout gate"
@@ -117,6 +142,10 @@ python3 "$DIR/tools/check_highlight.py" "$DIR" || rc=1
 # syntax change left twenty-odd of them spelled in a surface that no longer
 # parses -- and they are exactly what a reader copies.
 python3 "$DIR/tools/check_comments.py" "$DIR" || rc=1
+# The language server indexes every file and is driven over real stdio. It also
+# asserts the server declares no PAINTER: Kate lays semantic tokens over the
+# syntax highlighting, and tools/mereo.xml owns the colours.
+python3 "$DIR/tools/check_lsp.py" "$DIR" || rc=1
 
 echo
 [ $rc = 0 ] && echo "ALL GREEN" || echo "FAILURES"

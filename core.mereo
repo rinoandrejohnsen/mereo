@@ -78,7 +78,7 @@ end
 --   number   read DATA[0..LENGTH) as a signed decimal integer (leading spaces ok)
 --   format   write VALUE as decimal digits into BUFFER, yielding its LENGTH
 --
--- `find` and `equals` are still always_inline C helpers: their bounds belong to
+-- `find` and `equals` are still C helper macros: their bounds belong to
 -- the CALLER, and the analysis cannot yet carry a caller's guard through a
 -- template splice, so writing them here reports what it cannot prove. `format`
 -- is no longer among them -- itoa needs only its own scratch, whose bound is
@@ -157,6 +157,37 @@ text is
       single goes
         leave single when i >= length
         leave compare when [data + i : 1] != [other + i : 1]
+        i is i + 1
+        repeat single
+      end
+      result is 1
+    end
+  end
+
+  -- The same question asked case-insensitively, which is what an HTTP field
+  -- name needs: RFC 9110 §5.1 makes them case-insensitive, so `Content-Length`
+  -- and `content-length` are one field and a caller that reaches for `equals`
+  -- will miss half the traffic on the internet.
+  --
+  -- A byte at a time, where `equals` above goes eight at a time, because
+  -- folding is per byte and the names this is asked about are short -- a word
+  -- trick here would cost more in shifting than it saves in loads. Only A-Z
+  -- folds; every other byte compares as itself, so this is safe to point at
+  -- arbitrary bytes and never changes what two non-letters mean.
+  equals_fold (data, length, other, other_length, result) goes
+    i is 0
+    x is 0
+    y is 0
+    result is 0
+    compare goes
+      leave compare when length != other_length
+      single goes
+        leave single when i >= length
+        x is [data + i : 1]
+        y is [other + i : 1]
+        x is x + 32 when x >= 65 && x <= 90
+        y is y + 32 when y >= 65 && y <= 90
+        leave compare when x != y
         i is i + 1
         repeat single
       end
@@ -744,6 +775,57 @@ builder is
     ensure count + 16 <= limit
     text.hex (value is value, buffer is data + count, length is n)
     count is count + n
+  end
+end
+
+-- An ARRAY VIEW: a span that counts ELEMENTS rather than bytes.
+--
+-- `span` names an address and a length once instead of passing two arguments.
+-- This names an address, a count and a STRIDE, and the stride is what turns a
+-- run of bytes into a run of RECORDS. It is the record layout's own size, so
+-- the number is written once and cannot drift from the fields:
+--
+--   slots is 2048 bytes
+--   rows is already array (data is slots, count is 0, limit is 64,
+--                          stride is header.size)
+--   rows.add (address is where)
+--   here is [where : header.size] as header
+--   here.name is start
+--
+-- ...and back over what was written:
+--
+--   rows.at (index is i, address is where)
+--   here is [where : header.size] as header
+--
+-- A method cannot hand back a VIEW, so both hand back the ADDRESS of one and
+-- the caller lays the record over it. That is the seam, and it is why the
+-- record type is named at both ends.
+--
+-- Both are bounds-checked, for the reason `span.at` is: an index the table
+-- never held is a wrong record read as a right one, and the check is a single
+-- compare that GCC deletes wherever it can see the bound.
+array is
+  data is 8 bytes                -- where the records are
+  count is 8 bytes               -- how many have been written
+  limit is 8 bytes               -- how many fit
+  stride is 8 bytes              -- bytes per record
+
+  -- the address of record `index` -- refusing one that was never written
+  at (index, address) goes
+    spot is 0
+    ensure index < count
+    spot is data + index * stride
+    address is spot
+  end
+
+  -- the address of the next free record, counting it. `builder.add` makes the
+  -- same promise over bytes: append, and refuse to run off the end.
+  add (address) goes
+    spot is 0
+    ensure count < limit
+    spot is data + count * stride
+    count is count + 1
+    address is spot
   end
 end
 

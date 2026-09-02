@@ -29,6 +29,7 @@ duct is
 
   acquire goes
     linux.pipe2 (pair is pair, flags is 0)
+    acquired
   end
 
   head (value) goes                    -- the read end, at offset 0
