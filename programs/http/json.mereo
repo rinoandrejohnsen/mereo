@@ -111,8 +111,7 @@ document is
       end
 
       -- out of bytes: complete only if the root value has been read
-      ended goes
-        leave ended when i < length
+      i >= length goes
         result is i when depth == 0 && mode == 1
         leave step
       end
@@ -120,8 +119,7 @@ document is
       c is [data + i : 1]
 
       -- a closing bracket, which must match what the stack says is open
-      closes goes
-        leave closes when c != 125 && c != 93
+      c == 125 || c == 93 goes
         result is -1 when depth == 0
         leave step when depth == 0
         result is -1 when mode == 2
@@ -141,8 +139,7 @@ document is
       end
 
       -- a comma separates, and then a value MUST follow
-      commas goes
-        leave commas when c != 44
+      c == 44 goes
         result is -1 when mode != 1
         leave step when mode != 1
         mode is 2
@@ -192,8 +189,7 @@ document is
       end
 
       -- an object or an array opens: push what it is, and expect a value
-      opens goes
-        leave opens when c != 123 && c != 91
+      c == 123 || c == 91 goes
         result is -1 when depth >= depth_limit
         leave step when depth >= depth_limit
         d is 1 when c == 123
@@ -208,8 +204,7 @@ document is
       end
 
       -- a string
-      strings goes
-        leave strings when c != 34
+      c == 34 goes
         document.string_span (data is data, length is length, at is i,
                               start is at, size is size, result is outcome)
         result is outcome when outcome < 0
@@ -223,8 +218,7 @@ document is
       end
 
       -- the three literals, each spelled out so a prefix cannot pass
-      words goes
-        leave words when c != 116 && c != 102 && c != 110
+      c == 116 || c == 102 || c == 110 goes
         at is i
         size is 4
         size is 5 when c == 102

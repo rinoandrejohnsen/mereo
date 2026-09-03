@@ -6,7 +6,7 @@ no code.
 
 ## `core.mereo`
 
-About 700 lines, in four parts.
+About 900 lines, in four parts.
 
 **Raw instructions.** `population_count`, `memory_fence` and `random_word`: one
 CPU instruction each, with their operand constraints written out.
@@ -22,10 +22,15 @@ Three of these — `find`, `equals` and `format` — are irreducible machine loo
 kept as C helper macros. `search` and `number` are composed from them in
 mereo rather than in C, so the logic stays in the language.
 
-**The two views**, `span` and `builder`, described under
-[Memory and views](Memory). They exist because counting the corpus found 22
-calls that scanned a region and 39 that appended into one, and because the
-appending 39 checked nothing.
+**The three views**, `span`, `builder` and `array`, described under
+[Memory and views](Memory). The first two exist because counting the corpus
+found 22 calls that scanned a region and 39 that appended into one, and because
+the appending 39 checked nothing. `array` is the third axis: `span` counts
+bytes, `array` counts RECORDS, which is a span plus a stride. Its `at` and
+`add` hand back the ADDRESS of a record rather than the record, because a
+method cannot hand back a view — the caller lays the layout over it with
+`[where : record.size] as record`. Both are bounds-checked the way `span.at`
+is.
 
 **A JSON reader** over bytes already in hand. Extraction is a flat scan: locate
 the key, step over the colon, read the value. It handles top-level fields of an
@@ -33,7 +38,7 @@ object, does not descend into nested ones, and does not decode string escapes.
 
 ## `linux.mereo`
 
-About 1,200 lines, wrapped in a `linux` namespace.
+About 1,400 lines, wrapped in a `linux` namespace.
 
 **The system-call ABI.** 43 declarations, each a raw `assembly "syscall"` with
 the System V register assignment written out: number in `rax`, arguments in
@@ -47,12 +52,29 @@ checked against the kernel's `<asm/unistd_64.h>`.
 | --- | --- | --- |
 | `file` | a descriptor | read, write, status, redirect, watch |
 | `directory` | a descriptor | opened `O_DIRECTORY`, read by `getdents64` |
+| `socket` | a descriptor | `connect`, or `bind`/`listen`/`accept`; `read`, `fill`, `write`, `write_vectors`, `option` |
 | `mapping` | a region | `mmap` and `munmap` |
 | `channel` | — | `pipe2`, whose two ends are adopted as ordinary files |
 | `files` | nothing | the operations that *name* a file rather than hold one |
 | `clock` | nothing | the time, and sleeping |
 | `identity` | nothing | user and process identity, and the passwd lookup |
 | `process` | nothing | signalling |
+
+`socket` is one resource for both halves: what makes it a server is that
+`bind`/`listen`/`accept` get called, and a method never called emits no code.
+`accept` hands back a descriptor rather than a resource, because a method
+cannot make one — the caller writes `client is adopted linux.socket
+(descriptor is peer)`, and the scope that adopted it closes it. It is also the
+one name in either library that is both a primitive and a resource: as a step
+`linux.socket (…)` is the system call, and as a construction
+`x is linux.socket (…)` is the resource. The compiler keeps the two in separate
+tables.
+
+`write_vectors` is `writev`: several separate runs of bytes sent as one, each
+described by a `linux.iovec` (a `base` and a `length`). It is what a response
+whose length has to precede its body wants — the head and the body are built in
+different buffers and neither is copied into the other. On the SQLite demo that
+is worth 92 instructions a request, all of them a byte-at-a-time copy.
 
 `files`, `clock` and `identity` hold nothing and are adopted with `already`.
 They are resources rather than free templates because each of their operations

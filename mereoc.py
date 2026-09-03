@@ -2744,11 +2744,59 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                 # `bits is info.mode as linux.file_mode` -- so the offset comes
                 # from the layout that already declares it rather than being
                 # written out a second time.
+                # `NAME is NAME as VIEW (fields)` -- PROMOTION: a backing
+                # that already exists gains a view's methods under its own
+                # name, so `page` stays the bytes and `page.add (...)` is the
+                # builder writing into them. One name instead of two, which is
+                # the whole of the point: `writer.add` made a reader ask which
+                # buffer `writer` wrote into.
+                #
+                # It lowers to exactly `already VIEW (data is NAME, ...)`, so
+                # the state lands in its own scalars rather than in the bytes.
+                # That matters: a layout view's fields ARE the backing, but a
+                # builder's cursor is not, and putting it there would eat the
+                # first twenty-four bytes of the buffer.
+                #
+                # Written twice, it is a RESET rather than a redeclaration --
+                # the second one re-runs the initialisation where it stands,
+                # which is what a builder reused per loop iteration wants.
+                m = re.match(r"^(\w+) is (\w+) as ([\w.]+)(?:\s*\((.*)\))?$", s)
+                if m and m.group(1) == m.group(2):
+                    _pn = m.group(1)
+                    if not any(sl.get("kind") == "buffer" and sl["name"] == _pn
+                               for sl in slots):
+                        fail(f"line {n}: `{_pn} is {_pn} as {m.group(3)}` "
+                             f"promotes a backing, and '{_pn}' is not one "
+                             "(declare it first: "
+                             f"`{_pn} is 4096 bytes`)")
+                    _def = deref(m.group(3), ns_of_line.get(n), n, "definition")
+                    _prev = next((sl for sl in slots
+                                  if sl.get("kind") == "instance"
+                                  and sl["name"] == _pn), None)
+                    if _prev is None:
+                        _prev = {"kind": "instance", "name": _pn,
+                                 "mode": "adopted", "definition": _def,
+                                 "init": {}, "aliases": {}, "line": n,
+                                 "promotion": True, "had_where": True}
+                        slots.append(_prev)
+                        PROMOTED_EMIT[_pn] = _pn + "__state"
+                    elif _prev.get("definition") != _def:
+                        fail(f"line {n}: '{_pn}' was already promoted to "
+                             f"{_prev['definition']}, so it cannot also be a "
+                             f"{_def} -- one backing wears one view")
+                    _prev["init"]["data"] = _pn
+                    steps.append({"type": "adopt", "name": _pn, "line": n})
+                    inblock = ("adopt", _prev)
+                    for _a in _arguments(m.group(4) or "", n):
+                        take_arg(inblock, _a, n)
+                    laststep = None
+                    continue
                 m = re.match(r"^(\w+) is (\w+\.\w+|\w+|\[[^\]]+\])"
                              r"(?: \+ (.+?))? as "
-                             r"(adopted )?([\w.]+)( in \w+)?$", s)
+                             r"(adopted )?([\w.]+)"
+                             r"(?: \((.*)\))?( in \w+)?$", s)
                 if m and bare(m.group(5), ns_of_line.get(n)) in definitions and m.group(5) not in VIEW_WORDS:
-                    if m.group(6):
+                    if m.group(7):
                         # a lens IS its backing's bytes; storage is the backing's
                         # to choose, and those bytes always have an address.
                         fail(f"line {n}: '{m.group(1)}' is a lens over "
@@ -2781,6 +2829,27 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                         slots.append(inst)
                         steps.append({"type": "adopt", "name": m.group(1),
                                       "line": n})
+                        # `... as VIEW (field is value, ...)` -- the fields a
+                        # view is laid down WITH. It is the same argument list
+                        # a construction takes, so the two forms read alike,
+                        # and it lowers to exactly the stores that writing
+                        # `NAME.field is value` on the next line would emit --
+                        # which is the point: the values belong beside the
+                        # thing they describe, not scattered under it.
+                        for _a in _arguments(m.group(6) or "", n):
+                            _fm = re.match(r"^(\w+) is (.+)$", _a)
+                            if not _fm:
+                                fail(f"line {n}: `{_a}` -- a view is laid down "
+                                     "with `FIELD is VALUE` arguments, the same "
+                                     f"shape a construction takes "
+                                     f"(`{m.group(1)} is {m.group(2)} as "
+                                     f"{m.group(5)} (port is 8080)`)")
+                            _fv, _fc = store_condition(_fm.group(2), n,
+                                                       "a field store")
+                            steps.append({"type": "fstore",
+                                          "field": _fm.group(1),
+                                          "inst": m.group(1), "value": _fv,
+                                          "cond": _fc, "line": n})
                         laststep = None
                         continue
 
@@ -3302,6 +3371,14 @@ def validate_method(defn, meth, check_params=True):
     elif len(bound) not in SYSCALL_ARITY:
         fail(f"line {meth['line']}: '{meth['prim']}' needs "
              f"syscall{len(bound)}; only syscall1..6 are defined")
+    # `ensure written == total` READS both sides, so an operand that happens to
+    # be a parameter is an input like any other. Without this a port used ONLY
+    # in an ensure looks unused and the method is refused -- which is wrong: the
+    # check is what the port is for.
+    for _e in meth["ensure"]:
+        for _tok in (_e[0], _e[2]):
+            if _tok in meth["params"]:
+                meth["dirs"].setdefault(_tok, "value")
     if check_params:                         # a multi-step body checks the
         for p in meth["params"]:             # UNION of its calls instead
             if p not in meth["dirs"]:
@@ -3849,7 +3926,7 @@ def _adopt_layout(slot, defn, instances, seen):
         slot["constinit"], slot["runinit"] = {}, given
         slot["borrowmap"], slot["lenders"] = {}, set()
         instances[slot["name"]] = slot
-    if slot["name"] in seen:
+    if slot["name"] in seen and not slot.get("promotion"):
         fail(f"line {slot['line']}: name '{slot['name']}' is not "
              "unique")
     seen.add(slot["name"])
@@ -3919,6 +3996,24 @@ def check_slots(definitions, slots):
                                      scalars)
                     entry["reglens" if isinstance(_t, tuple) else "addr"] = _t
                     entry["lens"] = True
+                if slot.get("promotion"):
+                    # a PROMOTION shares its name with the backing, and this
+                    # entry replaces the backing's. Three things must survive
+                    # it: `page.size` is still the BUFFER's byte count (the
+                    # whole point of `limit is page.size`), bare `page` is
+                    # still the bytes, and `page.count` reaches the state
+                    # block -- the one part of the instance that did NOT go
+                    # into those bytes. The state block is registered under
+                    # its own emitter name as well, the same trick a
+                    # resource's in-instance buffer uses, so a spliced body
+                    # can substitute `[page__state + 8 : 8]` and have it
+                    # resolve like any other backing.
+                    _sn = emit_of(slot["name"])
+                    buffers[_sn] = dict(entry, name=_sn)
+                    entry = dict(entry)
+                    entry["addr"] = f"(long){_sn}"
+                    entry["size"] = buffers[slot["name"]]["size"]
+                    entry["promoted"] = True
                 buffers[slot["name"]] = entry
                 # Values handed in at adoption are stores into the BLOCK, so
                 # nothing can be top-declared as a long. A bare word (`content
@@ -3997,7 +4092,7 @@ def check_slots(definitions, slots):
                 slot["borrowmap"], slot["lenders"] = {}, set()
                 instances[slot["name"]] = slot
                 publish_state(slot, defn)
-                if slot["name"] in seen:
+                if slot["name"] in seen and not slot.get("promotion"):
                     fail(f"line {slot['line']}: name '{slot['name']}' is not "
                          "unique")
                 seen.add(slot["name"])
@@ -4163,6 +4258,8 @@ def check_slots(definitions, slots):
             scalars[slot["name"]] = slot
             SCALAR_WORDS.add(slot["name"])     # eight bytes, in a register
         for name in names:
+            if name in seen and slot.get("promotion"):
+                continue          # a promotion IS the backing, under its own name
             if name in seen:
                 fail(f"line {slot['line']}: name '{name}' is not unique -- "
                      "a buffer, an instance and a scalar are each ONE "
@@ -4624,11 +4721,26 @@ def own_bytes_text(inst_name, defn, field):
     body that is re-parsed. A definition with `N bytes` fields is one block, so
     the field is at an offset in it; only a resource whose byte-runs are
     separate arrays hands back the array's own name."""
+    inst_name = emit_of(inst_name)
     pl = defn.get("playout")
     if pl is not None and field in pl:
         off = pl[field][0]
         return f"{inst_name} + {off}" if off else inst_name
     return f"{inst_name}_{field.replace(' ', '_')}"
+
+
+# A PROMOTED backing (`page is page as builder`) wears one name in mereo and
+# needs two in C: the bytes already own `page`, so the instance's state block
+# takes a suffixed identifier. Only the state moves. `page.data` still holds the
+# backing's address, exactly as any `already` construction does, because a
+# buffer name resolves to its own bytes and never comes through here.
+PROMOTED_EMIT = {}
+
+
+def emit_of(inst_name):
+    """The C identifier holding an instance's STATE, which is its own name
+    unless a promotion has already spent that name on the backing."""
+    return PROMOTED_EMIT.get(inst_name, inst_name)
 
 
 def state_cell(inst_name, path, defn, backing=None):
@@ -4638,6 +4750,7 @@ def state_cell(inst_name, path, defn, backing=None):
     definition also owns a lifecycle. A resource is nothing special in terms of
     storage. Scalar state (`NAME is 0`, no width) has no bytes and no offset, so
     it stays an `INST_field` long."""
+    inst_name = emit_of(inst_name)
     pl = defn.get("playout")
     if backing is not None and pl is not None and path in pl:
         # a behavioral lens: the field lives in the provided backing's bytes,
@@ -4997,6 +5110,10 @@ def parse_expr(actual, scalars, buffers, ln, cond=False):
                  f"`[{t} : {REGISTER_WORDS[t]}]`, or declare it `in stack` to "
                  f"hand it somewhere. (in '{actual}')")
         if t in buffers:
+            if buffers[t].get("promoted"):
+                # a promotion's `addr` points at the STATE; the name itself is
+                # still the backing, which is the whole reason it was promoted
+                return cast_suffix(f"(long){t}")
             return cast_suffix(buffers[t].get("addr", f"(long){t}"))  # lens->backing
         if t in scalars:
             return cast_suffix(t)
@@ -5614,7 +5731,7 @@ def inline_procedure(meth, st, cid, definitions, slots, prims):
                             # what it holds, so `[field + k : w]` in the body
                             # offsets into its bytes rather than following them.
                             _base = (inst["lens"] if inst.get("lens")
-                                     else inst["name"])
+                                     else emit_of(inst["name"]))
                             _parts = [_base]
                             if inst.get("lens") and str(
                                     inst.get("lens_off", "0")) != "0":
@@ -5624,7 +5741,7 @@ def inline_procedure(meth, st, cid, definitions, slots, prims):
                             rmap[path] = " + ".join(_parts)
                             continue
                         _at = [inst["lens"] if inst.get("lens")
-                               else inst["name"]]      # owning: the name IS the
+                               else emit_of(inst["name"])]  # owning: the name IS
                         if inst.get("lens") and str(               # block address
                                 inst.get("lens_off", "0")) != "0":
                             _at.append(str(inst["lens_off"]))
@@ -5744,7 +5861,8 @@ def resolve_lenses(definitions, slots):
     for s in slots:
         if s.get("kind") == "buffer":
             bufs[s["name"]] = s
-        elif s.get("kind") == "instance" and not s.get("lens"):
+        elif (s.get("kind") == "instance" and not s.get("lens")
+              and not s.get("promotion")):   # the backing's size is the name's
             c = definitions.get(s["definition"])
             if c is not None and (c.get("playout") or c.get("bitfields")):
                 bufs[s["name"]] = {"size": str(c.get("psize")
@@ -7912,13 +8030,13 @@ def transpile(sources, prog):
             # and no offset. An `aligned M` sets the block's alignment.
             al = (f" __attribute__((aligned({slot['align']})))"
                   if slot.get("align") else "")
-            body.append(f"    char {slot['name']}"
+            body.append(f"    char {emit_of(slot['name'])}"
                         f"[{definitions[slot['definition']]['psize']}]{al} = {{0}};")
         elif (slot["kind"] == "instance"
               and definitions[slot["definition"]].get("bitfields") is not None
               and is_pure_layout(definitions[slot["definition"]])):
             # a `new` FLAG VIEW owns its word: a zeroed backing (all bits low)
-            body.append(f"    char {slot['name']}"
+            body.append(f"    char {emit_of(slot['name'])}"
                         f"[{definitions[slot['definition']]['bitwidth']}] = {{0}};")
         else:
             defn = definitions[slot["definition"]]
@@ -7927,7 +8045,7 @@ def transpile(sources, prog):
                 if path in defn.get("arrays", ()):
                     # a resource's in-instance buffer: a zeroed char array, its
                     # name IS its address (state_cell hands out `(long)NAME`)
-                    body.append(f"    char {slot['name']}_"
+                    body.append(f"    char {emit_of(slot['name'])}_"
                                 f"{path.replace(' ', '_')}"
                                 f"[{defn['playout'][path][1]}] = {{0}};")
                     continue

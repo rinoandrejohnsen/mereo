@@ -20,17 +20,15 @@ program goes
   count is 0
   peer is -1
 
-  host is 16 bytes
-  bound is host as linux.sockaddr_in
-  bound.family is 2                    -- AF_INET
-  bound.port is 12346                  -- `2 bytes as big` -- network order, free
-  bound.address is 2130706433          -- 127.0.0.1
+  bound is linux.sockaddr_in (family is 2,            -- AF_INET
+                              port is 12346,          -- network order, free
+                              address is 2130706433)   -- 127.0.0.1
 
   terminal is already linux.file (descriptor is 1)
 
   server is linux.socket (domain is 2, type is 1, protocol is 0)
 
-  server.bind (address is host, length is host.size)
+  server.bind (address is bound, length is bound.size)
 
   server.listen (backlog is 1)
 

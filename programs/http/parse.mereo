@@ -452,8 +452,7 @@ chunked is
     leave step when phase == 4
 
     -- 1. the chunk-size line, with any extension after a semicolon
-    size_line goes
-      leave size_line when phase != 0
+    phase == 0 goes
       hex goes
         leave hex when i >= length
         c is [data + i : 1]
@@ -499,8 +498,7 @@ chunked is
     end
 
     -- 2. chunk data: whatever of it is here, which may be none of it
-    in_data goes
-      leave in_data when phase != 1
+    phase == 1 goes
       left is length - i
       leave step when left == 0
       take is remaining
@@ -517,8 +515,7 @@ chunked is
     end
 
     -- 3. the CRLF that closes chunk data
-    after_data goes
-      leave after_data when phase != 2
+    phase == 2 goes
       leave step when i + 1 >= length
       c is [data + i : 1]
       d is [data + i + 1 : 1]
@@ -533,13 +530,11 @@ chunked is
     end
 
     -- 4. the trailer: field lines until the empty one, all discarded
-    trailer goes
-      leave trailer when phase != 3
+    phase == 3 goes
       leave step when i + 1 >= length
       c is [data + i : 1]
       d is [data + i + 1 : 1]
-      lines goes
-        leave lines when c != 13
+      c == 13 goes
         result is -1 when d != 10
         leave step when d != 10
         i is i + 2

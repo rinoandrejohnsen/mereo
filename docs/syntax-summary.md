@@ -231,6 +231,10 @@ end
 
 host is block as linux.sockaddr_in   -- lay a view over bytes
 host.port is 8080              -- read and write its fields
+
+host is block as linux.sockaddr_in (family is 2, port is 8080)
+                               -- ...or lay it down WITH its fields, the same
+                               -- argument list a construction takes
 ```
 
 An address and a length, named once instead of passed as two arguments —
@@ -247,6 +251,8 @@ rest.starts (other is "GET ", other_length is 4, result is ok)
 page is already builder (data is room, count is 0, limit is 4096)
 page.add (source is part.data, length is part.length)
 page.number (value is 42)      -- and `hex`, `byte`, `pad`
+page.reserve (room is 96)      -- one check for a run of appends, when the
+                               -- width is known before the run begins
 ```
 
 See [Layout views](memory.md), [Flag views](memory.md),

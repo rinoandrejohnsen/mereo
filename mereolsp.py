@@ -256,7 +256,10 @@ _FIELD_BYTES = re.compile(r"^(\w+) is (\d+|\w+(?:\.size)?) bytes\b(.*)$")
 _FIELD_BIT = re.compile(r"^(\w+) is bits? (\d+)(?: to (\d+))?$")
 _INSTANCE = re.compile(r"^(\w+) is (?:(already|adopted|new) )?"
                        r"((?:\w+\.)*\w+)(?: \(|$)")
-_AS_VIEW = re.compile(r"^(\w+) is (.+) as ((?:\w+\.)*\w+)$")
+# the trailing `(...)` is a view initialiser -- `host is block as sockaddr_in
+# (family is 2)` -- and a PROMOTION (`page is page as builder (count is 0)`)
+# is the same form with the backing's own name on the right.
+_AS_VIEW = re.compile(r"^(\w+) is (.+?) as ((?:\w+\.)*\w+)(?: \((.*)\))?$")
 _BIND = re.compile(r"^(\w+) is (.+)$")
 _INCLUDE = re.compile(r'^include "([^"]*)"$')
 
@@ -470,8 +473,9 @@ def _declared(code, n, indent):
     if m and m.group(3) not in VIEW_WORDS:
         # `as signed` is a READING of bytes; `as linux.file_status` is a view,
         # and only the second one brings members with it.
-        return Sym(m.group(1), VARIABLE, n, at(m.group(1)),
-                   f"{m.group(2)} as {m.group(3)}",
+        detail = (f"promoted to {m.group(3)}" if m.group(2) == m.group(1)
+                  else f"{m.group(2)} as {m.group(3)}")
+        return Sym(m.group(1), VARIABLE, n, at(m.group(1)), detail,
                    type_of=m.group(3)), False
     m = _BIND.match(code)
     if m:

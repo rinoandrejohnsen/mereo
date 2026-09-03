@@ -154,11 +154,27 @@ text is
         result is 1
         leave compare
       end
-      single goes
-        leave single when i >= length
-        leave compare when [data + i : 1] != [other + i : 1]
-        i is i + 1
-        repeat single
+      -- Under eight bytes the word path cannot run, and one load per byte is
+      -- not what the machine wants either. Two OVERLAPPING loads cover any
+      -- length in their class -- the front and the back, which together are
+      -- the whole of it -- so a six-byte name costs two compares, not six.
+      four goes
+        leave four when length < 4
+        leave compare when [data : 4] != [other : 4]
+        leave compare when [data + length - 4 : 4] != [other + length - 4 : 4]
+        result is 1
+        leave compare
+      end
+      two goes
+        leave two when length < 2
+        leave compare when [data : 2] != [other : 2]
+        leave compare when [data + length - 2 : 2] != [other + length - 2 : 2]
+        result is 1
+        leave compare
+      end
+      one goes
+        leave one when length < 1
+        leave compare when [data : 1] != [other : 1]
       end
       result is 1
     end
@@ -254,11 +270,20 @@ text is
   -- because nothing has wanted one and a direction test is not free.
   copy (source, target, length) goes
     i is 0
-    step goes
-      leave step when i >= length
+    words goes
+      leave words when length < 8
+      step goes
+        leave step when i + 8 > length
+        [target + i : 8] is [source + i : 8]
+        i is i + 8
+        repeat step
+      end
+    end
+    tail goes
+      leave tail when i >= length
       [target + i : 1] is [source + i : 1]
       i is i + 1
-      repeat step
+      repeat tail
     end
   end
 
@@ -738,11 +763,36 @@ builder is
 
   -- `append(ptr, n)`, and the join between the two views: appending a `span` is
   -- `page.add (source is v.data, length is v.length)`.
+  -- `into` is computed ONCE. Written as `target is data + count`, the port is
+  -- substituted as that EXPRESSION into `copy`'s loop, so every byte reloads
+  -- `data` and `count` from the block -- an unsigned-char store may alias them,
+  -- so the compiler is not allowed to hoist it. Measured on the emitted shape:
+  -- eight instructions and two loads per byte, against five and none.
   add (source, length) goes
     n is length
     ensure count + length <= limit
-    text.copy (source is source, target is data + count, length is n)
+    into is data + count
+    text.copy (source is source, target is into, length is n)
     count is count + n
+  end
+
+  -- One check for a RUN of appends. Nothing here is unchecked: every method
+  -- below still checks itself. The point is that a check already made in a
+  -- stronger form is one the optimiser can delete, so a row of a dozen
+  -- appends costs one compare instead of a dozen -- which is the granularity
+  -- the machine wants, without giving up the granularity the language wants.
+  -- ROOM is the worst case for the run about to be written.
+  --
+  -- Measured on programs/sqlite/serve.mereo, and it did NOT pay there: the
+  -- reserve removed three of the seven surviving checks and was worth 24
+  -- instructions a request, but the row had to be RESTRUCTURED to know its own
+  -- width up front -- both columns read before either is written -- and that
+  -- cost 74. Kept because the arithmetic is sound and a caller already holding
+  -- the width pays only the first half of that. A caller who does not should
+  -- leave the per-append checks alone; they are cheaper than finding out.
+  reserve (room) goes
+    n is room
+    ensure count + n <= limit
   end
 
   -- `push_back`.
@@ -757,7 +807,8 @@ builder is
   pad (value, times) goes
     n is times
     ensure count + times <= limit
-    text.fill (target is data + count, length is n, byte is value)
+    into is data + count
+    text.fill (target is into, length is n, byte is value)
     count is count + n
   end
 
@@ -766,14 +817,16 @@ builder is
   number (value) goes
     n is 0
     ensure count + 20 <= limit
-    text.format (value is value, buffer is data + count, length is n)
+    into is data + count
+    text.format (value is value, buffer is into, length is n)
     count is count + n
   end
 
   hex (value) goes
     n is 0
     ensure count + 16 <= limit
-    text.hex (value is value, buffer is data + count, length is n)
+    into is data + count
+    text.hex (value is value, buffer is into, length is n)
     count is count + n
   end
 end

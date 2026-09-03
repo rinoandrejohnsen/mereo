@@ -342,8 +342,7 @@ rows is
       ncell is [data + hdr + 3 : 2] as big
 
       -- a LEAF: hand back one cell, or pop and let the parent go on
-      leaf goes
-        leave leaf when kind != 13
+      kind == 13 goes
         after is depth - 1
         depth is after when cell >= ncell
         leave walk when cell >= ncell
@@ -368,8 +367,7 @@ rows is
 
       -- an INTERIOR page: descend into the child this cell points at, and
       -- after the last one into the right-most pointer
-      interior goes
-        leave interior when kind != 5
+      kind == 5 goes
         after is depth - 1
         depth is after when cell > ncell
         leave walk when cell > ncell
@@ -377,8 +375,7 @@ rows is
         leave walk when depth >= depth_limit
         hlen is 12
         child is [data + hdr + 8 : 4] as big
-        descend goes
-          leave descend when cell >= ncell
+        cell < ncell goes
           spot is [data + hdr + hlen + cell * 2 : 2] as big
           cell_at is base + spot
           child is [data + cell_at : 4] as big

@@ -12,8 +12,7 @@ include "read.mereo"
 --                                             resource, so both paths are checked
 
 program goes
-  capacity is 1048576
-  wire is capacity bytes
+  wire is 1048576 bytes
   total is 0
   chunk is 0
   page is 4096 bytes
@@ -21,11 +20,11 @@ program goes
 
   input is already linux.file (descriptor is 0)
   gather goes
-    input.read (buffer is wire + total, capacity is capacity - total,
+    input.read (buffer is wire + total, capacity is wire.size - total,
                 count is chunk)
     leave gather when chunk == 0
     total is total + chunk
-    repeat gather when total < capacity
+    repeat gather when total < wire.size
   end
 
   db is already sqlite (data is wire, length is total, page_size is 0,
@@ -38,8 +37,7 @@ program goes
   writer.number (value is outcome)
   writer.byte (value is 10)
 
-  report goes
-    leave report when outcome != 0
+  outcome == 0 goes
     writer.add (source is "P ", length is 2)
     writer.number (value is db.page_size)
     writer.add (source is " N ", length is 3)

@@ -184,6 +184,39 @@ spliced, so a program is one `_start` — and GCC lays that single large functio
 out in a way the front end keeps having to catch up with. Where that stall is
 larger than Clang's extra instructions, Clang wins; where it is not, GCC does.
 
+A third program, added later, says the same thing more strongly. The SQLite
+demo server — HTTP parse, b-tree walk, JSON build, one response — measured over
+1000 requests, user space only, four interleaved rounds, quoted at minimum
+cycles:
+
+| | instructions | cycles | IPC |
+| --- | --- | --- | --- |
+| gcc -O2 | 1,937 | 1,542 | 1.26 |
+| clang -O3 | **1,649** | **1,281** | **1.29** |
+
+Here Clang emits **fewer** instructions, not more — 15% fewer — which is the
+opposite of both rows above, and the reason to distrust any generalisation
+drawn from one program. Clang's binary is still 17 KB against GCC's 10 KB: it
+unrolls the byte loops, which costs size and buys retiring throughput.
+
+Three library changes and one system call took that program from 2,808
+instructions and 1,987 cycles (gcc) to the table above — 31% and 22%. What they
+were is worth more than the numbers. `builder.add` passed `target is data +
+count` into `text.copy`, and a port is substituted as an EXPRESSION, so every
+byte reloaded `data` and `count` from the block; an unsigned-char store may
+alias them, so the compiler is not permitted to hoist it. Naming the address
+first — `into is data + count` — took the inner loop from eight instructions
+and two loads per byte to five and none. `text.copy` then moved to a word at a
+time with a byte tail, `text.equals` answered lengths under eight with two
+overlapping loads instead of one per byte, and `writev` removed the copy of the
+body into the head buffer.
+
+IPC FELL while both instructions and cycles fell — 1.48 to 1.29 on the best
+build of each. That is the expected direction: a byte-copy loop is cheap,
+predictable, independent work that retires fast, so deleting it lowers the
+average while doing strictly less. IPC is a diagnostic for a stall, not a
+target.
+
 The same effect explains why `-falign-loops=32` is worth 20% to one mereo
 program and 0.5% to the rest of the corpus: it attacks the fetch stall, and
 only a program that has one can be paid for it.

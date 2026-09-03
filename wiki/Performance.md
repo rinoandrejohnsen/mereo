@@ -151,6 +151,83 @@ script and size-motivated flags roughly halved file size. `objcopy --strip-
 section-headers` would save a further 287 bytes per binary and is declined,
 because the central claim is checked by disassembling what ships.
 
+## The compiler is part of the result
+
+Every figure above is a GCC figure, and that is not a neutral choice. The same
+emitted C, compiled by Clang instead, changes by a third in either direction
+depending on the program — so a comparison drawn from one program will not
+carry to the next.
+
+Two programs, each compiler swept over `-O2`/`-O3` with and without
+`-funroll-loops`, each quoted at its own best:
+
+| | GCC | Clang | |
+| --- | --- | --- | --- |
+| An HTTP head and JSON body reader | 983 cycles, 4,674 instructions | 1,647 / 6,187 | Clang **1.68x** slower |
+| That parser plus a SQLite reader, serving a request | 536 cycles, 2,564 instructions | 491 / 2,962 | Clang **0.92x** — faster |
+
+Clang emits **more** instructions for mereo in both cases — 32% more in the
+first, 16% in the second. In the first that decides it; in the second Clang
+still wins, because of what the slot accounting shows:
+
+| | issue slots | retiring | fetch-latency stalls |
+| --- | --- | --- | --- |
+| mereo, GCC | 3,168 | 71% | 186 |
+| mereo, Clang | 2,920 | **96%** | **~0** |
+| the hand-written C twin, Clang | 3,166 | 82% | 135 |
+
+**GCC's builds of mereo stall on instruction fetch and Clang's do not.** That
+is the whole of the difference. mereo has no functions — every template is
+spliced, so a program is one `_start` — and GCC lays that single large function
+out in a way the front end keeps having to catch up with. Where that stall is
+larger than Clang's extra instructions, Clang wins; where it is not, GCC does.
+
+A third program, added later, says the same thing more strongly. The SQLite
+demo server — HTTP parse, b-tree walk, JSON build, one response — measured over
+1000 requests, user space only, four interleaved rounds, quoted at minimum
+cycles:
+
+| | instructions | cycles | IPC |
+| --- | --- | --- | --- |
+| gcc -O2 | 1,937 | 1,542 | 1.26 |
+| clang -O3 | **1,649** | **1,281** | **1.29** |
+
+Here Clang emits **fewer** instructions, not more — 15% fewer — which is the
+opposite of both rows above, and the reason to distrust any generalisation
+drawn from one program. Clang's binary is still 17 KB against GCC's 10 KB: it
+unrolls the byte loops, which costs size and buys retiring throughput.
+
+Three library changes and one system call took that program from 2,808
+instructions and 1,987 cycles (gcc) to the table above — 31% and 22%. What they
+were is worth more than the numbers. `builder.add` passed `target is data +
+count` into `text.copy`, and a port is substituted as an EXPRESSION, so every
+byte reloaded `data` and `count` from the block; an unsigned-char store may
+alias them, so the compiler is not permitted to hoist it. Naming the address
+first — `into is data + count` — took the inner loop from eight instructions
+and two loads per byte to five and none. `text.copy` then moved to a word at a
+time with a byte tail, `text.equals` answered lengths under eight with two
+overlapping loads instead of one per byte, and `writev` removed the copy of the
+body into the head buffer.
+
+IPC FELL while both instructions and cycles fell — 1.48 to 1.29 on the best
+build of each. That is the expected direction: a byte-copy loop is cheap,
+predictable, independent work that retires fast, so deleting it lowers the
+average while doing strictly less. IPC is a diagnostic for a stall, not a
+target.
+
+The same effect explains why `-falign-loops=32` is worth 20% to one mereo
+program and 0.5% to the rest of the corpus: it attacks the fetch stall, and
+only a program that has one can be paid for it.
+
+Two things follow. `build.sh` uses GCC, and that is the right default — but a
+mereo program that turns out to be fetch-bound may do better under Clang, and
+the way to find out is the topdown slot accounting above rather than a guess.
+And treat any figure here as a claim about one compiler on one program: on this
+hardware a single build's cycle count moves by up to a third on code layout
+alone, which is larger than most of the differences worth arguing about. So
+instruction counts are the stable measure, and cycles are quoted only from a
+swept build.
+
 ## What has not been measured
 
 There are no benchmarks against other languages, no throughput figures for the

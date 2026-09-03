@@ -54,7 +54,7 @@ checked against the kernel's `<asm/unistd_64.h>`.
 | --- | --- | --- |
 | `file` | a descriptor | read, write, status, redirect, watch |
 | `directory` | a descriptor | opened `O_DIRECTORY`, read by `getdents64` |
-| `socket` | a descriptor | `connect`, or `bind`/`listen`/`accept`; `read`, `fill`, `write`, `option` |
+| `socket` | a descriptor | `connect`, or `bind`/`listen`/`accept`; `read`, `fill`, `write`, `write_vectors`, `option` |
 | `mapping` | a region | `mmap` and `munmap` |
 | `channel` | — | `pipe2`, whose two ends are adopted as ordinary files |
 | `files` | nothing | the operations that *name* a file rather than hold one |
@@ -71,6 +71,12 @@ one name in either library that is both a primitive and a resource: as a step
 `linux.socket (…)` is the system call, and as a construction
 `x is linux.socket (…)` is the resource. The compiler keeps the two in separate
 tables.
+
+`write_vectors` is `writev`: several separate runs of bytes sent as one, each
+described by a `linux.iovec` (a `base` and a `length`). It is what a response
+whose length has to precede its body wants — the head and the body are built in
+different buffers and neither is copied into the other. On the SQLite demo that
+is worth 92 instructions a request, all of them a byte-at-a-time copy.
 
 `files`, `clock` and `identity` hold nothing and are adopted with `already`.
 They are resources rather than free templates because each of their operations

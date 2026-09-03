@@ -9,8 +9,7 @@ include "json.mereo"
 --   R <result>                                -1 malformed, -2 short, else the end
 
 program goes
-  capacity is 65536
-  wire is capacity bytes
+  wire is 65536 bytes
   total is 0
   chunk is 0
   page is 65536 bytes
@@ -30,11 +29,11 @@ program goes
 
   input is already linux.file (descriptor is 0)
   gather goes
-    input.read (buffer is wire + total, capacity is capacity - total,
+    input.read (buffer is wire + total, capacity is wire.size - total,
                 count is chunk)
     leave gather when chunk == 0
     total is total + chunk
-    repeat gather when total < capacity
+    repeat gather when total < wire.size
   end
 
   writer is already builder (data is page, count is 0, limit is 65536)

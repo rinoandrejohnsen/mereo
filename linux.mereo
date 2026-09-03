@@ -63,6 +63,20 @@ linux is
     ensure count <= buffer.size
   end
 
+  -- writev: the kernel's own scatter-gather write. One call sends several
+  -- separate runs of bytes as if they were contiguous, which is what a
+  -- response whose length must precede its body wants -- the head and the body
+  -- are built in different buffers and neither is copied into the other.
+  writev is assembly "syscall"
+    written out rax
+    number is 20 in rax
+    descriptor in rdi
+    vectors in rsi
+    count in rdx
+    clobbers rcx and r11 and memory
+    ensure written as signed >= 0
+  end
+
   open is assembly "syscall"
     descriptor out rax
     number is 2 in rax
@@ -961,6 +975,18 @@ linux is
       ensure written == count
     end
 
+    -- COUNT runs of bytes, described by an array of `iovec`, sent as one. TOTAL
+    -- is what they add up to, and is checked the way `write` checks `count`:
+    -- the kernel is allowed to send less than asked, and a short send is a
+    -- failure here rather than something the caller has to remember to notice.
+    write_vectors (vectors, count, total, written) goes
+      writev (descriptor is descriptor,
+              vectors is vectors,
+              count is count,
+              written is written)
+      ensure written == total
+    end
+
     -- setsockopt(2) -- `name` rather than `optname`, which is the syscall's own
     -- abbreviation and not this library's.
     option (level, name, value, length, result) goes
@@ -1145,6 +1171,14 @@ linux is
   --   peer.family is 2               -- AF_INET
   --   peer.port is 12345
   --   peer.address is 2130706433     -- 127.0.0.1
+  -- One run of bytes in a scatter-gather list: an address and a length, in the
+  -- order and the widths the kernel reads them. An array of these is what
+  -- `write_vectors` is pointed at.
+  iovec is
+    base is 8 bytes
+    length is 8 bytes
+  end
+
   sockaddr_in is
     family is 2 bytes
     port is 2 bytes as big

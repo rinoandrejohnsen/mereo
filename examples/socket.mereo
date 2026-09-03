@@ -17,17 +17,15 @@ program goes
   count is 0
   written is 0
 
-  host is 16 bytes
-  peer is host as linux.sockaddr_in
-  peer.family is 2                     -- AF_INET
-  peer.port is 12345                   -- `2 bytes as big` -- network order, free
-  peer.address is 2130706433           -- 127.0.0.1
+  peer is linux.sockaddr_in (family is 2,             -- AF_INET
+                             port is 12345,           -- network order, free
+                             address is 2130706433)   -- 127.0.0.1
 
   terminal is already linux.file (descriptor is 1)
 
   link is linux.socket (domain is 2, type is 1, protocol is 0)
 
-  link.connect (address is host, length is host.size)
+  link.connect (address is peer, length is peer.size)
 
   link.read (buffer is buffer, capacity is capacity, count is count)
 
