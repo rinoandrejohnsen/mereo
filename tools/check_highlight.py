@@ -98,8 +98,8 @@ def check_kate(hl, xml_path):
 
 # Lua bolds every keyword, and the definition follows it -- so what is bold is
 # the reserved vocabulary plus the name a line declares.
-BOLD = {"structure", "decl", "namespace_decl", "check"}
-ITALIC = {"comment", "inside", "check"}
+BOLD = {"structure", "decl", "namespace_decl"}
+ITALIC = {"comment", "inside"}
 
 
 def check_bold(hl, root):

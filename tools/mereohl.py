@@ -67,15 +67,8 @@ ENTRY_VIEWS = {"arguments", "environment", "auxiliary"}
 # one operator-shaped word, so it is coloured like an operator and never bold.
 GLUE = {"is"}
 # what moves, rather than what declares
-FLOW = {"leave", "repeat", "when", "or", "continue", "acquire",
+FLOW = {"leave", "repeat", "when", "ensure", "or", "continue", "acquire",
         "release", "fails"}
-# `ensure` is the one word in the language that can END the program, and it is
-# the only place a mereo file states a fact it will not go on without. It reads
-# as flow -- it stands inside a block, so the positional rule would make it
-# italic like the rest -- but it is not flow: nothing after it runs unless the
-# claim holds. Bold AND italic: the weight of structure for what it costs, the
-# slant of vocabulary for where it stands.
-CHECK = {"ensure"}
 
 # ---------------------------------------------------------------- the scanner
 #
@@ -129,7 +122,12 @@ OPENS = re.compile(r"(?: is| goes)$|^scope$"
 # `include` opens no block, so the positional rule would make it italic. It is
 # bold anyway: it is the file's own structure, the first thing in every one,
 # and what it brings in is the reason the rest parses at all.
-ALWAYS_BOLD = {"end", "leave", "repeat", "include"}
+#
+# `ensure` is here for the other reason: it can END the program. It is the only
+# place a file states a fact it will not go on without, and nothing after it
+# runs unless the claim holds, so it carries the weight the jumps do rather
+# than receding into the vocabulary it stands among.
+ALWAYS_BOLD = {"end", "leave", "repeat", "include", "ensure"}
 
 
 def classify(tok, kind, src, at):
@@ -143,8 +141,6 @@ def classify(tok, kind, src, at):
     line, lo = line_at(src, at)
     code = line.split("--")[0].rstrip() if '"' not in line else line.rstrip()
     _bold = tok in ALWAYS_BOLD or bool(OPENS.search(code.strip()))
-    if tok in CHECK:
-        return "check"
     if tok in STRUCTURE or tok in FLOW:
         return "structure" if _bold else "inside"
     first = at == lo + len(line) - len(line.lstrip())
@@ -264,7 +260,6 @@ THEMES = {
             "structure": ("#e3dcd0", 1),
             "bind":      ("#c98fc9", 0),   # `is` binding: the operator it is
             "inside":    ("#e3dcd0", 0),   # a keyword standing in a block
-            "check":     ("#e3dcd0", 1),   # `ensure`: bold and italic
             "decl":      ("#b48ead", 1),
             "call":      ("#b48ead", 0),
             "namespace": ("#d8b878", 0),   # the number colour
@@ -288,7 +283,6 @@ THEMES = {
         "tok": {
             "structure": ("#1f1c1b", 1),
             "inside":    ("#1f1c1b", 0),   # a keyword standing in a block
-            "check":     ("#1f1c1b", 1),   # `ensure`: bold and italic
             "decl":      ("#644a9b", 1),
             "call":      ("#644a9b", 0),
             "namespace": ("#b08000", 0),
@@ -309,9 +303,9 @@ THEMES = {
 # Classes drawn in italic as well as their weight. `is` binding a value is
 # bold AND italic; `is` opening a body is bold alone, so the two roles stay
 # apart while both carry the column.
-ITALIC = {"comment", "inside", "check"}
+ITALIC = {"comment", "inside"}
 
-ANSI = {"structure": "1;97", "bind": "95", "inside": "3;97", "check": "1;3;97", "decl": "1;35", "call": "35", "namespace": "33", "namespace_decl": "1;33",
+ANSI = {"structure": "1;97", "bind": "95", "inside": "3;97", "decl": "1;35", "call": "35", "namespace": "33", "namespace_decl": "1;33",
         "member": "34", "label": "34", "register": "96", "number": "33",
         "string": "31", "operator": "95", "comment": "90", "plain": "0"}
 
