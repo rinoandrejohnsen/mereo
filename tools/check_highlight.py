@@ -98,8 +98,8 @@ def check_kate(hl, xml_path):
 
 # Lua bolds every keyword, and the definition follows it -- so what is bold is
 # the reserved vocabulary plus the name a line declares.
-BOLD = {"structure", "decl", "namespace_decl"}
-ITALIC = {"comment", "inside"}
+BOLD = {"structure", "decl", "namespace_decl", "check"}
+ITALIC = {"comment", "inside", "check"}
 
 
 def check_bold(hl, root):
@@ -129,7 +129,11 @@ def check_bold(hl, root):
         r = subprocess.run(["ksyntaxhighlighter6", "-s", "Mereo", "-f", "ansi",
                             str(f)], capture_output=True, text=True)
         for label, classes, pat in (
-                ("bolds", BOLD, r"\x1b\[38;2;[0-9]+;[0-9]+;[0-9]+;1m([^\x1b]*)"),
+                # `;1m` is bold alone and `;1;3m` is bold AND italic -- a
+                # class may be both, so the bold test must not require that
+                # bold be the last attribute in the run.
+                ("bolds", BOLD,
+                 r"\x1b\[38;2;[0-9]+;[0-9]+;[0-9]+;1(?:;3)?m([^\x1b]*)"),
                 ("italicises", ITALIC,
                  r"\x1b\[38;2;[0-9]+;[0-9]+;[0-9]+(?:;1)?;3m([^\x1b]*)")):
             # words, not whole tokens: Kate reports a styled RUN and a comment

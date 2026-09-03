@@ -53,6 +53,7 @@ blockquote p:last-child{margin-bottom:0}
 @media(max-width:820px){#sidebar{position:static;width:auto;height:auto}main{margin-left:0;padding:24px}}
 .t-structure{color:#1f1c1b;font-weight:600}
 .t-inside{color:#1f1c1b;font-style:italic}
+.t-check{color:#1f1c1b;font-weight:600;font-style:italic}
 .t-decl{color:#644a9b;font-weight:600}
 .t-call{color:#644a9b}
 .t-namespace{color:#b08000}
@@ -181,7 +182,7 @@ release_server:
 <p>There is no return value. An <strong>out-port</strong> names where the answer goes: <code>offset is at</code> means "put the offset in <code>at</code>". Three answers, three out-ports, no tuple.</p>
 <h3>Conditions</h3>
 <p>Operators, never words — <code>==</code>, <code>!=</code>, <code>&lt;</code>, <code>&gt;=</code>, <code>&amp;&amp;</code>, <code>||</code> — so a condition cannot read as prose:</p>
-<pre><code>  <span class="t-inside">ensure</span> <span class="t-plain">argc</span> <span class="t-operator">&gt;=</span> <span class="t-number">2</span>
+<pre><code>  <span class="t-check">ensure</span> <span class="t-plain">argc</span> <span class="t-operator">&gt;=</span> <span class="t-number">2</span>
   <span class="t-structure">leave</span> <span class="t-decl">scan</span> <span class="t-inside">when</span> <span class="t-plain">c</span> <span class="t-operator">==</span> <span class="t-number">32</span></code></pre>
 <h3>Namespaces</h3>
 <p>A namespace has no keyword: it is an <code>is</code> block holding a <strong>definition</strong>. Templates alone do not make one — that is a group. A field makes it neither: a namespace has members, not bytes. The syscall library puts everything under <code>linux</code>; the computation library uses none, so its groups are reached bare:</p>
@@ -477,8 +478,8 @@ release_server:
   <span class="t-plain">h</span> <span class="t-bind">is</span> <span class="t-plain">buf</span> <span class="t-inside">as</span> <span class="t-plain">record</span>
   <span class="t-plain">h</span><span class="t-operator">.</span><span class="t-call">fill</span> <span class="t-operator">(</span><span class="t-label">a</span> <span class="t-bind">is</span> <span class="t-number">5</span><span class="t-operator">,</span> <span class="t-label">b</span> <span class="t-bind">is</span> <span class="t-number">4660</span><span class="t-operator">)</span>   <span class="t-comment">-- 0x1234, stored most-significant first</span>
 
-  <span class="t-inside">ensure</span> <span class="t-plain">h</span><span class="t-operator">.</span><span class="t-member">tag</span> <span class="t-operator">==</span> <span class="t-number">5</span>
-  <span class="t-inside">ensure</span> <span class="t-operator">[</span><span class="t-plain">buf</span> <span class="t-operator">+</span> <span class="t-number">1</span> <span class="t-operator">:</span> <span class="t-number">1</span><span class="t-operator">]</span> <span class="t-operator">==</span> <span class="t-number">18</span>   <span class="t-comment">-- 0x12 first: the template kept network order</span>
+  <span class="t-check">ensure</span> <span class="t-plain">h</span><span class="t-operator">.</span><span class="t-member">tag</span> <span class="t-operator">==</span> <span class="t-number">5</span>
+  <span class="t-check">ensure</span> <span class="t-operator">[</span><span class="t-plain">buf</span> <span class="t-operator">+</span> <span class="t-number">1</span> <span class="t-operator">:</span> <span class="t-number">1</span><span class="t-operator">]</span> <span class="t-operator">==</span> <span class="t-number">18</span>   <span class="t-comment">-- 0x12 first: the template kept network order</span>
 <span class="t-structure">end</span></code></pre>
 <p>Inside the template, a field is reached by its bare name — <code>tag is a</code> writes the instance's <code>tag</code>, not a local. Nothing is passed in to say which instance: the template is spliced at the use site, so <code>h.fill (...)</code> becomes stores into <code>buf</code>.</p>
 <p>This is how <code>span</code> and <code>builder</code> in <a href="#library">the standard library</a> are built. They are layouts of two or three fields carrying the operations that go with them, which is why <code>rest.find (...)</code> costs no more than the loads it performs.</p>
@@ -680,14 +681,14 @@ close(3)              = 0</code></pre>
 
 <span class="t-structure">program</span> <span class="t-operator">(</span><span class="t-plain">arguments</span><span class="t-operator">)</span> <span class="t-structure">goes</span>
   <span class="t-plain">argc</span> <span class="t-bind">is</span> <span class="t-plain">arguments</span><span class="t-operator">.</span><span class="t-member">count</span>
-  <span class="t-inside">ensure</span> <span class="t-plain">argc</span> <span class="t-operator">&gt;=</span> <span class="t-number">2</span>
+  <span class="t-check">ensure</span> <span class="t-plain">argc</span> <span class="t-operator">&gt;=</span> <span class="t-number">2</span>
 <span class="t-structure">end</span></code></pre>
 <p>Run with no argument the check fails, the program releases whatever is live, writes a line naming the step, and exits non-zero. Run with one, it exits zero.</p>
 <p>A system call's result is <strong>signed</strong> — negative is <code>-errno</code> — and each primitive says so in its own contract:</p>
 <pre><code>  <span class="t-decl">read</span> <span class="t-structure">is</span> <span class="t-structure">assembly</span> <span class="t-string">"syscall"</span>
     <span class="t-plain">count</span> <span class="t-inside">out</span> <span class="t-register">rax</span>
     <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>
-    <span class="t-inside">ensure</span> <span class="t-plain">count</span> <span class="t-inside">as</span> <span class="t-inside">signed</span> <span class="t-operator">&gt;=</span> <span class="t-number">0</span>
+    <span class="t-check">ensure</span> <span class="t-plain">count</span> <span class="t-inside">as</span> <span class="t-inside">signed</span> <span class="t-operator">&gt;=</span> <span class="t-number">0</span>
   <span class="t-structure">end</span></code></pre>
 <p>That reading belongs to the call, not to wherever the caller keeps the answer. Without it, binding the result to an unsigned field would compile <code>count &gt;= 0</code> into a comparison that is always true, and a failed read would go unnoticed. A method writing its own <code>ensure</code> may say the same thing the same way.</p>
 <p>Every fallible step carries its own <code>ensure</code> from the primitive underneath, so a call site does not test a result. <code>linux.file.write</code> requires that every byte moved; the raw <code>linux.write</code> requires a non-negative count. That check costs two instructions — a compare and a jump — and the record that names the failure sits in the cold region past the program's exit, so it costs nothing on the path that succeeds.</p>
@@ -1057,7 +1058,7 @@ $ echo $?
 
 <span class="t-structure">program</span> <span class="t-operator">(</span><span class="t-plain">arguments</span><span class="t-operator">)</span> <span class="t-structure">goes</span>
   <span class="t-plain">argc</span> <span class="t-bind">is</span> <span class="t-plain">arguments</span><span class="t-operator">.</span><span class="t-member">count</span>
-  <span class="t-inside">ensure</span> <span class="t-plain">argc</span> <span class="t-operator">&gt;=</span> <span class="t-number">2</span>
+  <span class="t-check">ensure</span> <span class="t-plain">argc</span> <span class="t-operator">&gt;=</span> <span class="t-number">2</span>
 <span class="t-structure">end</span></code></pre>
 <p>With no argument the check fails, a record naming the step goes to standard error, and the status is non-zero. With one, the program exits zero.</p>
 <h3>Splitting input on a byte</h3>
@@ -1280,8 +1281,8 @@ port -&gt; 8080</code></pre>
                                <span class="t-comment">-- width is known before the run begins</span></code></pre>
 <p>See <a href="#memory">Layout views</a>, <a href="#memory">Flag views</a>, <a href="#memory">Container</a>, <a href="#memory">Span and builder</a>.</p>
 <h3>Failure</h3>
-<pre><code><span class="t-inside">ensure</span> <span class="t-plain">count</span> <span class="t-operator">&gt;=</span> <span class="t-number">1</span>              <span class="t-comment">-- must hold, or: release, report, exit non-zero</span>
-<span class="t-inside">ensure</span> <span class="t-plain">a</span> <span class="t-operator">&gt;</span> <span class="t-number">2</span> <span class="t-operator">&amp;&amp;</span> <span class="t-plain">b</span> <span class="t-operator">&gt;</span> <span class="t-number">3</span>          <span class="t-comment">-- each conjunct reports separately</span>
+<pre><code><span class="t-check">ensure</span> <span class="t-plain">count</span> <span class="t-operator">&gt;=</span> <span class="t-number">1</span>              <span class="t-comment">-- must hold, or: release, report, exit non-zero</span>
+<span class="t-check">ensure</span> <span class="t-plain">a</span> <span class="t-operator">&gt;</span> <span class="t-number">2</span> <span class="t-operator">&amp;&amp;</span> <span class="t-plain">b</span> <span class="t-operator">&gt;</span> <span class="t-number">3</span>          <span class="t-comment">-- each conjunct reports separately</span>
 
 <span class="t-plain">source</span><span class="t-operator">.</span><span class="t-member">read</span>                    <span class="t-comment">-- a step that may fail...</span>
     <span class="t-operator">.</span><span class="t-operator">.</span><span class="t-operator">.</span>

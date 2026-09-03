@@ -34,7 +34,7 @@
   The previous definition keyed every rule on `where` and on exact 2/4/6-space
   indentation, so those two rendered nothing alike.
 -->
-<language name="Mereo" section="Sources" version="56" kateversion="5.62"
+<language name="Mereo" section="Sources" version="57" kateversion="5.62"
           extensions="*.mereo" mimetype="text/x-mereo"
           author="rino" license="MIT" casesensitive="1">
   <highlighting>
@@ -58,13 +58,20 @@
       <item>leave</item>
       <item>repeat</item>
       <item>when</item>
-      <item>ensure</item>
       <item>or</item>
       <item>contains</item>
       <item>continue</item>
       <item>acquire</item>
       <item>release</item>
       <item>fails</item>
+    </list>
+    <!-- `ensure` is the one word that can END the program, and the only place
+         a file states a fact it will not go on without. It stands inside a
+         block, so the positional rule would draw it italic like the rest of
+         the flow words; it is drawn bold as well, because nothing after it
+         runs unless the claim holds. -->
+    <list name="check">
+      <item>ensure</item>
     </list>
     <!-- readings and storage: how bits are to be taken -->
     <list name="modifier">
@@ -195,6 +202,7 @@
              declaration headers (`X is assembly "..."`, `X is helper y`) put
              their marker BEHIND the word instead, and a lookahead cannot see
              backwards, so those take a fixed-width lookbehind of their own. -->
+        <keyword String="check" attribute="Check" context="#stay"/>
         <RegExpr String="\b(?:end|leave|repeat|goes|scope|likely|include)\b" attribute="Structure" context="#stay"/>
         <RegExpr String="(?&lt;= is )(?:pure |final )?(?:assembly|helper)\b" attribute="Structure" context="#stay"/>
         <RegExpr String="\bis(?= (?:(?:pure|final) )?(?:assembly|helper)\b)" attribute="Opener" context="#stay"/>
@@ -265,6 +273,7 @@
       <itemData name="Normal Text"  defStyleNum="dsNormal"/>
       <itemData name="Structure"    defStyleNum="dsKeyword"/>
       <itemData name="Inside"       defStyleNum="dsKeyword" bold="0" italic="1"/>
+      <itemData name="Check"        defStyleNum="dsKeyword" bold="1" italic="1"/>
       <itemData name="Declaration"  defStyleNum="dsFunction" bold="1"/>
       <itemData name="Function"     defStyleNum="dsFunction" bold="0"/>
       <!-- A NAMESPACE takes the NUMBER colour, so `linux` and the thing
