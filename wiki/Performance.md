@@ -182,51 +182,119 @@ spliced, so a program is one `_start` — and GCC lays that single large functio
 out in a way the front end keeps having to catch up with. Where that stall is
 larger than Clang's extra instructions, Clang wins; where it is not, GCC does.
 
-A third program, added later, says the same thing more strongly. The SQLite
-demo server — HTTP parse, b-tree walk, JSON build, one response — measured over
-1000 requests, user space only, four interleaved rounds, quoted at minimum
-cycles:
+A third program says the same thing more strongly, and then says something the
+first two did not. The SQLite demo server — HTTP parse, b-tree walk, JSON
+build, one response — measured over 1000 requests, user space only, twelve
+interleaved rounds:
 
-| | instructions | cycles | IPC |
+| | instructions | cycles | stdev of cycles |
 | --- | --- | --- | --- |
-| gcc -O2 | 1,937 | 1,542 | 1.26 |
-| clang -O3 | **1,649** | **1,281** | **1.29** |
+| gcc -O2, before the work below | 1,936 | 1,595 | |
+| clang -O3, before | 1,649 | 1,323 | |
+| gcc -O2, after | **1,375** | 1,259 | 8.4 (0.67%) |
+| clang -O3, after | **1,348** | 1,210 | 16.5 (1.37%) |
 
-Here Clang emits **fewer** instructions, not more — 15% fewer — which is the
-opposite of both rows above, and the reason to distrust any generalisation
-drawn from one program. Clang's binary is still 17 KB against GCC's 10 KB: it
-unrolls the byte loops, which costs size and buys retiring throughput.
+**Instruction counts have zero variance** — 1,375 and 1,348 in all twelve runs,
+identically. Cycles carry about 1%, and Clang's spread is twice GCC's, which
+fits: its binary is 89% larger in `.text` and its hot path is threaded through
+cold code, so it is more sensitive to what else the machine is doing. A
+difference has to clear roughly 30–50 cycles here before it means anything.
 
-Three library changes and one system call took that program from 2,808
-instructions and 1,987 cycles (gcc) to the table above — 31% and 22%. What they
-were is worth more than the numbers. `builder.add` passed `target is data +
-count` into `text.copy`, and a port is substituted as an EXPRESSION, so every
-byte reloaded `data` and `count` from the block; an unsigned-char store may
-alias them, so the compiler is not permitted to hoist it. Naming the address
-first — `into is data + count` — took the inner loop from eight instructions
-and two loads per byte to five and none. `text.copy` then moved to a word at a
-time with a byte tail, `text.equals` answered lengths under eight with two
-overlapping loads instead of one per byte, and `writev` removed the copy of the
-body into the head buffer.
+Here Clang emitted **fewer** instructions than GCC, not more — the opposite of
+both rows above, and the reason to distrust any generalisation drawn from one
+program. The cause was neither a better `memcpy` nor idiom recognition. Both
+binaries contain **zero call instructions**, no undefined symbols and no
+dynamic dependencies; they compile the same library. Clang's optimised IR does
+hold four `llvm.memcpy` and four `llvm.memset` intrinsics, but every one is a
+fixed-size C aggregate initialiser — the sigaction blocks, `char bound[16] =
+{0}` — expanded inline, and GCC does the same. What Clang actually did was
+**unroll**: 101 distinct loops in GCC's build against 46 in Clang's, bought
+with 89% more `.text`.
 
-IPC FELL while both instructions and cycles fell — 1.48 to 1.29 on the best
-build of each. That is the expected direction: a byte-copy loop is cheap,
-predictable, independent work that retires fast, so deleting it lowers the
-average while doing strictly less. IPC is a diagnostic for a stall, not a
-target.
+No GCC flag reproduces it. Twelve configurations were swept — `-funroll-loops`,
+`-funroll-all-loops`, raised `max-unroll-times` and `max-unrolled-insns`,
+`-fpeel-loops`, aggressive complete-peeling, `-falign-loops=32`, `-fipa-pta`,
+`-march=native`, and dropping `-fno-tree-loop-distribute-patterns` so GCC may
+rewrite copy loops as `memcpy`. The best moved six instructions out of 1,936;
+the unrolling flags grew static size to 2,192 and left dynamic work unchanged.
+GCC's unroller declines loops whose trip count is a runtime value, and raising
+its thresholds does not change that judgement.
 
-The same effect explains why `-falign-loops=32` is worth 20% to one mereo
-program and 0.5% to the rest of the corpus: it attacks the fetch stall, and
-only a program that has one can be paid for it.
+So the arithmetic moved into the library, where it helps both compilers. Six
+changes across two rounds, in order of what they were worth:
 
-Two things follow. `build.sh` uses GCC, and that is the right default — but a
+- **`varint` takes a single byte without entering its loop.** In a SQLite
+  record header that is nearly every varint. Worth 273 instructions a request
+  to GCC and 48 to Clang — Clang was already unrolling it, which is most of why
+  this one change closed most of the gap.
+- **`builder.add` names its destination first.** Written `target is data +
+  count`, the port is substituted as an EXPRESSION into `copy`'s loop, so every
+  byte reloaded `data` and `count` from the block; an unsigned-char store may
+  alias them, so the compiler is not permitted to hoist it. `into is data +
+  count` took the inner loop from eight instructions and two loads per byte to
+  five and none.
+- **`text.copy` moves a word at a time, with a 4/2/1 tail.** Every copy has a
+  tail and most of the copies this library makes ARE tail: a six-byte literal
+  never enters the word loop.
+- **`text.format` answers anything under a hundred with no loop** — neither the
+  staging loop nor the reversing one. An id, a count, a small Content-Length.
+- **`text.equals` answers lengths under eight with two overlapping loads**
+  rather than one per byte, so a six-byte route check costs two compares.
+- **`writev`** removes the copy of the response body into the head buffer.
+
+Together: GCC 1,936 → 1,375 instructions and 1,595 → 1,259 cycles, **−29% and
+−21%**. GCC's gap to Clang fell from 17% to 2% on instructions and from 21% to
+4% on cycles. Most of what the better unroller was buying now sits in the
+source, where neither compiler has to find it.
+
+### Layout is real, verifiable, and has never predicted anything
+
+GCC partitions cold blocks into `.text.unlikely`; Clang has no equivalent on by
+default, so `__builtin_expect` steers its *prediction* but not its *placement*
+and the cold chain is left inline for the hot path to jump over. Counting the
+branch after each syscall check:
+
+| | GCC | Clang |
+| --- | --- | --- |
+| `abc` (straight line) | 3 fall-through, 0 inverted | 1 / 2 |
+| `catview` (one loop, syscalls inside) | 4 / 0 | 2 / 2 |
+| the SQLite server | 6 / 1 | 5 / 2 |
+
+GCC wins on all three regardless of shape. It has never once decided a
+measurement. `-mllvm -enable-ext-tsp-block-placement` repairs Clang's layout —
+3-of-3 on `abc`, matching GCC exactly — and on the server it raised taken
+branches from 118 to 141 and cost 2% in cycles. Nothing in the C changes it: on
+Clang 22, six source forms were tried, including plain `long`s with no fields,
+no casts and no negations, and every one keeps the cold block inline. Moving
+the cold region above the hot path in the emitted C does fix `abc` outright,
+and does nothing for the server.
+
+`catview` is the counter-example that keeps the whole section honest. Copying
+64 MB through a 4 KB buffer, Clang runs 229,485 instructions against GCC's
+295,023 — 22% fewer — and takes 5% MORE cycles, consistently. Taken branches
+are equal (16,390 against 16,386), so unrolling has nothing to work with in a
+loop whose body is two syscalls. Fixing the polarity changed nothing.
+Instruction-cache misses are ~0.1 per iteration, ITLB misses ~100 in total, and
+the uop cache delivers nothing at all — every uop comes from legacy decode.
+**Why GCC wins there is not known.** Code density is the surviving hypothesis;
+Clang's loop body spans 863 bytes to GCC's 441.
+
+Three things follow. `build.sh` uses GCC, and that is the right default — but a
 mereo program that turns out to be fetch-bound may do better under Clang, and
 the way to find out is the topdown slot accounting above rather than a guess.
-And treat any figure here as a claim about one compiler on one program: on this
-hardware a single build's cycle count moves by up to a third on code layout
-alone, which is larger than most of the differences worth arguing about. So
-instruction counts are the stable measure, and cycles are quoted only from a
-swept build.
+
+Where the two compilers differ by more than a little, the difference is usually
+a loop the library should not have been running, and closing it in `core.mereo`
+is worth more than picking a compiler: it is measured once and paid by both.
+
+And treat any figure here as a claim about one compiler on one program.
+Instruction counts are deterministic and safe to quote. Cycles are not, and the
+trap is worse than run-to-run noise: on this hardware the *measurement
+configuration* moves them. A three-event `perf` run showed one build 4% ahead
+of another; with two events and a two-binary rotation the same pair were 0.5%
+apart with overlapping spreads, and the 4% was retracted. Quote cycles only as
+a minimum or a mean with its spread, from the same binary measured the same
+way.
 
 ## What has not been measured
 
