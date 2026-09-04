@@ -157,6 +157,16 @@ varint (data, at, value, next) goes
   k is 0
   value is 0
   next is at
+  -- A varint under 128 is one byte, and in a record header that is nearly all
+  -- of them: every serial type below ten, and every short header length. The
+  -- loop below is correct for those too; this just declines to enter it.
+  one goes
+    c is [data + at : 1]
+    leave one when c >= 128
+    value is c
+    next is at + 1
+    leave varint
+  end
   read goes
     step goes
       c is [data + i : 1]

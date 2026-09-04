@@ -233,6 +233,20 @@ text is
       length is j + 1
       leave format
     end
+    -- Under a hundred takes no loop at all -- neither the staging loop nor the
+    -- reversing one. An id, a count, a small length: that is most of what a
+    -- program formats, and it costs two stores instead of two loops.
+    small goes
+      leave small when n >= 100
+      tens goes
+        leave tens when n < 10
+        [buffer + j : 1] is 48 + (n / 10)
+        j is j + 1
+      end
+      [buffer + j : 1] is 48 + (n % 10)
+      length is j + 1
+      leave format
+    end
     digits goes
       leave digits when n <= 0
       leave digits when i >= 20
@@ -279,11 +293,22 @@ text is
         repeat step
       end
     end
-    tail goes
-      leave tail when i >= length
+    -- the last seven bytes or fewer, in at most three stores rather than up to
+    -- seven iterations. Every copy has a tail, and most of the ones this
+    -- library makes ARE tail: a six-byte literal never enters the word loop.
+    four goes
+      leave four when i + 4 > length
+      [target + i : 4] is [source + i : 4]
+      i is i + 4
+    end
+    two goes
+      leave two when i + 2 > length
+      [target + i : 2] is [source + i : 2]
+      i is i + 2
+    end
+    one goes
+      leave one when i >= length
       [target + i : 1] is [source + i : 1]
-      i is i + 1
-      repeat tail
     end
   end
 
