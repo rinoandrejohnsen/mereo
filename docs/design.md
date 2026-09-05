@@ -80,6 +80,45 @@ A [view](memory.md) names those readings once so a record describes itself, but
 it converts nothing and copies nothing: it is a statement about bytes that
 already exist. Nothing is coerced silently, because there is nothing to coerce.
 
+## Storage is not one record
+
+Every name a program declares could have been a member of one record — a
+`program` whose fields are its whole state, laid out once at the top. It reads
+as the tidier design, and it is measurably the wrong one.
+
+A scalar in mereo has no address: the language gives you no way to take one.
+That is why it can live in a register, and why the SQLite demo server's
+120,056-byte frame is 119,844 bytes of backings and only 212 bytes for
+everything else — 256 scalars, none of them addressed. A *backing* is the
+opposite: its name IS its address, and fourteen of them are handed to system
+calls, each of which clobbers `"memory"`.
+
+Put both kinds in one record and the record's address escapes at the first
+buffer argument. After that a `memory` clobber has to be assumed to touch every
+field, so the scalars stop being registers. Measured on `serve`, 1000 requests,
+user space:
+
+| | instructions | cycles |
+| --- | --- | --- |
+| as it is | 1,369 | 1,228 |
+| the scalars in one record | 1,442 | 1,206 |
+| **everything in one record** | **2,769** | **1,942** |
+
+Instructions double and cycles rise by 58%, under GCC and Clang alike — Clang
+goes 1,348 to 2,934. The disassembly names the mechanism: 994 stack-memory
+operands across 270 distinct slots against 141 across 39, and immediately
+before a syscall, `mov %eax,0x1d520(%rsp)` — a register being spilled into the
+record because the clobber might touch it.
+
+The middle row is the control, and it is the interesting one. Putting only the
+*scalars* in a record costs 5% of instructions and no measurable time: nothing
+takes that record's address, so the compiler splits it back into registers. The
+aggregate is not what costs. Mixing the two kinds of storage is, because one of
+them has an address and the other must not.
+
+So the bytes/words distinction is not bookkeeping. It is the reason a scalar is
+free, and one record for everything spends it.
+
 ## Optimisation claims are checked, not hinted
 
 A cold block — the record an `ensure` writes when it fails — is emitted past
