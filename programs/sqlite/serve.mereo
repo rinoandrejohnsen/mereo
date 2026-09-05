@@ -3,24 +3,6 @@ include "../../core.mereo"
 include "../http/parse.mereo"
 include "read.mereo"
 
--- All three pieces in one program: an HTTP server that answers a REST request
--- with rows read out of a SQLite database CARRIED INSIDE THE BINARY.
---
---   $ curl localhost:8080/items
---   [{"id":1,"name":"alpha","qty":10},
---    {"id":2,"name":"beta","qty":20},
---    {"id":3,"name":"gamma","qty":30}]
---
--- There is no database file on disk, no allocator, and nothing is copied that
--- does not have to be. The request is parsed in the socket's own read buffer;
--- the table is found by walking the schema in .rodata; each row's text columns
--- are spans into .rodata that go straight into the response. The only bytes
--- that move are the ones written to the socket.
---
--- Each piece owns exactly what it should: `linux.socket` owns the descriptors
--- and the release tower closes them on every path, including a fault; the
--- three readers own nothing at all.
-
 blob is "demo.db" embedded
 
 program goes
@@ -39,26 +21,17 @@ program goes
   used is 0
   written is 0
 
-  method is 0
   method_length is 0
-  path is 0
   path_length is 0
-  minor is 0
   body is 0
 
   root is 0
   found is 0
   depth is 0
-  got is 0
   rowid is 0
-  payload_at is 0
   payload_length is 0
-  index is 0
-  kind is 0
   number is 0
   at is 0
-  size is 0
-  ok is 0
   first is 0
 
   -- 1. open the database that is part of this binary
@@ -68,6 +41,7 @@ program goes
     read_version is 0
   )
   db.open (result is outcome)
+
   ensure outcome == 0
 
   -- 2. find the `items` table by walking the schema, exactly as sqlite does
@@ -76,54 +50,72 @@ program goes
   [nest + 8 : 8] is 0
   schema goes
     rows.step (
-      data is blob, page_size is db.page_size,
-      reserved is db.reserved_space, stack is nest,
-      depth_limit is 64, depth is depth, rowid is rowid,
-      payload_at is payload_at, payload_length is payload_length,
-      result is got
+      data is blob, page_size is db.page_size, reserved is db.reserved_space,
+      stack is nest, depth_limit is 64, depth is depth, rowid is rowid,
+      payload_length is payload_length
+    ) (
+      payload_at is payload_at, got is result
     )
+
     leave schema when got != 1
+
     record.column (
-      payload is payload_at, payload_length is payload_length,
-      index is 1, kind is kind, number is number,
-      at is at, size is size, result is ok
+      payload is payload_at, payload_length is payload_length, index is 1,
+      number is number, at is at
+    ) (
+      kind is kind, size is size, ok is result
     )
+
     named goes
       leave named when ok != 0
+
       leave named when kind != 3
+
       text.equals (
-        data is at, length is size, other is "items",
-        other_length is 5, result is ok
+        data is at, length is size, other is "items", other_length is 5
+      ) (
+        ok is result
       )
+
       leave named when ok != 1
+
       record.column (
-        payload is payload_at, payload_length is payload_length,
-        index is 3, kind is kind, number is number,
-        at is at, size is size, result is ok
+        payload is payload_at, payload_length is payload_length, index is 3,
+        number is number, at is at
+      ) (
+        kind is kind, size is size, ok is result
       )
       root is number when ok == 0
       found is 1 when ok == 0
     end  -- named
+
     leave schema when found == 1
+
     repeat schema
   end  -- schema
+
   ensure found == 1
 
   -- 3. serve it
   bound is linux.sockaddr_in (family is 2, port is 8080, address is 0)
 
   listener is linux.socket (domain is 2, type is 1, protocol is 0)
+
   [enable : 4] is 1
+
   listener.option (
     level is 1, name is 2, value is enable, length is 4,
     result is outcome
   )
   or continue (result is 0)
+
   listener.bind (address is bound, length is bound.size)
+
   listener.listen (backlog is 16)
 
   serve goes
     listener.accept (address is 0, length is 0, connection is peer)
+
     client is adopted linux.socket (descriptor is peer)
 
     total is 0
@@ -131,27 +123,33 @@ program goes
 
     request.parse (
       data is wire, length is total, line_limit is 8192,
-      method is method, method_length is method_length,
-      path is path, path_length is path_length, minor is minor,
-      slots is slots, limit is 64, count is seen,
-      body is body, result is used
+      method_length is method_length, path_length is path_length,
+      slots is slots, limit is 64, count is seen, body is body,
+      result is used
+    ) (
+      method is method, path is path, minor is minor
     )
 
     page is page as builder (count is 0, limit is page.size)
+
     items is items as builder (count is 0, limit is items.size)
 
     answer goes
       ok is 0
+
       used >= 0 goes
         text.equals (
           data is path, length is path_length, other is "/items",
-          other_length is 6, result is ok
+          other_length is 6
+        ) (
+          ok is result
         )
       end  -- used >= 0
 
       ok == 0 goes
         page.add (source is "HTTP/1.1 404 Not Found\r\n", length is 24)
         page.add (source is "Content-Length: 0\r\n\r\n", length is 21)
+
         leave answer
       end  -- ok == 0
 
@@ -161,42 +159,53 @@ program goes
       depth is 1
       [nest : 8] is root
       [nest + 8 : 8] is 0
+
       listing goes
         rows.step (
           data is blob, page_size is db.page_size,
-          reserved is db.reserved_space, stack is nest,
-          depth_limit is 64, depth is depth, rowid is rowid,
-          payload_at is payload_at, payload_length is payload_length,
-          result is got
+          reserved is db.reserved_space, stack is nest, depth_limit is 64,
+          depth is depth, rowid is rowid, payload_length is payload_length
+        ) (
+          payload_at is payload_at, got is result
         )
+
         leave listing when got != 1
+
         first != 1 goes
           items.byte (value is 44)
         end  -- first != 1
+
         first is 0
         items.add (source is "{\"id\":", length is 6)
         items.number (value is rowid)
         items.add (source is ",\"name\":\"", length is 9)
+
         record.column (
           payload is payload_at, payload_length is payload_length,
-          index is 1, kind is kind, number is number,
-          at is at, size is size, result is ok
+          index is 1, number is number, at is at
+        ) (
+          kind is kind, size is size, ok is result
         )
+
         name_out goes
           leave name_out when ok != 0
           leave name_out when kind != 3
           items.add (source is at, length is size)
         end  -- name_out
+
         items.add (source is "\",\"qty\":", length is 8)
         record.column (
           payload is payload_at, payload_length is payload_length,
-          index is 2, kind is kind, number is number,
-          at is at, size is size, result is ok
+          index is 2, number is number, at is at
+        ) (
+          kind is kind, size is size, ok is result
         )
         items.number (value is number)
         items.byte (value is 125)
+
         repeat listing
       end  -- listing
+
       items.byte (value is 93)
 
       page.add (source is "HTTP/1.1 200 OK\r\n", length is 17)
@@ -206,10 +215,8 @@ program goes
       page.add (source is "\r\n\r\n", length is 4)
     end  -- answer
 
-    -- The head and the body were built in different buffers and neither is
-    -- copied into the other: the kernel is told where both are and joins them
-    -- itself. Content-Length has to precede the body, which is the only reason
-    -- there are two buffers -- writev is what that costs.
+    -- write reponse
+
     head is parts as linux.iovec (base is page.data, length is page.count)
     rest is parts + 16 as linux.iovec (base is items.data, length is items.count)
     client.write_vectors (
@@ -217,6 +224,7 @@ program goes
       total is page.count + items.count,
       written is written
     )
+
     repeat serve
   end  -- serve
 end  -- program

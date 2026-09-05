@@ -1105,12 +1105,74 @@ def _paren_fold(src):
             nxt = _uncomment(phys[i + eaten]).strip()
             acc += " " + nxt
             d = _depth(nxt, d)
+        # A call may carry TWO groups -- its in-ports, then its out-ports --
+        # and the second may start on the line after the first one closed. Keep
+        # eating while the next line opens one.
+        while d == 0 and i + eaten + 1 < len(phys):
+            nxt = _uncomment(phys[i + eaten + 1]).strip()
+            if not nxt.startswith("("):
+                break
+            eaten += 1
+            acc += " " + nxt
+            d = _depth(nxt, 0)
+            while d > 0 and i + eaten + 1 < len(phys):
+                eaten += 1
+                nxt = _uncomment(phys[i + eaten]).strip()
+                acc += " " + nxt
+                d = _depth(nxt, d)
         if d > 0:
             fail(f"line {i + 1}: an argument list opened here and never closed")
         out.append(acc)
         out.extend([""] * eaten)
         i += eaten + 1
     return "\n".join(out)
+
+
+def out_group(s):
+    """A call written with TWO argument lists -> the one-list form.
+
+        input.read (buffer is buf, capacity is 4096) (my_count is count)
+          ->        input.read (buffer is buf, capacity is 4096, count is my_count)
+
+    The second group is the OUT-ports, and it is written the other way round:
+    the caller's name on the left, because that is the one being assigned. Every
+    other `is` in the language means the left side receives, and an out-port in
+    the first group -- `count is total` -- is the one place that was false.
+
+    Returns (rewritten, [names the out-group introduces]) or None when there is
+    no second group. A name on the left there is CREATED if it does not exist,
+    which is safe in a way the first group is not: this position is a write, so
+    a typo makes a slot nothing reads, while a typo among the in-ports is still
+    an unknown name."""
+    d, inq, close = 0, False, None
+    for i, c in enumerate(s):
+        if c == '"' and (i == 0 or s[i - 1] != "\\"):
+            inq = not inq
+        elif not inq:
+            if c == "(":
+                d += 1
+            elif c == ")":
+                d -= 1
+                if d == 0 and close is None:
+                    close = i
+    if close is None or d != 0:
+        return None
+    rest = s[close + 1:].strip()
+    if not (rest.startswith("(") and rest.endswith(")")):
+        return None
+    head, first = s[:close], s[:close].split("(", 1)
+    if len(first) != 2:
+        return None
+    ins, outs, made = first[1].strip(), [], []
+    for a in _arguments(rest[1:-1], 0):
+        m = re.match(r"^(\w+) is (\w+)$", a.strip())
+        if m is None:
+            fail("an out-port group takes `NAME is PORT` and nothing else, "
+                 f"not `{a.strip()}`")
+        outs.append(f"{m.group(2)} is {m.group(1)}")
+        made.append(m.group(1))
+    joined = ", ".join(([ins] if ins else []) + outs)
+    return f"{first[0]}({joined})", made
 
 
 def _arguments(text, ln):
@@ -1874,6 +1936,19 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
             continue
         ind, s = _indent(line), line.strip()
 
+        # A call may carry a SECOND argument list -- its out-ports, written the
+        # other way round. Normalise it to the one-list form here, once, so
+        # nothing downstream learns a new shape, and declare whatever the
+        # out-group introduces. That last part is why a program need not open
+        # with a block of slots whose only job is to catch a result.
+        _two = out_group(s)
+        if _two is not None:
+            s, _made = _two
+            for _nm in _made:
+                if not any(sl.get("name") == _nm for sl in slots):
+                    name_ok(_nm, n, "slot")
+                    slots.append({"kind": "scalar", "name": _nm,
+                                  "init": "0", "line": n})
 
         # a procedure method's body (every line indented under it) is captured
         # verbatim, dedented to program-step indent, and parsed as a mini-program

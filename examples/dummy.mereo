@@ -1,0 +1,27 @@
+include "../linux.mereo"
+
+program goes
+  buffer is 4096 bytes
+
+  input is linux.file (
+    path is "lorem_ipsum.txt",
+    flags is 0,
+    mode is 0
+  )
+
+  output is already linux.file (
+    descriptor is 1
+  )
+
+  input.read (
+    buffer is buffer,
+    capacity is buffer.size
+  ) (
+    my_count is count
+  )
+
+  output.write (
+    buffer is buffer,
+    count is my_count
+  )
+end
