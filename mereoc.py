@@ -3359,6 +3359,20 @@ def derive_port_needs(definitions):
             for raw in body:
                 line = _unquoted(raw).strip()
                 rhs = line.partition(" is ")[2]
+                call = re.match(r"^([\w.]+)\s*\((.*)\)$", line)
+                # A call's arguments are settled by `sends` below: what the
+                # CALLEE needs of the port it is handed decides the matter, and
+                # the fixpoint carries it back. Only an argument that is an
+                # EXPRESSION reads its parts here -- `data is data + i` reads
+                # `data`, while `body is body` reads nothing, it hands the port
+                # on. Taking the whole list as one right-hand side marked every
+                # pass-through as a read, which made almost every out-port look
+                # in-out and cost the call site the chance to say so.
+                if call:
+                    rhs = " ".join(
+                        ac for _p, ac in re.findall(r"(\w+)\s+is\s+([^,]+)",
+                                                    call.group(2))
+                        if ac.strip() not in meth["params"])
                 for port in meth["params"]:
                     e = re.escape(port)
                     if re.search(rf"\b{e}\.\w+\s*\(", line):
@@ -3370,7 +3384,6 @@ def derive_port_needs(definitions):
                     if re.search(rf"\b{e}\b", rhs) and not re.search(
                             rf"\b{e}\.\w+\s*\(|\[\s*{e}\b", rhs):
                         kinds[port].add("value")
-                call = re.match(r"^([\w.]+)\s*\((.*)\)$", line)
                 if call:
                     for pt, ac in re.findall(r"(\w+)\s+is\s+([\w.]+)",
                                              call.group(2)):

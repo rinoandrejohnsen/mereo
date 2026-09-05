@@ -238,10 +238,15 @@ request is
         repeat scan_method
       end
       leave head when i >= length
+      -- the width goes into a LOCAL and only then into the port. Written
+      -- straight to `method_length` and tested there, the port is read as well
+      -- as written, which makes it in-out and costs the call site the chance
+      -- to name it as a result.
+      mlen is i - start
+      result is -1 when mlen == 0
+      leave head when mlen == 0
       method is data + start
-      method_length is i - start
-      result is -1 when method_length == 0
-      leave head when method_length == 0
+      method_length is mlen
       i is i + 1
 
       -- the TARGET: anything the target class allows, then one space
@@ -257,10 +262,11 @@ request is
       gap is [data + i : 1]
       result is -1 when gap != 32
       leave head when gap != 32
+      plen is i - start
+      result is -1 when plen == 0
+      leave head when plen == 0
       path is data + start
-      path_length is i - start
-      result is -1 when path_length == 0
-      leave head when path_length == 0
+      path_length is plen
       i is i + 1
 
       -- the VERSION: `HTTP/1.` a digit, then CRLF -- ten bytes exactly, so
