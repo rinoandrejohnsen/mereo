@@ -498,6 +498,12 @@ rejects scope/sibling-temp sibling_temp     "reads what 'one' left"
 # `new NAME is VALUE` is the half of the spelling that was missing: the plain
 # form opens or assigns and nothing says which, `new` says which.
 rejects scope/new-on-a-scalar   new_on_scalar  "`new` on a scalar is gone"
+# Attaching: a name that already exists gains a field where it is first needed.
+# Creation happens on a WRITE, so each of these is a way of getting it wrong.
+rejects attach/undeclared    attach_undeclared   "has nothing to attach to"
+rejects attach/size          attach_size         "is the byte count"
+rejects attach/byte-order    attach_byte_order   "not bytes at an offset"
+rejects attach/unknown-read  attach_unknown_read "has no field 'total'"
 
 # The surface changed on 2026-08-14 -- parens for arguments, `.` for members --
 # and messages kept recommending the old spellings for months, including "no

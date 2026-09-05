@@ -1,0 +1,8 @@
+include "../../linux.mereo"
+
+-- A field attaches to a name that already exists. `nope` does not.
+
+program goes
+  buffer is 64 bytes
+  nope.count is 0
+end

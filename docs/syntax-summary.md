@@ -33,6 +33,9 @@ msg is "hello\n"               -- a literal backing, NUL-terminated
 msg is constant "hello\n"      -- ...read-only, in .rodata
 raw is constant bytes 0xe3, 0xb0     -- ...given byte by byte
 n is msg.size                  -- a COMPILE-TIME number (not counting the NUL)
+
+buf.count is 0                 -- ATTACH a field to a name that exists: an
+buf.tag is 4 bytes as signed   -- ordinary word, beside the bytes, never in them
 ```
 
 Numbers: `42`, `-1`, `0x2f`, `0b1011`. A name for one is the left-margin

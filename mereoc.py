@@ -1172,7 +1172,7 @@ def out_group(s):
         return None
     ins, outs, made = first[1].strip(), [], []
     for a in _arguments(rest[1:-1], 0):
-        m = re.match(r"^(\w+) is (\w+)$", a.strip())
+        m = re.match(r"^(\w+(?:\.\w+)?) is (\w+)$", a.strip())
         if m is None:
             fail("an out-port group takes `NAME is PORT` and nothing else, "
                  f"not `{a.strip()}`")
@@ -1953,7 +1953,13 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
             s, _made, _ports = _two
             OUT_NAMED[n] = set(_ports)
             for _nm in _made:
-                if not any(sl.get("name") == _nm for sl in slots):
+                if "." in _nm:               # a result landing in an ATTACHED
+                    _h, _f = _nm.split(".")  # field, created here if it is new
+                    if attach_field(_h, _f, slots, definitions, n) is None:
+                        fail(f"line {n}: `{_nm}` names a field of '{_h}', and "
+                             f"'{_h}' is not something a field can be attached "
+                             "to here -- declare it first, or name a slot.")
+                elif not any(sl.get("name") == _nm for sl in slots):
                     name_ok(_nm, n, "slot")
                     slots.append({"kind": "scalar", "name": _nm,
                                   "init": "0", "line": n})
@@ -2706,7 +2712,48 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     laststep = None
                     continue
                 m = re.match(r"^(\w+)\.(\w+) is (.+)$", s)
-                if m:                        # `INST.FIELD is VALUE` -- write
+                if m:
+                    # ATTACHING: a name that already exists gains a field, here,
+                    # where it is first needed -- `buffer.count is 0`. The field
+                    # is a word BESIDE the name, never inside it: a cursor kept
+                    # in a buffer's own bytes aliases the payload written
+                    # through it, and the compiler must then reload it on every
+                    # store. So this is an ordinary scalar that happens to be
+                    # reached through a dot, and it lowers to an ordinary
+                    # assignment.
+                    #
+                    # Creation happens only on a WRITE, which is the rule the
+                    # out-port group already keeps: a typo here makes a field
+                    # nothing reads, while a typo on a READ is an unknown field
+                    # and is refused by name.
+                    _w = re.match(r"^(\d+) bytes(?: as (signed|unsigned|"
+                                  r"big|little))?$", m.group(3))
+                    if _w is not None:
+                        if _w.group(2) in ("big", "little"):
+                            fail(f"line {n}: `{m.group(1)}.{m.group(2)} is "
+                                 f"{_w.group(1)} bytes as {_w.group(2)}` -- an "
+                                 "attached field is a VARIABLE, not bytes at an "
+                                 "offset, and a byte order describes a layout. "
+                                 "Lay a view over the bytes if that is what "
+                                 "this is.")
+                        width_type(_w.group(1), n)      # 1, 2, 4 or 8
+                        _cell = attach_field(m.group(1), m.group(2), slots,
+                                             definitions, n, _w.group(1),
+                                             _w.group(2) == "signed")
+                        if _cell is None:
+                            fail(f"line {n}: `{m.group(1)}.{m.group(2)}` is "
+                                 f"already a member of '{m.group(1)}', so it "
+                                 "cannot be attached with a width.")
+                        laststep = None
+                        continue
+                    _cell = attach_field(m.group(1), m.group(2), slots,
+                                         definitions, n)
+                    if _cell is not None:
+                        steps.append(assign_step(_cell, m.group(3), n))
+                        laststep = None
+                        continue
+                    # ...otherwise it is a field of a layout or a resource, and
+                    # goes the way it always did.
                     _v, _c = store_condition(m.group(3), n, "a field store")
                     steps.append({"type": "fstore", "field": m.group(2),  # a
                                   "inst": m.group(1), "value": _v,        # layout
@@ -5236,6 +5283,63 @@ def parse_expr(actual, scalars, buffers, ln, cond=False):
 PROGRAM_AGAIN = "program_again"
 
 INSTANCE_FIELDS = {}   # (instance, field) -> the C cell holding that state
+# ...of which these were ATTACHED rather than declared: `buffer.count is 0` on a
+# name that already exists. A declared field is settled once the thing is held,
+# because the release tower is derived from it; an attached one is an ordinary
+# word that happens to be reached through a dot, so it assigns like any other.
+ATTACHED = set()
+
+
+def declared_member(name, field, slots, definitions):
+    """Is `NAME.FIELD` already a member of something -- a definition's own field,
+    a part, or the compile-time `.size`? Attaching may not shadow any of them."""
+    if field == "size":
+        return True
+    for sl in slots:
+        if sl.get("name") != name or sl.get("kind") != "instance":
+            continue
+        defn = definitions.get(sl.get("definition")) or {}
+        if (field in (defn.get("state") or {})
+                or field in (defn.get("parts") or {})
+                or any(f == field for f, *_ in (defn.get("packed") or ()))
+                or any(f == field for f, *_ in (defn.get("bitdecl") or ()))):
+            return True
+    return False
+
+
+def attach_field(host, field, slots, definitions, n,
+                 width=None, signed=False):
+    """`HOST.FIELD` on a name that already exists -> the C slot holding it,
+    creating it the first time. None when the pair is somebody else's already.
+
+    The field is a word BESIDE the host, never inside it. A cursor kept in a
+    buffer's own bytes aliases the payload written through it, so the compiler
+    must reload it on every store -- measured at eight instructions and two
+    loads per byte against five and none. What this makes is an ordinary scalar
+    that happens to be reached through a dot.
+
+    A WIDTH picks the field's C type and nothing else -- `fd is 4 bytes as
+    signed` is a four-byte signed variable, not four bytes at an offset. There
+    is no byte layout here for `as big` to be big-endian in, so the caller
+    refuses that."""
+    if (host, field) in ATTACHED:
+        return INSTANCE_FIELDS[(host, field)]
+    if not any(sl.get("name") == host for sl in slots):
+        return None
+    if declared_member(host, field, slots, definitions):
+        return None
+    cell = f"{host}_{field}"
+    name_ok(cell, n, "field")
+    if any(sl.get("name") == cell for sl in slots):
+        fail(f"line {n}: attaching '{field}' to '{host}' needs the name "
+             f"'{cell}', which is already a slot. Rename one of them.")
+    slot = {"kind": "scalar", "name": cell, "init": "0", "line": n}
+    if width is not None:
+        slot["width"], slot["signed"] = width, signed
+    slots.append(slot)
+    INSTANCE_FIELDS[(host, field)] = cell
+    ATTACHED.add((host, field))
+    return cell
 
 
 def instance_field_c(actual, ln):
@@ -5249,7 +5353,8 @@ def instance_field_c(actual, ln):
     hit = INSTANCE_FIELDS.get((inst, field))
     if hit is None and any(i == inst for i, _ in INSTANCE_FIELDS):
         known = sorted(f for i, f in INSTANCE_FIELDS if i == inst)
-        fail(f"line {ln}: '{inst}' has no state '{field}' "
+        what = "field" if any((inst, f) in ATTACHED for f in known) else "state"
+        fail(f"line {ln}: '{inst}' has no {what} '{field}' "
              f"(has: {', '.join(known)})")
     return hit
 
@@ -5328,6 +5433,9 @@ def wire_call(meth, defn, inst, conns_list, scalars, buffers, line):
             cf = container_field_c(actual, buffers, ln)
             if cf is not None:                  # `count of C` -> its scalar
                 actual = cf                     # (data resolves to a non-scalar
+            _a = re.fullmatch(r"(\w+)\.(\w+)", actual)   # ...and an ATTACHED
+            if _a and (_a.group(1), _a.group(2)) in ATTACHED:   # field is a
+                actual = INSTANCE_FIELDS[(_a.group(1), _a.group(2))]   # scalar
             if actual not in scalars:           #  and fails below, not an output)
                 fail(f"line {ln}: the result '{p}' must land in a scalar "
                      f"slot, got '{actual}'")
@@ -7237,6 +7345,16 @@ def plan(definitions, slots, steps, overrides):
                          "construction, and is read-only after, because the "
                          "release tower depends on it. Reading is fine: "
                          f"`{st['inst']}.{st['field']}`")
+                if st["field"] == "size" and st["inst"] in buffers:
+                    fail(f"line {st['line']}: `{st['inst']}.size` is the byte "
+                         f"count '{st['inst']}' was declared with, fixed at "
+                         "compile time. It is not a field, so it cannot be "
+                         "assigned or attached to -- pick another name.")
+                if st["inst"] not in buffers and st["inst"] not in scalars:
+                    fail(f"line {st['line']}: '{st['inst']}' is not declared, "
+                         f"so `{st['inst']}.{st['field']}` has nothing to "
+                         "attach to. A field attaches to a name that already "
+                         f"exists: declare '{st['inst']}' first.")
                 fail(f"line {st['line']}: '{st['inst']}' is not a layout instance")
             _, off, width, _sg, big = sf
             if width not in (1, 2, 4, 8):
@@ -7936,6 +8054,12 @@ def scalar_reads(slots, steps):
     def grab(obj):
         if isinstance(obj, str):
             used.update(re.findall(r"[A-Za-z_]\w*", obj))
+            # ...and an ATTACHED field is read through a dot, so the slot's own
+            # name never appears in the source: `buffer.count` reads
+            # `buffer_count`. Without this every attached field looks dead.
+            for _h, _f in re.findall(r"([A-Za-z_]\w*)\.([A-Za-z_]\w*)", obj):
+                if (_h, _f) in ATTACHED:
+                    used.add(INSTANCE_FIELDS[(_h, _f)])
         elif isinstance(obj, dict):
             for v in obj.values():
                 grab(v)
@@ -7987,6 +8111,7 @@ def check_scalar_use(slots, steps):
 def transpile(sources, prog):
     global CURRENT_FILE, PRIMITIVES, VIEWS
     INSTANCE_FIELDS.clear()
+    ATTACHED.clear()
     REGISTER_WORDS.clear()
     SCALAR_WORDS.clear()
     definitions, slots, steps, overrides, prims = {}, [], [], [], {}
@@ -8129,7 +8254,9 @@ def transpile(sources, prog):
                 body.append(f"    {sc}char {slot['name']}"
                             f"[{buffer_size(slot['size'], scalars)}]{al};")
         elif slot["kind"] == "scalar":
-            body.append(f"    long {slot['name']} = {slot['init']};")
+            _ct = (width_type(slot["width"], slot["line"], slot.get("signed"))
+                   if slot.get("width") else "long")
+            body.append(f"    {_ct} {slot['name']} = {slot['init']};")
         elif slot.get("lens"):
             pass                          # a lens owns no storage -- it IS its backing
         elif (slot["kind"] == "instance"

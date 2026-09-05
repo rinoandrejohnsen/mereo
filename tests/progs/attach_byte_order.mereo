@@ -1,0 +1,9 @@
+include "../../linux.mereo"
+
+-- An attached field is a variable, not bytes at an offset, so a byte order
+-- has nothing to describe. That is what a layout view is for.
+
+program goes
+  buffer is 64 bytes
+  buffer.port is 2 bytes as big
+end

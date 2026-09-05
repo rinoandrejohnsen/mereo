@@ -1,5 +1,11 @@
 include "../linux.mereo"
 
+-- Two ideas at once. A call names its OUT-ports in a second list, the other
+-- way round -- the caller's name on the left, because that is the one being
+-- assigned. And a name that already exists gains a FIELD where it is first
+-- needed: the count belongs to the buffer, so it is written there rather than
+-- declared at the top as a slot whose only job is to catch a result.
+
 program goes
   buffer is 4096 bytes
 
@@ -17,11 +23,11 @@ program goes
     buffer is buffer,
     capacity is buffer.size
   ) (
-    my_count is count
+    buffer.count is count
   )
 
   output.write (
     buffer is buffer,
-    count is my_count
+    count is buffer.count
   )
 end

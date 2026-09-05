@@ -1,0 +1,23 @@
+include "../../linux.mereo"
+
+-- A name that already exists gains fields where they are first needed. They
+-- are words BESIDE the backing, never inside it: a cursor kept in a buffer's
+-- own bytes aliases the payload written through it. A width picks the C type
+-- and nothing else.
+--
+--   echo hello | ./attach_fields   ->  hello
+
+program goes
+  buffer is 4096 bytes
+  buffer.count is 0
+  buffer.limit is buffer.size
+  buffer.tag is 4 bytes as signed
+
+  input is already linux.file (descriptor is 0)
+  input.read (buffer is buffer, capacity is buffer.limit) (buffer.count is count)
+
+  buffer.tag is buffer.count
+
+  sink is already linux.file (descriptor is 1)
+  sink.write (buffer is buffer, count is buffer.tag)
+end

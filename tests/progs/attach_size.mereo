@@ -1,0 +1,9 @@
+include "../../linux.mereo"
+
+-- `.size` is the byte count a backing was declared with, fixed at compile
+-- time. It is not a field, so nothing can be attached under that name.
+
+program goes
+  buffer is 64 bytes
+  buffer.size is 5
+end

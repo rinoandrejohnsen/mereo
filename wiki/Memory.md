@@ -46,6 +46,42 @@ What this does not cover is a path assembled at run time. Those bytes are
 whatever the program put there, and terminating them is the program's job, in
 mereo exactly as in C.
 
+## Attaching a field
+
+A name that already exists gains a field where the field is first needed:
+
+```ada
+  buffer is 4096 bytes
+  buffer.count is 0                  -- a word
+  buffer.tag is 4 bytes as signed    -- ...or a word of a given width
+```
+
+`buffer.count` is an ordinary scalar that happens to be reached through a dot.
+It costs what `count is 0` costs, and it says what the count is *of*.
+
+**A field is beside the name, never inside it.** It takes none of the backing's
+bytes, and the backing gains no layout, no address of its own beyond the one it
+had, and no change to `.size`. That is not a detail of the implementation: a
+cursor kept inside the bytes it writes through aliases them, so the compiler
+must reload it after every store — measured on this project at eight
+instructions and two loads per byte against five and none. Byte-grain records
+are what a layout view is for.
+
+A width picks the field's machine type and nothing else, so `as big` is refused:
+a byte order describes bytes at an offset, and this is a variable.
+
+A field is created by a **write**, never by a read — including a write from a
+call's out-port list, which is where a result most often lands:
+
+```ada
+  input.read (buffer is buffer, capacity is buffer.size) (buffer.count is count)
+```
+
+Reading a field nothing attached is a typo and is refused by name, and a field
+written but never read is refused as well, the way any unread scalar is. What
+you cannot do is shadow something the name already has — `buffer.size`, or a
+field a definition declared.
+
 ## Typed accesses
 
 An access states its width, and optionally its signedness and byte order:

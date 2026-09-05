@@ -1,0 +1,12 @@
+include "../../linux.mereo"
+
+-- Attaching happens on a WRITE. A read of a field that was never attached is
+-- a typo, and is refused by name.
+
+program goes
+  buffer is 64 bytes
+  buffer.count is 1
+  sink is already linux.file (descriptor is 1)
+  sink.write (buffer is buffer, count is buffer.count)
+  sink.write (buffer is buffer, count is buffer.total)
+end

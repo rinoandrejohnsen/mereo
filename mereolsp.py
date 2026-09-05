@@ -223,12 +223,18 @@ class Sym:
     one in another method."""
 
     __slots__ = ("name", "kind", "detail", "line", "col", "end_line",
-                 "children", "ports", "type_of", "doc", "container")
+                 "children", "ports", "type_of", "doc", "container",
+                 "attached")
 
     def __init__(self, name, kind, line, col, detail="", ports=None,
                  type_of=None):
         self.name, self.kind, self.detail = name, kind, detail
         self.line, self.col, self.end_line = line, col, line
+        # Fields ATTACHED to this name later in the file. Not children: a child
+        # lives inside its parent's block and an attached field is written
+        # after it, so nesting them would put the outline's ranges wrong. They
+        # answer `X.field` and nothing else.
+        self.attached = []
         self.children, self.ports, self.type_of = [], ports or [], type_of
         self.doc, self.container = "", None
 
@@ -407,6 +413,29 @@ def index(text, path=""):
         return out, i
 
     syms, _ = block(0, 0)
+
+    # ATTACHED fields. `buffer.count is 0` gives a name that already exists a
+    # member, where it is first written -- so the line declares nothing on its
+    # own and the walk above passes over it. Hang the field on the host it
+    # names, once, at its first mention.
+    hosts = {}
+
+    def collect(ss):
+        for sym in ss:
+            hosts.setdefault(sym.name, sym)
+            collect(sym.children)
+
+    collect(syms)
+    for ind, n, code in lines:
+        m = re.match(r"^(\w+)\.(\w+) is (.+)$", code)
+        if m is None:
+            continue
+        host = hosts.get(m.group(1))
+        if host is None or any(c.name == m.group(2)
+                               for c in host.children + host.attached):
+            continue
+        col = ind + code.index(".") + 1
+        host.attached.append(Sym(m.group(2), FIELD, n, col, m.group(3)))
     return syms, includes
 
 
@@ -783,7 +812,7 @@ class Resolver:
         definitions in separate tables, so the language allows it, and it is
         the only such pair in the project. An index has no two tables, so the
         one that was meant is the one that HAS the member being asked for."""
-        out = [(c, doc) for c in sym.children if c.name == name]
+        out = [(c, doc) for c in sym.children + sym.attached if c.name == name]
         # an INSTANCE reaches its type's methods: `source.read` is `file`'s
         # `read`, and the instance is only where the state lives.
         if sym.type_of and self._depth < 8:
