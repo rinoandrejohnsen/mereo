@@ -1,0 +1,47 @@
+include "../linux.mereo"
+include "../core.mereo"
+
+-- ATTACHING: a name that already exists gains a field where the field is first
+-- needed. It works the same on the three things a name can be -- a backing, a
+-- view over bytes, and a resource holding a descriptor -- because what it makes
+-- is always the same: an ordinary word BESIDE the thing, reached through a dot.
+--
+--   ./attach   ->  one line, then how many bytes went out
+
+program goes
+  wire is 4096 bytes
+
+  -- 1. on a BACKING. The count is of the buffer, so it is written there, not
+  --    declared at the top as a slot whose only job is to hold it.
+  wire.count is 0
+  wire.limit is wire.size
+
+  -- 2. on a VIEW. `bound` is sixteen bytes with names on them; `attempts` is
+  --    not one of those bytes and never becomes one -- the block is untouched
+  --    and `bound.size` is still 16.
+  bound is linux.sockaddr_in (family is 2, port is 8080, address is 0)
+  bound.attempts is 0
+
+  -- 3. on a RESOURCE. `sink` holds a descriptor and closes it; the running
+  --    total is the program's, and it belongs to the sink. A width picks the
+  --    field's machine type and nothing else: `written` is a word, `calls` is
+  --    four bytes because that is all it will ever need.
+  sink is already linux.file (descriptor is 1)
+  sink.written is 0
+  sink.calls is 4 bytes as signed
+
+  page is already builder (data is wire, count is 0, limit is wire.limit)
+  page.add (source is "attaching works on all three\n", length is 29)
+  wire.count is page.count
+
+  bound.attempts is bound.attempts + 1
+  sink.calls is bound.attempts
+  sink.write (buffer is wire, count is wire.count) (sink.written is written)
+
+  page.add (source is "written ", length is 8)
+  page.number (value is sink.written)
+  page.add (source is " in ", length is 4)
+  page.number (value is sink.calls)
+  page.add (source is " call\n", length is 6)
+  sink.write (buffer is wire + wire.count, count is page.count - wire.count)
+end

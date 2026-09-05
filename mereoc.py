@@ -4754,8 +4754,10 @@ def layout_field_c(actual, buffers, ln):
     inst, field = m.group(1), m.group(2)
     pl = buffers[inst]["playout"]
     if field not in pl:
+        if (inst, field) in ATTACHED:     # ...unless it was ATTACHED, which is
+            return None                   # a word beside the block, not in it
         fail(f"line {ln}: layout '{inst}' has no field '{field}' "
-             f"(has: {', '.join(pl)})")
+             f"(has: {', '.join(list(pl) + attached_to(inst))})")
     off, width, signed, big = pl[field]
     rl = buffers[inst].get("reglens")
     if rl:                                 # the backing is a register word: the
@@ -4927,8 +4929,10 @@ def flag_field_c(actual, buffers, ln):
     inst, field = m.group(1), m.group(2)
     bf = buffers[inst]["bitfields"]
     if field not in bf:
+        if (inst, field) in ATTACHED:     # a word attached beside the bits
+            return None
         fail(f"line {ln}: flag view '{inst}' has no bit '{field}' "
-             f"(has: {', '.join(bf)})")
+             f"(has: {', '.join(list(bf) + attached_to(inst))})")
     lo, nbits = bf[field]
     mask = (1 << nbits) - 1
     rl = buffers[inst].get("reglens")
@@ -5288,6 +5292,12 @@ INSTANCE_FIELDS = {}   # (instance, field) -> the C cell holding that state
 # because the release tower is derived from it; an attached one is an ordinary
 # word that happens to be reached through a dot, so it assigns like any other.
 ATTACHED = set()
+
+
+def attached_to(host):
+    """The fields attached to `host`, so a "no such field" message can name
+    them beside the declared ones -- they are equally real to the reader."""
+    return sorted(f for h, f in ATTACHED if h == host)
 
 
 def declared_member(name, field, slots, definitions):

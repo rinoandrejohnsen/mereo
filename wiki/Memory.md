@@ -82,6 +82,31 @@ written but never read is refused as well, the way any unread scalar is. What
 you cannot do is shadow something the name already has — `buffer.size`, or a
 field a definition declared.
 
+### The same on a view, and on a resource
+
+A name is one of three things, and attaching does not care which:
+
+```ada
+  bound is linux.sockaddr_in (family is 2, port is 8080, address is 0)
+  bound.attempts is 0        -- a word beside the sixteen bytes
+
+  sink is already linux.file (descriptor is 1)
+  sink.written is 0          -- a running total that belongs to the sink
+  sink.calls is 4 bytes as signed
+```
+
+`bound` keeps its shape exactly: `attempts` is not one of its bytes and never
+becomes one, `bound.size` is still 16, and `bound.port is 9090` still stores two
+big-endian bytes at offset 2. A declared field stays a declared field; what
+attaches is a separate word.
+
+`sink` is a resource, and its own state stays what it always was — written by
+its `acquire` or at construction and read-only after, because the release tower
+is derived from it. An attached field carries none of that: it is the program's,
+not the resource's, so it assigns like any other word.
+
+`examples/attach.mereo` is the three of them in one program.
+
 ## Typed accesses
 
 An access states its width, and optionally its signedness and byte order:
