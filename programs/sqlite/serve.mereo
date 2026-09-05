@@ -33,7 +33,7 @@ program goes
     page_count is 0, encoding is 0, reserved_space is 0,
     read_version is 0
   )
-  db.open (result is outcome)
+  db.open () (outcome is result)
 
   ensure outcome == 0
 

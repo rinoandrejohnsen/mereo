@@ -1128,6 +1128,13 @@ def _paren_fold(src):
     return "\n".join(out)
 
 
+# Which ports a call named in its SECOND argument list, by line. The check that
+# they really are out-ports cannot happen where the text is rewritten -- the
+# receiver is not resolved yet -- so it happens with the other connection
+# checks, and this is how the two meet.
+OUT_NAMED = {}
+
+
 def out_group(s):
     """A call written with TWO argument lists -> the one-list form.
 
@@ -1172,7 +1179,7 @@ def out_group(s):
         outs.append(f"{m.group(2)} is {m.group(1)}")
         made.append(m.group(1))
     joined = ", ".join(([ins] if ins else []) + outs)
-    return f"{first[0]}({joined})", made
+    return f"{first[0]}({joined})", made, [o.split(" is ")[0] for o in outs]
 
 
 def _arguments(text, ln):
@@ -1943,7 +1950,8 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
         # with a block of slots whose only job is to catch a result.
         _two = out_group(s)
         if _two is not None:
-            s, _made = _two
+            s, _made, _ports = _two
+            OUT_NAMED[n] = set(_ports)
             for _nm in _made:
                 if not any(sl.get("name") == _nm for sl in slots):
                     name_ok(_nm, n, "slot")
@@ -5996,6 +6004,23 @@ def check_port_needs(definitions, slots, steps):
             needs = meth.get("port_needs") or {}
             for port, actual, ln in st.get("conns") or ():
                 kinds = needs.get(port) or set()
+                if port in OUT_NAMED.get(ln, ()):
+                    # A procedure body is read by `derive_port_needs`; a
+                    # primitive-bodied one has no derivation at all, and its
+                    # result is whatever param the primitive's OUT operand was
+                    # bound to. Absence of a derivation is not evidence.
+                    if kinds:
+                        is_out = "out" in kinds
+                    else:
+                        _pr = PRIMITIVES.get(meth.get("prim")) or {}
+                        _got = (meth.get("bind") or {}).get(_pr.get("out"))
+                        is_out = bool(_got) and _got[0] == port
+                    if not is_out:
+                        fail(f"line {ln}: `{actual} is {port}` is in the "
+                             "second argument list, which is for OUT-ports, "
+                             f"and '{meth['name']}' only reads '{port}'. Move "
+                             "it to the first list, where the port is named on "
+                             f"the left: `{port} is {actual}`.")
                 if not kinds:
                     continue
                 head = f"line {ln}: `{port} is {actual}` -- '{meth['name']}'"
