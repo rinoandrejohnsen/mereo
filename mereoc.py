@@ -2281,7 +2281,8 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     # an unsigned field compiles `>= 0` into a comparison that is
                     # always true, and a failed call goes unnoticed.
                     m = re.match(r"^ensure (\w+)(?: as (signed|unsigned))? "
-                                 r"(<=|>=|==|!=|<|>) (-?\w+(?:\.size)?)$", s)
+                                 r"(<=|>=|==|!=|<|>) (-?\w+(?:\.(?:base_)?size)?)$",
+                                 s)
                     if m:
                         # The syscall's OWN contract -- what "it worked" means
                         # for this call, declared where the call is declared. A
@@ -6987,8 +6988,16 @@ def check_call_fit(definitions, slots, steps):
                 continue                      # a promise, not a requirement
             left = _int_value(wired(port) or "")
             if left is None:
-                nm = wired(port)
-                left = _int_value(scal.get(nm, "")) if nm in scal else None
+                nm = wired(port) or ""
+                if nm.endswith(".size"):      # what the caller actually passes:
+                    left = sizes.get(nm[:-5]) # the block, fields and all
+                elif nm.endswith(".base_size"):
+                    _h = nm[:-10]
+                    left = sizes.get(_h)
+                    if _h in ATTACH_BYTES and left is not None:
+                        left -= sum(w for _o, w, _s in ATTACH_BYTES[_h].values())
+                elif nm in scal:
+                    left = _int_value(scal.get(nm, ""))
             if val.endswith(".size"):
                 backing = wired(val[:-5])
                 if is_str(backing or ""):
@@ -6997,7 +7006,16 @@ def check_call_fit(definitions, slots, steps):
                     right = len(_decode_str_bytes(backing, ln))
                     shown = backing
                 else:
+                    # The PAYLOAD, not the block. A name that gained fields
+                    # carries them past the bytes it was declared with, and a
+                    # syscall told to fill `X.size` would reach them -- so the
+                    # bound here is what the name was declared with. For a name
+                    # that gained nothing the two are the same number.
                     right = sizes.get(backing)
+                    if backing in SIZE_AT and right is not None:
+                        right = min(right, SIZE_AT[backing][0][1]
+                                    - sum(w for _o, w, _s
+                                          in ATTACH_BYTES[backing].values()))
                     shown = f"{backing}"
             else:
                 right = _int_value(wired(val) or val)
