@@ -819,6 +819,60 @@ def emit_asm_wrapper(name, prim):
                  "\n".join(lines))
 
 
+def inline_asm(name, args, out_lv, indent=4):
+    """One asm primitive, written where it is used instead of behind a macro.
+
+    The wrapper existed to give the operands somewhere to live; nothing needed
+    it to be a macro. Written out here the operands bind straight to the values
+    and the result binds straight to whatever it lands in -- so the generated C
+    shows the syscall, its arguments and its destination on one screen, which is
+    what anyone reading it came for. The parameters keep no underscore either:
+    that prefix was there because the preprocessor substituted a macro argument
+    into an operand NAME, and there is no substitution now."""
+    prim = PRIMITIVES[name]
+    vol = " volatile" if prim["volatile"] else ""
+    have = dict(zip([q for k, q in prim["args"] if k != "const"], args))
+    constvals = prim.get("constvals", {})
+    out_ops, pre = [], []
+    if prim["out"]:
+        oc = constraint_of(prim["constraints"][prim["out"]], name)
+        if not out_lv:                       # a result nothing catches still
+            pre.append("long _r;")           # needs somewhere to be produced
+        out_ops.append(f'[{prim["out"]}] "={oc}" ({out_lv or "_r"})')
+    in_ops = []
+    for k, q in prim["args"]:
+        val = str(constvals[q]) if k == "const" else f"(long)({have[q]})"
+        reg = prim["constraints"][q]
+        if reg in HARDREG:                   # r8-r15 have no letter constraint
+            pre.append(f'register long _hr_{q} __asm__("{reg}") = {val};')
+            in_ops.append(f'[{q}] "r" (_hr_{q})')
+        else:
+            in_ops.append(f'[{q}] "{constraint_of(reg, name)}" ({val})')
+    clob = ", ".join(f'"{c}"' for c in prim["clobbers"])
+    pad = " " * (indent + 4)
+    body = [f'__asm__{vol} ("{prim["template"]}"',
+            f'{pad}: {", ".join(out_ops)}',
+            f'{pad}: {", ".join(in_ops)}',
+            f'{pad}: {clob});']
+    if prim["noreturn"]:
+        body.append(" " * indent + "__builtin_unreachable();")
+    if pre:                                  # a block, so the register-scoped
+        head = " " * indent + "{ " + ("\n" + " " * indent + "  ").join(pre)
+        return (head + "\n" + " " * indent + "  " + ("\n".join(body))
+                + "\n" + " " * indent + "}").lstrip()
+    return "\n".join(body)
+
+
+def render_step(d, out_lv=None, indent=4):
+    """One emitted step as a C STATEMENT. An asm primitive is written where it
+    is used; everything else keeps its named wrapper and its assignment."""
+    if (PRIMITIVES.get(d.get("pname")) or {}).get("kind") == "asm":
+        return inline_asm(d["pname"], d["args"], out_lv or d.get("out"), indent)
+    call = render_call(d)
+    tgt = out_lv or d.get("out")
+    return f"{tgt} = {call};" if tgt else f"{call};"
+
+
 def render_call(d):
     """The C call expression for one emitted step: an asm primitive is a
     plain named-wrapper call; a syscall is syscallK(number, args...)."""
@@ -1959,6 +2013,7 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                         fail(f"line {n}: `{_nm}` names a field of '{_h}', and "
                              f"'{_h}' is not something a field can be attached "
                              "to here -- declare it first, or name a slot.")
+
                 elif not any(sl.get("name") == _nm for sl in slots):
                     name_ok(_nm, n, "slot")
                     slots.append({"kind": "scalar", "name": _nm,
@@ -2728,7 +2783,7 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     # and is refused by name.
                     _w = re.match(r"^(\d+) bytes(?: as (signed|unsigned|"
                                   r"big|little))?$", m.group(3))
-                    if _w is not None:
+                    if _w is not None and (m.group(1), m.group(2)) not in ATTACHED:
                         if _w.group(2) in ("big", "little"):
                             fail(f"line {n}: `{m.group(1)}.{m.group(2)} is "
                                  f"{_w.group(1)} bytes as {_w.group(2)}` -- an "
@@ -2737,19 +2792,27 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                                  "Lay a view over the bytes if that is what "
                                  "this is.")
                         width_type(_w.group(1), n)      # 1, 2, 4 or 8
-                        _cell = attach_field(m.group(1), m.group(2), slots,
-                                             definitions, n, _w.group(1),
-                                             _w.group(2) == "signed")
-                        if _cell is None:
+                        _at = attach_field(m.group(1), m.group(2), slots,
+                                           definitions, n, _w.group(1),
+                                           _w.group(2) == "signed")
+                        if _at is None:
                             fail(f"line {n}: `{m.group(1)}.{m.group(2)}` is "
                                  f"already a member of '{m.group(1)}', so it "
                                  "cannot be attached with a width.")
                         laststep = None
                         continue
-                    _cell = attach_field(m.group(1), m.group(2), slots,
-                                         definitions, n)
-                    if _cell is not None:
-                        steps.append(assign_step(_cell, m.group(3), n))
+                    _at = attach_field(m.group(1), m.group(2), slots,
+                                       definitions, n)
+                    if _at is not None:
+                        _off, _wd, _sg = _at
+                        _v, _c = store_condition(m.group(3), n, "a field store")
+                        steps.append({"type": "store",
+                                      "addr": f"{m.group(1)} + {_off}",
+                                      "value": _v, "cond": _c, "size": str(_wd),
+                                      "signed": _sg, "big": False, "kind": "",
+                                      "vol": False, "line": n})
+                        laststep = None
+                        continue
                         laststep = None
                         continue
                     # ...otherwise it is a field of a layout or a resource, and
@@ -3258,6 +3321,7 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
 
     finish_body(n)             # end of input: a template body may
                                # have ended on its `again`, with no dedent after
+
 
 
 
@@ -4139,6 +4203,9 @@ def check_slots(definitions, slots):
                                      scalars)
                     entry["reglens" if isinstance(_t, tuple) else "addr"] = _t
                     entry["lens"] = True
+                if slot["name"] in ATTACH_BYTES:
+                    entry["addr"] = f"(long){slot['name']}.data"
+                    entry["struct"] = True
                 if slot.get("promotion"):
                     # a PROMOTION shares its name with the backing, and this
                     # entry replaces the backing's. Three things must survive
@@ -4396,6 +4463,13 @@ def check_slots(definitions, slots):
                     fail(f"line {slot['line']}: buffer size '{slot['size']}' "
                          "is neither a number, a constant, nor an earlier "
                          "scalar")
+            if slot["name"] in ATTACH_BYTES:
+                # It grew, so it is a record now: the declared bytes first,
+                # then the fields carved onto it. Emitted as a real C struct so
+                # the compiler lays the members out and aligns them -- doing
+                # that by hand puts a word wherever the arithmetic lands.
+                slot = dict(slot, struct=True)
+                slot["addr"] = f"(long){slot['name']}.data"
             buffers[slot["name"]] = slot
         else:
             scalars[slot["name"]] = slot
@@ -4627,7 +4701,10 @@ def view_flags(words, ln):
     return signed, big, kind, vol
 
 
-_LAUNDERED = re.compile(r"^\(long\)(\w+)$")
+# `(long)NAME` -- and `(long)NAME.data`, which is what a host that GREW looks
+# like: the record's first member is the bytes the name was declared with, and
+# that member is the array whose view must be kept.
+_LAUNDERED = re.compile(r"^\(long\)(\w+(?:\.data)?)$")
 _C_BINOP = re.compile(r" ([-+*/%&|^]|<<|>>|&&|\|\||[<>!=]=|[<>]) ")
 
 
@@ -4896,6 +4973,8 @@ def state_cell(inst_name, path, defn, backing=None):
     storage. Scalar state (`NAME is 0`, no width) has no bytes and no offset, so
     it stays an `INST_field` long."""
     inst_name = emit_of(inst_name)
+    if inst_name in ATTACH_BYTES:      # it grew, so its block is a member now
+        inst_name = f"{inst_name}.data"
     pl = defn.get("playout")
     if backing is not None and pl is not None and path in pl:
         # a behavioral lens: the field lives in the provided backing's bytes,
@@ -4971,10 +5050,10 @@ def size_of_c(actual, scalars, buffers, ln):
     `.size` is the one member that is not a declared field: the compiler answers
     it for anything with bytes, so a layout view may not declare a field of that
     name (refused where fields are elaborated)."""
-    m = re.match(r"^(.+)\.size$", actual.strip())
+    m = re.match(r"^(.+)\.(base_)?size$", actual.strip())
     if not m:
         return None
-    target = m.group(1).strip()
+    target, declared = m.group(1).strip(), bool(m.group(2))
     if is_str(target):
         return str(len(parse_bytes_literal(target, ln)))
     if target in FIELD_SIZES:
@@ -4989,9 +5068,15 @@ def size_of_c(actual, scalars, buffers, ln):
         # Asking the same function keeps `X.size` and `char X[...]` from ever
         # disagreeing, which is the only way this can be wrong.
         try:
-            return str(buffer_size(buffers[target].get("size"), scalars))
+            base = buffer_size(buffers[target].get("size"), scalars)
         except (KeyError, TypeError):
             return None
+        # `.base_size` is the number the name was declared with and never
+        # moves -- what a capacity is, and what a syscall's length usually
+        # means. `.size` is the block as it stands WHERE IT IS WRITTEN, which
+        # grows as fields are carved onto the end. Both are constants; there
+        # are simply several of the second, one per region of the file.
+        return str(base if declared else size_at(target, base, ln))
     return None
 
 
@@ -5021,6 +5106,8 @@ def check_constant_access(text, scalars, buffers, ln, verb="reads"):
             size = int(buffer_size(buffers[name].get("size"), scalars))
         except (KeyError, TypeError, ValueError):
             continue                     # no size the compiler can state
+        if name in SIZE_AT:              # ...plus the fields carved onto it
+            size = max(size, SIZE_AT[name][-1][1])
         end = int(off or 0) + int(width)
         if end > size:
             fail(f"line {ln}: `[{name}{' + ' + off if off else ''} : {width}]` "
@@ -5041,6 +5128,9 @@ def resolve_value(actual, scalars, buffers, ln, cond=False):
     ff = flag_field_c(actual, buffers, ln)     # `BIT of flag-view`
     if ff is not None:
         return ff[0]
+    af = attached_field_c(actual, ln)          # a field carved on later
+    if af is not None:
+        return af
     sf = layout_field_c(actual, buffers, ln)   # `layout-INST.FIELD`
     if sf is not None:
         return sf[0]
@@ -5235,6 +5325,9 @@ def parse_expr(actual, scalars, buffers, ln, cond=False):
                      "buffer, view, or literal")
             inst = target                    # a layout or flag field, usable
                                              # inside expressions (`(m.echo) & x`)
+            af = attached_field_c(t, ln)
+            if af is not None:
+                return cast_suffix(af)
             ff = flag_field_c(t, buffers, ln)
             if ff is not None:
                 return cast_suffix(ff[0])
@@ -5292,6 +5385,25 @@ INSTANCE_FIELDS = {}   # (instance, field) -> the C cell holding that state
 # because the release tower is derived from it; an attached one is an ordinary
 # word that happens to be reached through a dot, so it assigns like any other.
 ATTACHED = set()
+# A byte-width attachment goes INSIDE the host's block, past what it was
+# declared with: `buffer.tail is 8 bytes` on a 4096-byte buffer puts `tail` at
+# offset 4096 and makes the block 4104. So the host grows, and `.size` grows
+# with it -- while `.base_size` stays the number the name was declared with,
+# which is what a capacity is and what a syscall's length usually means.
+ATTACH_BYTES = {}   # host -> {field: (offset, width, signed)}
+ATTACH_LAND = {}    # line -> [(temp slot, host, field)] a result to put away
+SIZE_AT = {}        # host -> [(line, size after that line), ...]
+
+
+def size_at(host, base, ln):
+    """`HOST.size` where it is written: the declared bytes plus whatever had
+    been attached ABOVE that line. Every answer is still a compile-time
+    constant -- there are just several of them, one per region of the file."""
+    best = base
+    for at, total in SIZE_AT.get(host, ()):
+        if at <= ln:
+            best = total
+    return best
 
 
 def attached_to(host):
@@ -5319,37 +5431,75 @@ def declared_member(name, field, slots, definitions):
 
 def attach_field(host, field, slots, definitions, n,
                  width=None, signed=False):
-    """`HOST.FIELD` on a name that already exists -> the C slot holding it,
-    creating it the first time. None when the pair is somebody else's already.
+    """`HOST.FIELD` on a name that already exists -> (offset, width, signed),
+    carving the field out of the host's block past what it was declared with.
+    None when the pair is somebody else's already.
 
-    The field is a word BESIDE the host, never inside it. A cursor kept in a
-    buffer's own bytes aliases the payload written through it, so the compiler
-    must reload it on every store -- measured at eight instructions and two
-    loads per byte against five and none. What this makes is an ordinary scalar
-    that happens to be reached through a dot.
-
-    A WIDTH picks the field's C type and nothing else -- `fd is 4 bytes as
-    signed` is a four-byte signed variable, not four bytes at an offset. There
-    is no byte layout here for `as big` to be big-endian in, so the caller
-    refuses that."""
+    A word takes eight bytes, a width takes what it says. Offsets accrue in
+    ATTACHMENT ORDER from the declared size, with no padding -- the same rule a
+    layout view's fields follow, because this is the same thing said one field
+    at a time. So `.size` grows and `.base_size` does not."""
     if (host, field) in ATTACHED:
-        return INSTANCE_FIELDS[(host, field)]
-    if not any(sl.get("name") == host for sl in slots):
+        return ATTACH_BYTES[host][field]
+    slot = next((sl for sl in slots if sl.get("name") == host), None)
+    if slot is None:
         return None
     if declared_member(host, field, slots, definitions):
         return None
-    cell = f"{host}_{field}"
-    name_ok(cell, n, "field")
-    if any(sl.get("name") == cell for sl in slots):
-        fail(f"line {n}: attaching '{field}' to '{host}' needs the name "
-             f"'{cell}', which is already a slot. Rename one of them.")
-    slot = {"kind": "scalar", "name": cell, "init": "0", "line": n}
-    if width is not None:
-        slot["width"], slot["signed"] = width, signed
-    slots.append(slot)
-    INSTANCE_FIELDS[(host, field)] = cell
+    base = host_extent(slot, definitions, n)
+    if base is None:
+        fail(f"line {n}: '{host}' has no bytes of its own, so `{host}.{field}` "
+             "has nowhere to live. A field is carved out of the block its host "
+             "holds, and a scalar is a register with no block.")
+    at = SIZE_AT.get(host, [(0, base)])[-1][1]
+    w = int(width) if width is not None else 8
+    signed = signed or width is None   # a word is signed, like every other
+    # End to end, no padding -- which is the rule a layout view already keeps
+    # ("one contiguous block, end to end with no padding"), so a record built a
+    # field at a time and one declared all at once describe the same bytes.
+    # The emitted struct is `packed` to match.
+    ATTACH_BYTES.setdefault(host, {})[field] = (at, w, signed)
+    SIZE_AT.setdefault(host, []).append((n, at + w))
     ATTACHED.add((host, field))
-    return cell
+    return ATTACH_BYTES[host][field]
+
+
+def host_extent(slot, definitions, n):
+    """The bytes `slot` holds today -- the declaration's size for a backing, the
+    block for a laid-out instance. None for anything with no bytes at all."""
+    if slot.get("kind") == "buffer":
+        try:
+            return int(str(slot.get("size")))
+        except (TypeError, ValueError):
+            fail(f"line {n}: '{slot['name']}' is sized by a name, so where a "
+                 "field would start is not known here. Declare it with a "
+                 "number to attach to it.")
+    if slot.get("kind") == "instance":
+        defn = definitions.get(slot.get("definition")) or {}
+        if defn.get("psize") or defn.get("bitwidth"):
+            return defn.get("psize") or defn.get("bitwidth")
+        # ...elaboration has not run yet at parse time, so add the declared
+        # widths up here. `packed` is filled when the definition was read, and
+        # a layout's fields are laid end to end with no padding.
+        if defn.get("packed"):
+            return sum(int(w) for _f, w, *_r in defn["packed"])
+    return None
+
+
+def attached_field_c(actual, ln):
+    """`HOST.FIELD` where FIELD was attached -> the load, at its offset in the
+    host's block. None if that pair was never attached."""
+    m = re.match(r"^(\w+)\.(\w+)$", actual)
+    if not m:
+        return None
+    host, field = m.group(1), m.group(2)
+    if (host, field) in ATTACHED:
+        return f"{host}.{field}"
+    if host in ATTACH_BYTES and field != "size" and field != "base_size":
+        fail(f"line {ln}: '{host}' has no field '{field}' "
+             f"(has: {', '.join(attached_to(host))}). A field is attached by "
+             "WRITING it -- a read of one nothing attached is a typo.")
+    return None
 
 
 def instance_field_c(actual, ln):
@@ -5443,10 +5593,10 @@ def wire_call(meth, defn, inst, conns_list, scalars, buffers, line):
             cf = container_field_c(actual, buffers, ln)
             if cf is not None:                  # `count of C` -> its scalar
                 actual = cf                     # (data resolves to a non-scalar
-            _a = re.fullmatch(r"(\w+)\.(\w+)", actual)   # ...and an ATTACHED
-            if _a and (_a.group(1), _a.group(2)) in ATTACHED:   # field is a
-                actual = INSTANCE_FIELDS[(_a.group(1), _a.group(2))]   # scalar
-            if actual not in scalars:           #  and fails below, not an output)
+            af = attached_field_c(actual, ln)   # ...and an ATTACHED field is a
+            if af is not None:                  # member: `X.f = call()` is
+                actual = af                     # ordinary C, so it lands there
+            elif actual not in scalars:         #  and fails below, not an output)
                 fail(f"line {ln}: the result '{p}' must land in a scalar "
                      f"slot, got '{actual}'")
             valmap[p] = actual
@@ -6592,15 +6742,7 @@ def check_never_leaves(steps):
             continue
         subjects = set()
         for c in exits:
-            # An ATTACHED field is written under a slot name the source never
-            # spells: `wire.round is wire.round + 1` assigns `wire_round`. Fold
-            # the dotted form to that name first, or the exit looks untouched
-            # and a perfectly good loop is refused.
-            text = re.sub(r"([A-Za-z_]\w*)\.([A-Za-z_]\w*)",
-                          lambda m: INSTANCE_FIELDS[(m.group(1), m.group(2))]
-                          if (m.group(1), m.group(2)) in ATTACHED else m.group(0),
-                          str(c))
-            subjects |= {n for n in re.findall(r"[A-Za-z_]\w*", text)
+            subjects |= {n for n in re.findall(r"[A-Za-z_]\w*", str(c))
                          if n not in ("as", "signed", "unsigned", "big",
                                       "little", "size", "of")}
         if subjects and not (subjects & written):
@@ -6734,6 +6876,9 @@ def buffer_sizes(slots):
                 break
             seen.add(v)
             v = scal[v]
+    for host, marks in SIZE_AT.items():        # ...and what was carved on top
+        if host in sizes:                      # is part of the block too
+            sizes[host] = max(sizes[host], marks[-1][1])
     return sizes, scal
 
 
@@ -7769,8 +7914,9 @@ def plan(definitions, slots, steps, overrides):
                 val = resolve_value(actual, scalars, buffers, ln)
                 if big and width > 1:
                     val = big_write(val, width)
+                _b = buffers[st["name"]].get("addr", f"(long){st['name']}")
                 into.append(
-                    {"store_addr": f"((long){st['name']} + {off})",
+                    {"store_addr": f"({_b} + {off})",
                      "store_val": val,
                      "store_type": width_type(str(width), ln), "pname": None})
             return
@@ -8072,12 +8218,6 @@ def scalar_reads(slots, steps):
     def grab(obj):
         if isinstance(obj, str):
             used.update(re.findall(r"[A-Za-z_]\w*", obj))
-            # ...and an ATTACHED field is read through a dot, so the slot's own
-            # name never appears in the source: `buffer.count` reads
-            # `buffer_count`. Without this every attached field looks dead.
-            for _h, _f in re.findall(r"([A-Za-z_]\w*)\.([A-Za-z_]\w*)", obj):
-                if (_h, _f) in ATTACHED:
-                    used.add(INSTANCE_FIELDS[(_h, _f)])
         elif isinstance(obj, dict):
             for v in obj.values():
                 grab(v)
@@ -8130,6 +8270,9 @@ def transpile(sources, prog):
     global CURRENT_FILE, PRIMITIVES, VIEWS
     INSTANCE_FIELDS.clear()
     ATTACHED.clear()
+    ATTACH_BYTES.clear()
+    SIZE_AT.clear()
+    ATTACH_LAND.clear()
     REGISTER_WORDS.clear()
     SCALAR_WORDS.clear()
     definitions, slots, steps, overrides, prims = {}, [], [], [], {}
@@ -8182,6 +8325,7 @@ def transpile(sources, prog):
         out.append(SYS_STDFD)      # a program that opens can misplace 0/1/2
         out.append(SYS_RERAISE)    # ...and one that catches owes a wait status
     out += [emit_asm_wrapper(p, PRIMITIVES[p]) for p in sorted(used)
+            if PRIMITIVES[p].get("kind") != "asm"
             if PRIMITIVES[p].get("kind") == "asm"]
     _helpers = sorted({PRIMITIVES[p]["cfunc"] for p in used
                        if PRIMITIVES[p].get("kind") == "helper"})
@@ -8269,8 +8413,16 @@ def transpile(sources, prog):
                             f"[{len(data)}]{al} = {{{init}}};")
             else:
                 sc = "static " if slot.get("place") == "static" else ""
-                body.append(f"    {sc}char {slot['name']}"
-                            f"[{buffer_size(slot['size'], scalars)}]{al};")
+                _n = buffer_size(slot["size"], scalars)
+                if slot["name"] in ATTACH_BYTES:
+                    _ms = "".join(
+                        f" {width_type(str(w), slot['line'], sg)} {f};"
+                        for f, (_o, w, sg) in ATTACH_BYTES[slot["name"]].items())
+                    body.append(f"    {sc}struct __attribute__((packed)) "
+                                f"{{ char data[{_n}];{_ms} }} "
+                                f"{slot['name']}{al};")
+                else:
+                    body.append(f"    {sc}char {slot['name']}[{_n}]{al};")
         elif slot["kind"] == "scalar":
             _ct = (width_type(slot["width"], slot["line"], slot.get("signed"))
                    if slot.get("width") else "long")
@@ -8288,8 +8440,16 @@ def transpile(sources, prog):
             # and no offset. An `aligned M` sets the block's alignment.
             al = (f" __attribute__((aligned({slot['align']})))"
                   if slot.get("align") else "")
-            body.append(f"    char {emit_of(slot['name'])}"
-                        f"[{definitions[slot['definition']]['psize']}]{al} = {{0}};")
+            _ps = definitions[slot["definition"]]["psize"]
+            if slot["name"] in ATTACH_BYTES:
+                _ms = "".join(f" {width_type(str(w), slot['line'], sg)} {f};"
+                              for f, (_o, w, sg) in ATTACH_BYTES[slot["name"]].items())
+                body.append(f"    struct __attribute__((packed)) "
+                            f"{{ char data[{_ps}];{_ms} }} "
+                            f"{emit_of(slot['name'])}{al} = {{0}};")
+            else:
+                body.append(f"    char {emit_of(slot['name'])}"
+                            f"[{_ps}]{al} = {{0}};")
         elif (slot["kind"] == "instance"
               and definitions[slot["definition"]].get("bitfields") is not None
               and is_pure_layout(definitions[slot["definition"]])):
@@ -8396,7 +8556,7 @@ def transpile(sources, prog):
             return
         if p.get("scope_release") is not None:   # a scope's end -- release what
             for c in p["scope_release"]:          # it holds, reverse order
-                body.append(f"    {render_call(c)};")
+                body.append(f"    {render_step(c)}")
             if p.get("exit_label"):               # where a `leave NAME` lands
                 body.append(f"{p['exit_label']}:")
             return
@@ -8412,7 +8572,7 @@ def transpile(sources, prog):
                 if p["releases"]:
                     body.append(f"    if ({p['cond_c']}) {{")
                     for c in p["releases"]:
-                        body.append(f"        {render_call(c)};")
+                        body.append(f"        {render_step(c, indent=8)}")
                     body.append(f"        goto {p['loop_exit']};")
                     body.append("    }")
                 else:
@@ -8420,12 +8580,12 @@ def transpile(sources, prog):
                                 f"goto {p['loop_exit']};")
             else:
                 for c in p["releases"]:
-                    body.append(f"    {render_call(c)};")
+                    body.append(f"    {render_step(c)}")
                 body.append(f"    goto {p['loop_exit']};")
             return
         if p.get("loop_back"):                   # `again` -- end of iteration
             for c in p["releases"]:              # release body-acquired first
-                body.append(f"    {render_call(c)};")
+                body.append(f"    {render_step(c)}")
             if p.get("cond_c"):                  # `again when COND` -- bounded
                 body.append(f"    if ({p['cond_c']}) goto {p['loop_back']};")
             else:                                # bare `again` -- forever
@@ -8442,8 +8602,7 @@ def transpile(sources, prog):
                 body.append(f"    if (__builtin_expect(!({pred}), 0)) "
                             f"goto {p['gtarget']};")
             return
-        call = render_call(p)
-        stmt = f"{p['out']} = {call};" if p["out"] else f"{call};"
+        stmt = render_step(p)
         if p["label"]:                       # the final noreturn step: floor 0
             # normal exit enters at the outermost-scope top; if inner-scope
             # floors sit above it (loop/block/method resources already released
@@ -8466,7 +8625,7 @@ def transpile(sources, prog):
             for i, f in enumerate(cascade):
                 body.append(f"{f['label']}:")
                 for c in f["calls"]:
-                    body.append(f"    {render_call(c)};")
+                    body.append(f"    {render_step(c)}")
                 # fall through to the next floor only if it IS this one's
                 # enclosing scope; otherwise jump to the enclosing floor (or
                 # exit) -- so a dead inner floor between us and it is skipped
@@ -8546,9 +8705,7 @@ def transpile(sources, prog):
         for a in alts:
             body.append("")
             body.append(f"{a['label']}:")
-            acall = render_call(a)
-            body.append(f"    {a['out']} = {acall};" if a["out"]
-                        else f"    {acall};")
+            body.append(f"    {render_step(a)}")
             for pred in a["clauses"]:
                 body.append(f"    if (__builtin_expect(!({pred}), 0)) "
                             f"goto {a['next']};")

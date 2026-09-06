@@ -5,8 +5,8 @@ index_fast         142 578 142 578
 index_safe         166 667 162 663
 layout_view        98 391 98 389
 loop_sum           62 241 62 241
-open_close         253 1026 255 1026
+open_close         252 1026 255 1026
 read_write         100 392 99 388
 span_scan          180 689 112 425
-two_resources      314 1265 316 1265
+two_resources      312 1261 316 1265
 write              65 262 65 262
