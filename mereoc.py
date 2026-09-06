@@ -6592,7 +6592,15 @@ def check_never_leaves(steps):
             continue
         subjects = set()
         for c in exits:
-            subjects |= {n for n in re.findall(r"[A-Za-z_]\w*", str(c))
+            # An ATTACHED field is written under a slot name the source never
+            # spells: `wire.round is wire.round + 1` assigns `wire_round`. Fold
+            # the dotted form to that name first, or the exit looks untouched
+            # and a perfectly good loop is refused.
+            text = re.sub(r"([A-Za-z_]\w*)\.([A-Za-z_]\w*)",
+                          lambda m: INSTANCE_FIELDS[(m.group(1), m.group(2))]
+                          if (m.group(1), m.group(2)) in ATTACHED else m.group(0),
+                          str(c))
+            subjects |= {n for n in re.findall(r"[A-Za-z_]\w*", text)
                          if n not in ("as", "signed", "unsigned", "big",
                                       "little", "size", "of")}
         if subjects and not (subjects & written):

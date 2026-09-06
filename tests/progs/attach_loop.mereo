@@ -1,0 +1,37 @@
+include "../../linux.mereo"
+include "../../core.mereo"
+
+-- Attaching inside a loop. Both lines below declare ONCE, at compile time --
+-- but `is 0` also assigns on every pass, so `tally` resets, while the width
+-- form assigns nothing and `mark` accumulates. That is not a rule of its own:
+-- `n is 0` written inside a loop has always meant declare-then-assign.
+--
+-- The loop's own exit reads `wire.round`, which the body writes under a slot
+-- name the source never spells -- and the termination check has to know that,
+-- or a perfectly good loop is refused for never changing its condition.
+--
+--   ./attach_loop   ->  3 3 6
+
+program goes
+  wire is 64 bytes
+  wire.round is 0
+  sink is already linux.file (descriptor is 1)
+
+  spin goes
+    wire.tally is 0
+    wire.mark is 4 bytes as signed
+    wire.round is wire.round + 1
+    wire.tally is wire.tally + wire.round
+    wire.mark is wire.mark + 2
+    repeat spin when wire.round < 3
+  end
+
+  page is already builder (data is wire, count is 0, limit is wire.size)
+  page.number (value is wire.round)
+  page.add (source is " ", length is 1)
+  page.number (value is wire.tally)
+  page.add (source is " ", length is 1)
+  page.number (value is wire.mark)
+  page.add (source is "\n", length is 1)
+  sink.write (buffer is wire, count is page.count)
+end
