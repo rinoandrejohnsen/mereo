@@ -7,7 +7,7 @@ program goes
   host is constant "example.com"
   request is constant "GET / HTTP/1.0\r\nHost: example.com\r\n\r\n"
   page is 16384 bytes
-  got is 0
+  page.count is 0
 
   terminal is already linux.file (descriptor is 1)
 
@@ -21,8 +21,8 @@ program goes
                        request is request,
                        reqlen is 37,
                        sink is page,
-                       received is got)
+                       received is page.count)
 
-  terminal.write (buffer is page, count is got)
+  terminal.write (buffer is page, count is page.count)
 
 end

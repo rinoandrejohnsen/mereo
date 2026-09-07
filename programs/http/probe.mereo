@@ -14,16 +14,16 @@ include "parse.mereo"
 
 program goes
   wire is 65536 bytes
-  total is 0
+  wire.count is 0
   chunk is 0
   slots is 4096 bytes
-  seen is 0
+  slots.count is 0
   body is 0
   used is 0
   where is 0
   page is 65536 bytes
   hexed is 65536 bytes
-  hexlen is 0
+  hexed.count is 0
   i is 0
 
   method is 0
@@ -34,18 +34,19 @@ program goes
 
   input is already linux.file (descriptor is 0)
   gather goes
-    input.read (buffer is wire + total, capacity is wire.size - total,
+    input.read (buffer is wire + wire.count, capacity is wire.size - wire.count,
                 count is chunk)
     leave gather when chunk == 0
-    total is total + chunk
-    repeat gather when total < wire.size
+    wire.count is wire.count + chunk
+    repeat gather when wire.count < wire.size
   end
 
-  request.parse (data is wire, length is total,
+  request.parse (data is wire, length is wire.count,
                  line_limit is 8192,
                  method is method, method_length is method_length,
                  path is path, path_length is path_length, minor is minor,
-                 body is body, slots is slots, limit is 128, count is seen, result is used)
+                 body is body, slots is slots, limit is 128, result is used)
+                (slots.count is count)
 
   writer is already builder (data is page, count is 0, limit is 65536)
   writer.add (source is "R ", length is 2)
@@ -60,30 +61,30 @@ program goes
 
     writer.add (source is "M ", length is 2)
     text.hexbytes (data is method, count is method_length,
-                   buffer is hexed, length is hexlen)
-    writer.add (source is hexed, length is hexlen)
+                   buffer is hexed) (hexed.count is length)
+    writer.add (source is hexed, length is hexed.count)
     writer.byte (value is 10)
 
     writer.add (source is "P ", length is 2)
     text.hexbytes (data is path, count is path_length,
-                   buffer is hexed, length is hexlen)
-    writer.add (source is hexed, length is hexlen)
+                   buffer is hexed) (hexed.count is length)
+    writer.add (source is hexed, length is hexed.count)
     writer.byte (value is 10)
 
-    rows is already array (data is slots, count is seen, limit is 128,
+    rows is already array (data is slots, count is slots.count, limit is 128,
                            stride is field.size)
     walk goes
-      leave walk when i >= seen
+      leave walk when i >= slots.count
       rows.at (index is i, address is where)
       one is [where : field.size] as field
       writer.add (source is "H ", length is 2)
       text.hexbytes (data is one.name, count is one.name_length,
-                     buffer is hexed, length is hexlen)
-      writer.add (source is hexed, length is hexlen)
+                     buffer is hexed) (hexed.count is length)
+      writer.add (source is hexed, length is hexed.count)
       writer.byte (value is 32)
       text.hexbytes (data is one.value, count is one.value_length,
-                     buffer is hexed, length is hexlen)
-      writer.add (source is hexed, length is hexlen)
+                     buffer is hexed) (hexed.count is length)
+      writer.add (source is hexed, length is hexed.count)
       writer.byte (value is 10)
       i is i + 1
       repeat walk

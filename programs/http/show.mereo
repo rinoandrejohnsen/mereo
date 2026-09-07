@@ -8,7 +8,7 @@ include "parse.mereo"
 
 program goes
   slots is 2048 bytes
-  seen is 0
+  slots.count is 0
   body is 0
   used is 0
   where is 0
@@ -26,7 +26,8 @@ program goes
                  line_limit is 8192,
                  method is method, method_length is method_length,
                  path is path, path_length is path_length, minor is minor,
-                 body is body, slots is slots, limit is 64, count is seen, result is used)
+                 body is body, slots is slots, limit is 64, result is used)
+                (slots.count is count)
 
   ensure used >= 1
 
@@ -38,11 +39,11 @@ program goes
   writer.number (value is minor)
   writer.byte (value is 10)
 
-  rows is already array (data is slots, count is seen, limit is 64,
+  rows is already array (data is slots, count is slots.count, limit is 64,
                          stride is field.size)
   i is 0
   walk goes
-    leave walk when i >= seen
+    leave walk when i >= slots.count
     rows.at (index is i, address is where)
     one is [where : field.size] as field
     writer.add (source is one.name, length is one.name_length)

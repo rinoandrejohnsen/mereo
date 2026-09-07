@@ -18,7 +18,7 @@ program goes
   -- payload width, the schema search, the comma before every row but the
   -- first, and the header count `parse` accumulates. Everything else a call
   -- produces is named where the call produces it.
-  seen is 0
+  slots.count is 0
   root is 0
   found is 0
   depth is 0
@@ -111,13 +111,14 @@ program goes
 
     client is adopted linux.socket (descriptor is peer)
 
-    total is 0
-    client.read (buffer is wire, capacity is wire.size) (total is count)
+    wire.count is 0
+    client.read (buffer is wire, capacity is wire.size) (wire.count is count)
 
     request.parse (
-      data is wire, length is total, line_limit is 8192, slots is slots,
-      limit is 64, count is seen
+      data is wire, length is wire.count, line_limit is 8192, slots is slots,
+      limit is 64
     ) (
+      slots.count is count,
       method_length is method_length, path_length is path_length,
       body is body, used is result, method is method, path is path,
       minor is minor

@@ -5431,11 +5431,18 @@ def lv(c):
     within a quarter of a percent. It costs nothing and it buys no speed; what
     it buys is that one sentence about storage is true without exception.
 
-    Anything that is not a scalar -- a field beside a host, a layout cell, the
+    An ATTACHED field is a word beside its host, so it lands here too: a
+    template whose out-port is wired to one renames its target to `HOST.FIELD`,
+    and that has to reach the member. Anything else -- a layout cell, the
     compiler's own bookkeeping words -- is already an lvalue and comes back
     unchanged."""
     t = SCALAR_BYTES.get(c)
-    return f"(*({t} *){c})" if t else c
+    if t:
+        return f"(*({t} *){c})"
+    m = re.fullmatch(r"(\w+)\.(\w+)", c.strip()) if isinstance(c, str) else None
+    if m and (m.group(1), m.group(2)) in ATTACHED:
+        return f"{m.group(1)}{ATTACH_SUFFIX}.{m.group(2)}"
+    return c
 
 
 def attach_struct(slot):
@@ -5445,6 +5452,15 @@ def attach_struct(slot):
     ms = "".join(f" {width_type(str(w), slot['line'], sg)} {f};"
                  for f, (_o, w, sg) in ATTACH_BYTES[slot["name"]].items())
     return f"struct {{{ms} }} {emit_of(slot['name'])}{ATTACH_SUFFIX} = {{0}};"
+
+
+def is_attached(actual):
+    """Is `actual` a field somebody attached? A field is an ordinary word, so it
+    is a landing place for a result exactly as a scalar slot is -- which is how
+    a resource method's out-port has always reached one. A template's did not,
+    because the check below knew only about slots."""
+    m = re.match(r"^(\w+)\.(\w+)$", actual.strip())
+    return bool(m) and (m.group(1), m.group(2)) in ATTACHED
 
 
 def attached_to(host):
@@ -5796,9 +5812,12 @@ def _retarget_field_assign(s, field):
     text: a template writes a field exactly as a program does, through one
     emitter."""
     if s.get("clauses") is not None:
-        fail(f"line {s['line']}: a conditional assign cannot write the view "
-             f"field '{field}' -- compute the value into a scalar first, then "
-             f"write the field")
+        m = re.fullmatch(r"(\w+)\.(\w+)", s["name"])
+        if not (m and (m.group(1), m.group(2)) in ATTACHED):
+            fail(f"line {s['line']}: a conditional assign cannot write the view "
+                 f"field '{field}' -- compute the value into a scalar first, "
+                 f"then write the field")
+        return          # an attached field is a word: `X is V when C` writes it
     m = re.fullmatch(r"\[(.+?) : (\d+)\](?: as (.+))?", s["name"])
     if m:                                   # a byte field: a plain store
         words = (m.group(3) or "").split()
@@ -5809,6 +5828,10 @@ def _retarget_field_assign(s, field):
         m = re.fullmatch(r"(\w+)\.(\w+)", s["name"])
         if m is None:
             return                          # not a view access -- leave it be
+        if (m.group(1), m.group(2)) in ATTACHED:
+            return      # an ATTACHED field is an ordinary word, and an ordinary
+                        # assign already writes one -- see `lv`. Only a VIEW
+                        # field needs re-shaping, because it is not an lvalue.
         new = {"type": "fstore", "field": m.group(2), "inst": m.group(1),
                "value": s["expr"], "line": s["line"]}
     s.clear()
@@ -6356,10 +6379,12 @@ def check_port_needs(definitions, slots, steps):
                     fail(f"{head} {how} '{port}', so it needs {what}. "
                          f"'{actual}' is a resource, which has no address of "
                          "its own: name one of its fields instead.")
-                if "out" in kinds and actual not in scal:
+                if "out" in kinds and actual not in scal \
+                        and not is_attached(actual):
                     fail(f"{head} assigns '{port}', so it needs a SCALAR SLOT "
                          f"to land in, and '{actual}' is not one. Declare one "
-                         "with `NAME is NUMBER` and connect that.")
+                         "with `NAME is NUMBER`, or attach a field to the name "
+                         "the result is ABOUT, and connect that.")
     walk(steps)
 
 
@@ -7399,7 +7424,7 @@ def plan(definitions, slots, steps, overrides):
         nonlocal n_resume, loop_id
         check_released(st)
         if st["type"] == "assign":           # `X is EXPR` -- recompute a scalar
-            if st["name"] not in scalars:
+            if st["name"] not in scalars and not is_attached(st["name"]):
                 if st["name"] in buffers:
                     # A run of bytes, which has no single value to be given. The
                     # common way to arrive here is assigning to a field that is
