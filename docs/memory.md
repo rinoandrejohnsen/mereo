@@ -86,9 +86,23 @@ inside the block cost **+15.0%** instructions under gcc and **+15.8%** under
 clang, with the six words the program keeps in registers spilled to the stack
 and referenced 119 times against 20. The same fields beside the block cost
 **nothing** — 1364 instructions against 1369. Two unrelated optimisers, the
-same magnitude, the same spill signature: it is a property of the shape, not of
-one compiler's alias analysis. Byte-grain records are what a layout view is
-for.
+same magnitude, the same spill signature.
+
+It is a property of the shape and not of mereo: a **C++ class** holding the
+same buffer and cursor pays it too, and the whole cost is one instruction. In
+the append loop of a class whose block escapes to a syscall, g++ emits
+
+```
+  mov  %r11b,(%rdi,%rcx,1)     the store
+  mov  0x1000(%r8),%rcx        ...and count, reloaded from memory, every byte
+```
+
+because the store might be the thing that changed it. Move the cursor to an
+object of its own and the reload goes, the copies vectorise, and the same
+program runs **227 instructions per request against 1437**. How much this is
+worth depends on how much of the work is appending: `serve` parses, walks a
+b-tree and builds one response, and pays 15%; a program that mostly appends
+pays six times over. Byte-grain records are what a layout view is for.
 
 A width picks the field's machine type and nothing else, so `as big` is refused:
 a byte order describes bytes at an offset, and this is a variable.

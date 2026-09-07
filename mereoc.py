@@ -4986,6 +4986,37 @@ def check_constant_access(text, scalars, buffers, ln, verb="reads"):
                  "declared with.")
 
 
+def member_c(actual, scalars, buffers, ln):
+    """`HOST.FIELD` -> the C that reads it, or None if the name is not a member
+    of anything.
+
+    ONE place answers this. It used to be written out twice -- once here and
+    once in `parse_expr`'s atom -- in different orders, with the atom missing
+    `view_access_c` entirely, and every new kind of member had to find both.
+    That is how attaching arrived: five separate checks each knew about slots
+    and had to be taught about fields one at a time, and the ones nobody
+    remembered were the bugs.
+
+    The order is only a search order -- nothing here can shadow anything else,
+    because `attach_field` refuses a name a definition already declares."""
+    ff = flag_field_c(actual, buffers, ln)             # `BIT of flag-view`
+    if ff is not None:
+        return ff[0]
+    af = attached_field_c(actual)                      # attached later
+    if af is not None:
+        return af
+    sf = layout_field_c(actual, buffers, ln)           # a layout's byte field
+    if sf is not None:
+        return sf[0]
+    cf = container_field_c(actual, buffers)            # `container.FIELD`
+    if cf is not None:
+        return cf
+    inf = instance_field_c(actual, ln)                 # a resource's state
+    if inf is not None:
+        return inf
+    return view_access_c(actual, ln, scalars, buffers)  # `RESOURCE.FIELD [+ N]`
+
+
 def resolve_value(actual, scalars, buffers, ln, cond=False):
     actual = actual.strip()
     check_constant_access(actual, scalars, buffers, ln)
@@ -4994,24 +5025,9 @@ def resolve_value(actual, scalars, buffers, ln, cond=False):
     so = size_of_c(actual, scalars, buffers, ln)   # `X.size` -> const bytes
     if so is not None:
         return so
-    ff = flag_field_c(actual, buffers, ln)     # `BIT of flag-view`
-    if ff is not None:
-        return ff[0]
-    af = attached_field_c(actual)          # a field carved on later
-    if af is not None:
-        return af
-    sf = layout_field_c(actual, buffers, ln)   # `layout-INST.FIELD`
-    if sf is not None:
-        return sf[0]
-    cf = container_field_c(actual, buffers)   # `container.FIELD`
-    if cf is not None:
-        return cf
-    inf = instance_field_c(actual, ln)   # `INSTANCE.FIELD` -- resource state
-    if inf is not None:
-        return inf
-    va = view_access_c(actual, ln, scalars, buffers)   # `RESOURCE.FIELD [+ N]`
-    if va is not None:
-        return va
+    mc = member_c(actual, scalars, buffers, ln)
+    if mc is not None:
+        return mc
     return parse_expr(actual, scalars, buffers, ln, cond)
 
 
@@ -5194,21 +5210,9 @@ def parse_expr(actual, scalars, buffers, ln, cond=False):
                      "buffer, view, or literal")
             inst = target                    # a layout or flag field, usable
                                              # inside expressions (`(m.echo) & x`)
-            af = attached_field_c(t)
-            if af is not None:
-                return cast_suffix(af)
-            ff = flag_field_c(t, buffers, ln)
-            if ff is not None:
-                return cast_suffix(ff[0])
-            sf = layout_field_c(t, buffers, ln)
-            if sf is not None:
-                return cast_suffix(sf[0])
-            cf = container_field_c(t, buffers)
-            if cf is not None:
-                return cast_suffix(cf)
-            inf = instance_field_c(t, ln)
-            if inf is not None:
-                return cast_suffix(inf)
+            mc = member_c(t, scalars, buffers, ln)
+            if mc is not None:
+                return cast_suffix(mc)
             unknown_member(inst, field, ln)
             fail(f"line {ln}: '{t}' is not a flag or layout "
                  f"field in '{actual}'")
@@ -5302,6 +5306,14 @@ def attach_struct(slot):
     ms = "".join(f" {width_type(str(w), slot['line'], sg)} {f};"
                  for f, (w, sg) in ATTACH_BYTES[slot["name"]].items())
     return f"struct {{{ms} }} {emit_of(slot['name'])}{ATTACH_SUFFIX} = {{0}};"
+
+
+def lands_in(name, slots_or_names):
+    """Can a result be put in `name`? A SCALAR SLOT can hold one, and so can an
+    attached field -- it is an ordinary word that happens to be reached through
+    a dot. Asked in both places that check a landing, so a third kind of
+    landing has one place to be added rather than two to be found."""
+    return name in slots_or_names or is_attached(name)
 
 
 def is_attached(actual):
@@ -6239,8 +6251,7 @@ def check_port_needs(definitions, slots, steps):
                     fail(f"{head} {how} '{port}', so it needs {what}. "
                          f"'{actual}' is a resource, which has no address of "
                          "its own: name one of its fields instead.")
-                if "out" in kinds and actual not in scal \
-                        and not is_attached(actual):
+                if "out" in kinds and not lands_in(actual, scal):
                     fail(f"{head} assigns '{port}', so it needs a SCALAR SLOT "
                          f"to land in, and '{actual}' is not one. Declare one "
                          "with `NAME is NUMBER`, or attach a field to the name "
@@ -7279,7 +7290,7 @@ def plan(definitions, slots, steps, overrides):
         nonlocal n_resume, loop_id
         check_released(st)
         if st["type"] == "assign":           # `X is EXPR` -- recompute a scalar
-            if st["name"] not in scalars and not is_attached(st["name"]):
+            if not lands_in(st["name"], scalars):
                 if st["name"] in buffers:
                     # A run of bytes, which has no single value to be given. The
                     # common way to arrive here is assigning to a field that is
