@@ -14,7 +14,7 @@ include "../linux.mereo"
 program goes
   capacity is 4096
   buffer is capacity bytes
-  count is 0
+  buffer.count is 0
   written is 0
 
   peer is linux.sockaddr_in (family is 2,             -- AF_INET
@@ -27,8 +27,8 @@ program goes
 
   link.connect (address is peer, length is peer.size)
 
-  link.read (buffer is buffer, capacity is capacity, count is count)
+  link.read (buffer is buffer, capacity is capacity, count is buffer.count)
 
-  terminal.write (buffer is buffer, count is count, written is written)
+  terminal.write (buffer is buffer, count is buffer.count, written is written)
 
 end

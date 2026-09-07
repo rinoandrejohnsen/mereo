@@ -15,7 +15,7 @@ program goes
   key is 1 bytes
   work is linux.terminal_settings
   character is 0
-  got is 0
+  key.count is 0
 
   console is linux.tty (path is "/dev/tty",
                         flags is 2,       -- O_RDWR
@@ -33,8 +33,8 @@ program goes
   console.apply (buffer is work)
 
   serve goes
-    console.read (buffer is key, capacity is 1, count is got)
-    leave serve when got == 0            -- hangup: nothing arrived, so there is
+    console.read (buffer is key, capacity is 1, count is key.count)
+    leave serve when key.count == 0            -- hangup: nothing arrived, so there is
                                          -- nothing to echo -- the trailing test
                                          -- used to notice only after echoing
                                          -- whatever the previous pass left

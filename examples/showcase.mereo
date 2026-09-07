@@ -56,7 +56,7 @@ program (arguments) goes
   block is 4096 bytes
   counts is 16 bytes
   digits is 24 bytes
-  count is 0
+  block.count is 0
   i is 0
   n is 0
   seen is 0
@@ -77,11 +77,11 @@ program (arguments) goes
                         flags is 0,             -- O_RDONLY
                         mode is 0)
 
-  source.read (buffer is block, capacity is block.size, count is count)
-  ensure count >= 1
+  source.read (buffer is block, capacity is block.size, count is block.count)
+  ensure block.count >= 1
 
   scan goes
-    leave scan when i >= count
+    leave scan when i >= block.count
     n is [block + i : 1]
     run is run + 1
     n == 10 goes                      -- a newline closes a line
@@ -108,7 +108,7 @@ program (arguments) goes
 
   [counts + 8 : 8] is flags        -- the word `bits` is laid over
   digitry.width (value is totals.lines, count is wide)
-  digitry.bits_set (source is count, result is bit_count)
+  digitry.bits_set (source is block.count, result is bit_count)
   ensure wide >= 1                 -- every number has a first digit
   ensure bit_count >= 1            -- ...and any non-zero count has a bit
   text.format (value is totals.lines, buffer is digits, length is n)

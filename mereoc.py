@@ -2807,7 +2807,7 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     _at = attach_field(m.group(1), m.group(2), slots,
                                        definitions, n)
                     if _at is not None:
-                        _off, _wd, _sg = _at
+                        _wd, _sg = _at
                         _v, _c = store_condition(m.group(3), n, "a field store")
                         steps.append({"type": "afstore", "host": m.group(1),
                                       "field": m.group(2), "value": _v,
@@ -5053,10 +5053,10 @@ def size_of_c(actual, scalars, buffers, ln):
     `.size` is the one member that is not a declared field: the compiler answers
     it for anything with bytes, so a layout view may not declare a field of that
     name (refused where fields are elaborated)."""
-    m = re.match(r"^(.+)\.(base_)?size$", actual.strip())
+    m = re.match(r"^(.+)\.size$", actual.strip())
     if not m:
         return None
-    target, declared = m.group(1).strip(), bool(m.group(2))
+    target = m.group(1).strip()
     if is_str(target):
         return str(len(parse_bytes_literal(target, ln)))
     if target in FIELD_SIZES:
@@ -5074,12 +5074,9 @@ def size_of_c(actual, scalars, buffers, ln):
             base = buffer_size(buffers[target].get("size"), scalars)
         except (KeyError, TypeError):
             return None
-        # `.base_size` is the number the name was declared with and never
-        # moves -- what a capacity is, and what a syscall's length usually
-        # means. `.size` is the block as it stands WHERE IT IS WRITTEN, which
-        # grows as fields are carved onto the end. Both are constants; there
-        # are simply several of the second, one per region of the file.
-        return str(base if declared else size_at(target, base, ln))
+        # The number the name was declared with. It does not move: a field
+        # attached later is a word BESIDE the block, not a bite out of it.
+        return str(base)
     return None
 
 
@@ -5109,8 +5106,6 @@ def check_constant_access(text, scalars, buffers, ln, verb="reads"):
             size = int(buffer_size(buffers[name].get("size"), scalars))
         except (KeyError, TypeError, ValueError):
             continue                     # no size the compiler can state
-        if name in SIZE_AT:              # ...plus the fields carved onto it
-            size = max(size, SIZE_AT[name][-1][1])
         end = int(off or 0) + int(width)
         if end > size:
             fail(f"line {ln}: `[{name}{' + ' + off if off else ''} : {width}]` "
@@ -5389,12 +5384,7 @@ INSTANCE_FIELDS = {}   # (instance, field) -> the C cell holding that state
 # because the release tower is derived from it; an attached one is an ordinary
 # word that happens to be reached through a dot, so it assigns like any other.
 ATTACHED = set()
-# A byte-width attachment goes INSIDE the host's block, past what it was
-# declared with: `buffer.tail is 8 bytes` on a 4096-byte buffer puts `tail` at
-# offset 4096 and makes the block 4104. So the host grows, and `.size` grows
-# with it -- while `.base_size` stays the number the name was declared with,
-# which is what a capacity is and what a syscall's length usually means.
-ATTACH_BYTES = {}   # host -> {field: (offset, width, signed)}
+ATTACH_BYTES = {}   # host -> {field: (width, signed)}
 # A host that gains fields gets a second declaration beside the first: the bytes
 # keep the name, the fields go in `NAME__fields`. Measured, on serve and on the
 # whole corpus, with gcc and with clang: fields carved INTO the block cost 15%,
@@ -5403,18 +5393,7 @@ ATTACH_BYTES = {}   # host -> {field: (offset, width, signed)}
 # an object of their own that nothing points into, and the cost is zero.
 ATTACH_SUFFIX = "__fields"
 ATTACH_LAND = {}    # line -> [(temp slot, host, field)] a result to put away
-SIZE_AT = {}        # host -> [(line, size after that line), ...]
 
-
-def size_at(host, base, ln):
-    """`HOST.size` where it is written: the declared bytes plus whatever had
-    been attached ABOVE that line. Every answer is still a compile-time
-    constant -- there are just several of them, one per region of the file."""
-    best = base
-    for at, total in SIZE_AT.get(host, ()):
-        if at <= ln:
-            best = total
-    return best
 
 
 SCALAR_BYTES = {}   # scalar name -> the C type its block is read through
@@ -5451,7 +5430,7 @@ def attach_struct(slot):
     Not packed -- nothing reads these as a layout, so let each field sit where
     its type wants to sit."""
     ms = "".join(f" {width_type(str(w), slot['line'], sg)} {f};"
-                 for f, (_o, w, sg) in ATTACH_BYTES[slot["name"]].items())
+                 for f, (w, sg) in ATTACH_BYTES[slot["name"]].items())
     return f"struct {{{ms} }} {emit_of(slot['name'])}{ATTACH_SUFFIX} = {{0}};"
 
 
@@ -5468,7 +5447,7 @@ def unknown_member(host, field, shown, ln):
     """Nothing resolved `HOST.FIELD` and HOST has attached fields -- so name
     them. Reached only after the declared members have all been tried, because
     a name that gained fields keeps the ones it came with."""
-    if host in ATTACH_BYTES and field not in ("size", "base_size"):
+    if host in ATTACH_BYTES and field != "size":
         fail(f"line {ln}: '{host}' has no field '{field}' "
              f"(has: {', '.join(attached_to(host))}). A field is attached by "
              "WRITING it -- a read of one nothing attached is a typo.")
@@ -5499,14 +5478,14 @@ def declared_member(name, field, slots, definitions):
 
 def attach_field(host, field, slots, definitions, n,
                  width=None, signed=False):
-    """`HOST.FIELD` on a name that already exists -> (offset, width, signed),
-    carving the field out of the host's block past what it was declared with.
-    None when the pair is somebody else's already.
+    """`HOST.FIELD` on a name that already exists -> (width, signed). None when
+    the pair is somebody else's already.
 
-    A word takes eight bytes, a width takes what it says. Offsets accrue in
-    ATTACHMENT ORDER from the declared size, with no padding -- the same rule a
-    layout view's fields follow, because this is the same thing said one field
-    at a time. So `.size` grows and `.base_size` does not."""
+    A word takes eight bytes, a width takes what it says, and that is all a
+    field is: an ordinary variable beside the thing it describes. It needs no
+    offset, because it is not in the block -- which is also why a host sized by
+    a NAME can carry one. Where in the block a field would start was a question
+    only while fields were carved into it."""
     if (host, field) in ATTACHED:
         return ATTACH_BYTES[host][field]
     slot = next((sl for sl in slots if sl.get("name") == host), None)
@@ -5514,43 +5493,30 @@ def attach_field(host, field, slots, definitions, n,
         return None
     if declared_member(host, field, slots, definitions):
         return None
-    base = host_extent(slot, definitions, n)
-    if base is None:
+    if not hosts_bytes(slot, definitions):
         fail(f"line {n}: '{host}' has no bytes of its own, so `{host}.{field}` "
-             "has nowhere to live. A field is carved out of the block its host "
-             "holds, and a scalar is a register with no block.")
-    at = SIZE_AT.get(host, [(0, base)])[-1][1]
+             "has nothing to describe. A field is attached to a name that "
+             "HOLDS something, and a scalar is a register with no block.")
     w = int(width) if width is not None else 8
     signed = signed or width is None   # a word is signed, like every other
-    # End to end, no padding -- which is the rule a layout view already keeps
-    # ("one contiguous block, end to end with no padding"), so a record built a
-    # field at a time and one declared all at once describe the same bytes.
-    # The emitted struct is `packed` to match.
-    ATTACH_BYTES.setdefault(host, {})[field] = (at, w, signed)
+    ATTACH_BYTES.setdefault(host, {})[field] = (w, signed)
     ATTACHED.add((host, field))
     return ATTACH_BYTES[host][field]
 
 
-def host_extent(slot, definitions, n):
-    """The bytes `slot` holds today -- the declaration's size for a backing, the
-    block for a laid-out instance. None for anything with no bytes at all."""
+def hosts_bytes(slot, definitions):
+    """Does `slot` hold bytes of its own? A backing does, and so does a laid-out
+    instance -- a view over a block, a resource with a block. A scalar does not,
+    and a field attached to one would have nothing to be about. How MANY bytes
+    is not asked: a field is beside them, not among them, so a backing sized by
+    a name is as good a host as one sized by a number."""
     if slot.get("kind") == "buffer":
-        try:
-            return int(str(slot.get("size")))
-        except (TypeError, ValueError):
-            fail(f"line {n}: '{slot['name']}' is sized by a name, so where a "
-                 "field would start is not known here. Declare it with a "
-                 "number to attach to it.")
+        return True
     if slot.get("kind") == "instance":
         defn = definitions.get(slot.get("definition")) or {}
-        if defn.get("psize") or defn.get("bitwidth"):
-            return defn.get("psize") or defn.get("bitwidth")
-        # ...elaboration has not run yet at parse time, so add the declared
-        # widths up here. `packed` is filled when the definition was read, and
-        # a layout's fields are laid end to end with no padding.
-        if defn.get("packed"):
-            return sum(int(w) for _f, w, *_r in defn["packed"])
-    return None
+        return bool(defn.get("psize") or defn.get("bitwidth")
+                    or defn.get("packed"))
+    return False
 
 
 def attached_field_c(actual, ln):
@@ -6970,9 +6936,6 @@ def buffer_sizes(slots):
                 break
             seen.add(v)
             v = scal[v]
-    for host, marks in SIZE_AT.items():        # ...and what was carved on top
-        if host in sizes:                      # is part of the block too
-            sizes[host] = max(sizes[host], marks[-1][1])
     return sizes, scal
 
 
@@ -7084,8 +7047,6 @@ def check_call_fit(definitions, slots, steps):
                 nm = wired(port) or ""
                 if nm.endswith(".size"):      # what the caller actually passes:
                     left = sizes.get(nm[:-5]) # the block, fields and all
-                elif nm.endswith(".base_size"):
-                    left = sizes.get(nm[:-10])
                 elif nm in scal:
                     left = _int_value(scal.get(nm, ""))
             if val.endswith(".size"):
@@ -8393,7 +8354,6 @@ def transpile(sources, prog):
     ATTACHED.clear()
     ATTACH_BYTES.clear()
     SCALAR_BYTES.clear()
-    SIZE_AT.clear()
     ATTACH_LAND.clear()
     REGISTER_WORDS.clear()
     SCALAR_WORDS.clear()

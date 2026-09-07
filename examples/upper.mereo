@@ -18,18 +18,18 @@ include "../core.mereo"
 program goes
   capacity is 65536
   buffer is capacity bytes
-  count is 0
+  buffer.count is 0
 
   input is already linux.file (descriptor is 0)
 
   output is already linux.file (descriptor is 1)
 
   pass goes
-    input.read (buffer is buffer, capacity is capacity, count is count)
-    leave pass when count == 0
+    input.read (buffer is buffer, capacity is capacity, count is buffer.count)
+    leave pass when buffer.count == 0
 
-    text.upper (data is buffer, length is count)
-    output.write (buffer is buffer, count is count)
+    text.upper (data is buffer, length is buffer.count)
+    output.write (buffer is buffer, count is buffer.count)
     repeat pass
   end
 

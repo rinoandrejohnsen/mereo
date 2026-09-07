@@ -15,14 +15,15 @@ include "../linux.mereo"
 -- fields carry their own byte order, so there is no htons and no hex to check.
 
 program goes
-  capacity is 4096
-  buffer is capacity bytes
-  count is 0
+  buffer is 4096 bytes
+  buffer.count is 0
   peer is -1
 
-  bound is linux.sockaddr_in (family is 2,            -- AF_INET
-                              port is 12346,          -- network order, free
-                              address is 2130706433)   -- 127.0.0.1
+  bound is linux.sockaddr_in (
+    family is 2,           -- AF_INET
+    port is 12346,         -- network order, free
+    address is 2130706433  -- 127.0.0.1
+  )
 
   terminal is already linux.file (descriptor is 1)
 
@@ -37,9 +38,9 @@ program goes
 
     client is adopted linux.socket (descriptor is peer)
 
-    client.read (buffer is buffer, capacity is capacity, count is count)
+    client.read (buffer is buffer, capacity is buffer.size, count is buffer.count)
 
-    terminal.write (buffer is buffer, count is count)
+    terminal.write (buffer is buffer, count is buffer.count)
 
     repeat serve
   end

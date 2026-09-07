@@ -23,7 +23,7 @@ program goes
   none is "nothing\n"
   one is "one byte\n"
   many is "many bytes\n"
-  count is 0
+  buffer.count is 0
   written is 0
   message is 0
   length is 0
@@ -32,15 +32,15 @@ program goes
 
   terminal is already linux.file (descriptor is 1)
 
-  input.read (buffer is buffer, capacity is capacity, count is count)
+  input.read (buffer is buffer, capacity is capacity, count is buffer.count)
 
   pick goes
-    count == 0 goes
+    buffer.count == 0 goes
       message is none
       length is none.size
       leave pick
     end
-    count == 1 goes
+    buffer.count == 1 goes
       message is one
       length is one.size
       leave pick

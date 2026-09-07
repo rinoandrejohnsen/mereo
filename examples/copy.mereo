@@ -11,7 +11,7 @@ include "../linux.mereo"
 program goes
   capacity is 4096
   buffer is capacity bytes
-  count is 0
+  buffer.count is 0
   written is 0
 
   source is linux.file (path is "lorem_ipsum.txt", flags is 0, mode is 0)
@@ -19,10 +19,10 @@ program goes
   sink is linux.file (path is "copy_out.txt", flags is 577, mode is 420)
 
   pass goes
-    source.read (buffer is buffer, capacity is capacity, count is count)
-    leave pass when count == 0
+    source.read (buffer is buffer, capacity is capacity, count is buffer.count)
+    leave pass when buffer.count == 0
 
-    sink.write (buffer is buffer, count is count, written is written)
+    sink.write (buffer is buffer, count is buffer.count, written is written)
     repeat pass
   end
 

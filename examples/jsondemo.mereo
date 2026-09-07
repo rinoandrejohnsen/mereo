@@ -8,7 +8,7 @@ program goes
   vlen is 0
   portnum is 0
   digits is 20 bytes          -- `text.format`'s worst case, not a port's
-  dlen is 0
+  digits.count is 0
 
   -- hand the bytes to a `json` (their address and length); read fields off `doc`
   doc is already json (content is raw, length is raw.size)
@@ -23,8 +23,8 @@ program goes
 
   -- "port" -> a number value (443)
   doc.number (key is "port", keylen is "port".size, value is portnum)
-  text.format (value is portnum, buffer is digits, length is dlen)
-  terminal.write (buffer is digits, count is dlen)
+  text.format (value is portnum, buffer is digits, length is digits.count)
+  terminal.write (buffer is digits, count is digits.count)
   terminal.write (buffer is "\n", count is 1)
 
 end

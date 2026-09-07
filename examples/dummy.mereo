@@ -21,7 +21,7 @@ program goes
 
   input.read (
     buffer is buffer,
-    capacity is buffer.base_size
+    capacity is buffer.size
   ) (
     buffer.count is count
   )

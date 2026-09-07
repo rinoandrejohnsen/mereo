@@ -21,10 +21,10 @@ program (arguments) goes
                50 when argument_count > 1 branchless
 
   digits is 24 bytes
-  length is 0
-  text.format (value is my_number, buffer is digits, length is length)
+  digits.count is 0
+  text.format (value is my_number, buffer is digits, length is digits.count)
 
   sink is already linux.file (descriptor is 1)
-  sink.write (buffer is digits, count is length)
+  sink.write (buffer is digits, count is digits.count)
   sink.write (buffer is "\n", count is 1)
 end

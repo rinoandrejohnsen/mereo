@@ -5,7 +5,7 @@ include "../linux.mereo"
 
 program goes
   buffer is 4096 bytes
-  count is 0
+  buffer.count is 0
 
   input is linux.file (
     path is "lorem_ipsum.txt",
@@ -20,11 +20,11 @@ program goes
   input.read (
     buffer is buffer,
     capacity is buffer.size,
-    count is count
+    count is buffer.count
   )
 
   output.write (
     buffer is buffer,
-    count is count
+    count is buffer.count
   )
 end

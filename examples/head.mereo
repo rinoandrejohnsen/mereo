@@ -16,7 +16,7 @@ program (arguments) goes
 
   capacity is 65536
   buffer is capacity bytes
-  count is 0
+  buffer.count is 0
   want is 0
   seen is 0
   i is 0
@@ -34,12 +34,12 @@ program (arguments) goes
   ensure want >= 0
 
   copy goes
-    input.read (buffer is buffer, capacity is capacity, count is count)
-    leave copy when count == 0
+    input.read (buffer is buffer, capacity is capacity, count is buffer.count)
+    leave copy when buffer.count == 0
 
     i is 0
     scan goes                        -- how much of this block do we want?
-      leave scan when i >= count
+      leave scan when i >= buffer.count
       leave scan when seen >= want
       c is [buffer + i : 1]
       seen is seen + 1 when c == 10

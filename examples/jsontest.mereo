@@ -13,7 +13,7 @@ program goes
   vlen is 0
   num is 0
   digits is 20 bytes          -- `text.format`'s worst case
-  dlen is 0
+  digits.count is 0
 
   doc is already json (content is raw, length is raw.size)
 
@@ -30,14 +30,14 @@ program goes
 
   -- a number, not the first key
   doc.number (key is portkey, keylen is portkey.size, value is num)
-  text.format (value is num, buffer is digits, length is dlen)
-  terminal.write (buffer is digits, count is dlen)
+  text.format (value is num, buffer is digits, length is digits.count)
+  terminal.write (buffer is digits, count is digits.count)
   terminal.write (buffer is newline, count is 1)
 
   -- a negative number
   doc.number (key is tempkey, keylen is tempkey.size, value is num)
-  text.format (value is num, buffer is digits, length is dlen)
-  terminal.write (buffer is digits, count is dlen)
+  text.format (value is num, buffer is digits, length is digits.count)
+  terminal.write (buffer is digits, count is digits.count)
   terminal.write (buffer is newline, count is 1)
 
 end

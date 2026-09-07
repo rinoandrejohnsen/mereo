@@ -27,7 +27,7 @@ include "../core.mereo"
 
 program (arguments) goes
   block is 32768 bytes
-  count is 0
+  block.count is 0
   at is 0
   stop is 0
   here is 0
@@ -44,11 +44,11 @@ program (arguments) goes
   folder is linux.directory (path is where_to)
 
   page goes
-    folder.read (buffer is block, capacity is block.size, count is count)
-    leave page when count == 0        -- the end of the directory, not an error
+    folder.read (buffer is block, capacity is block.size, count is block.count)
+    leave page when block.count == 0        -- the end of the directory, not an error
 
     at is block
-    stop is block + count
+    stop is block + block.count
     entries goes
       entry is [at : 19] as linux.dirent   -- the record at the cursor
       reclen is entry.length               -- the step to the next one
