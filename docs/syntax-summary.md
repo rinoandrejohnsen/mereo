@@ -148,7 +148,12 @@ text is                        -- ...or gathered in a group
 end
 
 shout (area is buf, length is 5)  -- use it -- ports wired BY NAME
-text.find (data is buf, byte is 10, offset is at)  -- a group's template names the group
+text.find (data is buf, byte is 10) (at is offset)   -- a group's template names
+                                  -- the group. TWO LISTS: what it reads, then
+                                  -- what it writes -- and in the second the
+                                  -- sentence turns round, because the traffic
+                                  -- does. A result in the first list is refused
+give () (n is value)              -- ...so a call that only answers reads so
 ```
 
 Spliced, not called: locals are renamed per use, and a port's direction is

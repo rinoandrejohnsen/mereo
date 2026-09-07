@@ -52,13 +52,13 @@ program goes
 
   doc.load (capacity is 16)
 
-  doc.at (offset is 0, value is b)
+  doc.at (offset is 0) (b is value)
   page.number (value is b)
   page.byte (value is 32)
-  doc.at (offset is 1, value is b)
+  doc.at (offset is 1) (b is value)
   page.number (value is b)
   page.byte (value is 32)
-  doc.at (offset is 2, value is b)
+  doc.at (offset is 2) (b is value)
   page.number (value is b)
   page.byte (value is 10)
 

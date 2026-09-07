@@ -16,7 +16,7 @@ program goes
   h is buf + 4 as record
   h.tag is 6
   n is 0
-  h.total (sink is n)
+  h.total () (n is sink)
   ensure n == 6
   first is [buf : 1]
   ensure first == 0          -- the lens wrote at +4, not at 0

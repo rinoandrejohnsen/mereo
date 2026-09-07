@@ -41,7 +41,7 @@ program goes
 
   doc is already record (at is raw, size is raw.size)  -- an object view, from a size
 
-  doc.span_of (pointer is p, count is n)
+  doc.span_of () (p is pointer, n is count)
   ensure n == 11
   ensure p > 0
 

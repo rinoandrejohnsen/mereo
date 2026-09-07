@@ -16,7 +16,7 @@ program goes
   h is buf as record
   h.tag is 7
   n is 0
-  h.total (sink is n)
+  h.total () (n is sink)
   ensure n == 7
 
   letter is 1 bytes

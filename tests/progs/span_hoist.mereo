@@ -48,7 +48,7 @@ program goes
 
   step goes
     leave step when i >= count
-    v.at (offset is i, byte is b)
+    v.at (offset is i) (b is byte)
     total is total + b
     i is i + 1
     repeat step

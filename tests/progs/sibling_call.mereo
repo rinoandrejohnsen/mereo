@@ -81,7 +81,7 @@ program goes
   counter.twice (value is n)
 
   source is watcher (path is "/dev/null")
-  source.ready (value is m)
+  source.ready () (m is value)
 
   page.number (value is n)
   page.byte (value is 32)

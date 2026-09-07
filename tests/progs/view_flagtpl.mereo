@@ -23,7 +23,7 @@ program goes
   m.raw is 0
 
   n is 0
-  m.quiet (sink is n)          -- the splice clears bit 3 and sets bit 1
+  m.quiet () (n is sink)          -- the splice clears bit 3 and sets bit 1
 
   a is m.echo
   b is m.raw

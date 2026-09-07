@@ -78,7 +78,7 @@ program goes
 
   source.arm (events is 1)             -- the store-only method
   source.await (ready is n)            -- ...and the one that also polls
-  source.ready (value is got)
+  source.ready () (got is value)
 
   page.number (value is n)             -- 1 descriptor ready
   page.byte (value is 32)

@@ -31,8 +31,8 @@ program goes
   acc is 0
   cell is 2 bytes
 
-  clamp (v is 0 - 7, sink is a)
-  clamp (v is 4, sink is b)
+  clamp (v is 0 - 7) (a is sink)
+  clamp (v is 4) (b is sink)
   ensure a == 0                    -- the early return left the default
   ensure b == 4
 

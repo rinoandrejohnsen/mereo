@@ -20,7 +20,7 @@ end
 program goes
   n is 0
 
-  give (value is 5)
+  give () (5 is value)
 
   ensure n == 0
 end

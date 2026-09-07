@@ -30,7 +30,7 @@ program goes
   db is already sqlite (data is wire, length is wire.count, page_size is 0,
                         page_count is 0, encoding is 0, reserved_space is 0,
                         read_version is 0)
-  db.open (result is outcome)
+  db.open () (outcome is result)
 
   writer is already builder (data is page, count is 0, limit is 4096)
   writer.add (source is "R ", length is 2)

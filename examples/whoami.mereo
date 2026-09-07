@@ -16,7 +16,7 @@ program goes
 
   linux.identity.user (euid is uid)
 
-  linux.identity.getpwuid (uid is uid, name is name_ptr, length is name_len)
+  linux.identity.getpwuid (uid is uid) (name_ptr is name, name_len is length)
 
   output.write (buffer is name_ptr, count is name_len)
 

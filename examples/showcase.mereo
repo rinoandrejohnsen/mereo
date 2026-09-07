@@ -111,7 +111,7 @@ program (arguments) goes
   digitry.bits_set (source is block.count, result is bit_count)
   ensure wide >= 1                 -- every number has a first digit
   ensure bit_count >= 1            -- ...and any non-zero count has a bit
-  text.format (value is totals.lines, buffer is digits, length is n)
+  text.format (value is totals.lines, buffer is digits) (n is length)
 
   screen.write (buffer is digits, count is n)
   screen.write (buffer is " line(s)", count is 8)

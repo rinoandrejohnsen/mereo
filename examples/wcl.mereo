@@ -41,7 +41,7 @@ program goes
     repeat fill
   end
 
-  text.format (value is lines, buffer is digits, length is digits.count)
+  text.format (value is lines, buffer is digits) (digits.count is length)
   [digits + digits.count : 1] is 10
   digits.count is digits.count + 1
 

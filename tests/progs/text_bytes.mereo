@@ -19,13 +19,13 @@ program goes
 
   -- last: the final slash of a path, where `find` gives the first
   path is "/usr/lib/x"
-  text.last (data is path, length is 10, byte is 47, offset is at)
+  text.last (data is path, length is 10, byte is 47) (at is offset)
   ensure at == 8
-  text.format (value is at, buffer is line, length is n)
+  text.format (value is at, buffer is line) (n is length)
   screen.write (buffer is line, count is n)
 
   -- ...and LENGTH when the byte is not there, exactly as `find` answers
-  text.last (data is path, length is 10, byte is 63, offset is at)
+  text.last (data is path, length is 10, byte is 63) (at is offset)
   ensure at == 10
 
   -- upper and lower, in place
@@ -40,52 +40,52 @@ program goes
   screen.write (buffer is work, count is 3)
 
   -- the ctype three
-  text.digit (byte is 53, result is v)
+  text.digit (byte is 53) (v is result)
   ensure v == 1
-  text.digit (byte is 65, result is n)
+  text.digit (byte is 65) (n is result)
   ensure n == 0
   screen.write (buffer is " 1", count is 2)
 
-  text.space (byte is 9, result is v)
+  text.space (byte is 9) (v is result)
   ensure v == 1
-  text.space (byte is 65, result is n)
+  text.space (byte is 65) (n is result)
   ensure n == 0
   screen.write (buffer is " 1", count is 2)
 
-  text.alpha (byte is 122, result is v)
+  text.alpha (byte is 122) (v is result)
   ensure v == 1
-  text.alpha (byte is 53, result is n)
+  text.alpha (byte is 53) (n is result)
   ensure n == 0
   screen.write (buffer is " 1", count is 2)
 
   -- hex, shortest form
-  text.hex (value is 255, buffer is line, length is n)
+  text.hex (value is 255, buffer is line) (n is length)
   ensure n == 2
   screen.write (buffer is " ", count is 1)
   screen.write (buffer is line, count is n)
 
-  text.hex (value is 10752, buffer is line, length is n)
+  text.hex (value is 10752, buffer is line) (n is length)
   ensure n == 4
   screen.write (buffer is " ", count is 1)
   screen.write (buffer is line, count is n)
 
-  text.hex (value is 3735928559, buffer is line, length is n)
+  text.hex (value is 3735928559, buffer is line) (n is length)
   ensure n == 8
   screen.write (buffer is " ", count is 1)
   screen.write (buffer is line, count is n)
 
   -- hexbytes keeps the leading zero of every byte, so a run lines up
-  text.hexbytes (data is digest, count is 5, buffer is line, length is n)
+  text.hexbytes (data is digest, count is 5, buffer is line) (n is length)
   ensure n == 10
   screen.write (buffer is " ", count is 1)
   screen.write (buffer is line, count is n)
 
   -- unhex is hex's inverse
-  text.unhex (data is "deadbeef", length is 8, value is v)
+  text.unhex (data is "deadbeef", length is 8) (v is value)
   ensure v == 3735928559
-  text.unhex (data is "DEADBEEF", length is 8, value is n)
+  text.unhex (data is "DEADBEEF", length is 8) (n is value)
   ensure n == 3735928559
-  text.format (value is v, buffer is line, length is n)
+  text.format (value is v, buffer is line) (n is length)
   screen.write (buffer is " ", count is 1)
   screen.write (buffer is line, count is n)
 

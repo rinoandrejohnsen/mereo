@@ -23,5 +23,5 @@ end
 program goes
   c is adopted mark_c (descriptor is 103)
   r is 0
-  work.run (sink is r)
+  work.run () (r is sink)
 end

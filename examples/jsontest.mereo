@@ -22,21 +22,23 @@ program goes
   -- a multi-word string value, with a space after the colon
   doc.text (key is namekey,
             keylen is namekey.size,
-            start is start,
-            vlen is vlen)
+            start is start
+  ) (
+      vlen is vlen
+  )
   field is raw + start
   terminal.write (buffer is field, count is vlen)
   terminal.write (buffer is newline, count is 1)
 
   -- a number, not the first key
   doc.number (key is portkey, keylen is portkey.size, value is num)
-  text.format (value is num, buffer is digits, length is digits.count)
+  text.format (value is num, buffer is digits) (digits.count is length)
   terminal.write (buffer is digits, count is digits.count)
   terminal.write (buffer is newline, count is 1)
 
   -- a negative number
   doc.number (key is tempkey, keylen is tempkey.size, value is num)
-  text.format (value is num, buffer is digits, length is digits.count)
+  text.format (value is num, buffer is digits) (digits.count is length)
   terminal.write (buffer is digits, count is digits.count)
   terminal.write (buffer is newline, count is 1)
 

@@ -36,7 +36,7 @@ program (arguments) goes
     repeat scan when i < 9
   end
 
-  clamp (value is tally)              -- a guarded scope inside a template
+  clamp () (tally is value)              -- a guarded scope inside a template
 
   pick goes
     argc == 9 goes

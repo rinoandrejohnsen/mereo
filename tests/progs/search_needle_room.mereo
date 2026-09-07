@@ -26,8 +26,11 @@ program goes
   [hay + 6 : 1] is 68
   [hay + 7 : 1] is 69
   text.search (data is hay, length is 4, needle is "ABCD",
-               needle_length is "ABCD".size, offset is off)
-  text.format (value is off, buffer is digits, length is dlen)
+               needle_length is "ABCD".size
+  ) (
+      off is offset
+  )
+  text.format (value is off, buffer is digits) (dlen is length)
   terminal.write (buffer is digits, count is dlen)
   terminal.write (buffer is "\n", count is 1)
 end

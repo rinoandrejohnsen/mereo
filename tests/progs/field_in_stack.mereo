@@ -54,9 +54,9 @@ program goes
   screen is already linux.file (descriptor is 1)
 
   h.set (a is 7, b is 9)
-  h.first (value is a)
-  h.second (value is b)
-  h.total (value is c)
+  h.first () (a is value)
+  h.second () (b is value)
+  h.total () (c is value)
 
   page.number (value is a)
   page.byte (value is 32)

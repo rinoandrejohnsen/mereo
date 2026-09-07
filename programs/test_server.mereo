@@ -1,0 +1,46 @@
+include "../linux.mereo"
+
+program (arguments) goes
+  server is linux.socket (
+    domain is 2,
+    type is 1,
+    protocol is 0
+  )
+
+  host is linux.sockaddr_in (
+    family is 2,           -- AF_INET
+    port is 12346,         -- `2 bytes as big` -- network order, free
+    address is 2130706433  -- 127.0.0.1
+  )
+
+  server.bind (
+    address is host,
+    length is host.size
+  )
+
+  server.listen (backlog is 1)
+
+  peer is -1
+
+  client_buffer is 4096 bytes
+
+  count is 0
+
+  serve goes
+    server.accept (
+      address is 0,
+      length is 0,
+      connection is peer
+    )
+
+    client is adopted linux.socket (descriptor is peer)
+
+    client.read (
+      buffer is client_buffer,
+      capacity is client_buffer.size,
+      count is count
+    )
+
+    repeat serve
+  end
+end

@@ -42,11 +42,17 @@ program goes
   end
 
   request.parse (data is wire, length is wire.count,
-                 line_limit is 8192,
-                 method is method, method_length is method_length,
-                 path is path, path_length is path_length, minor is minor,
-                 body is body, slots is slots, limit is 128, result is used)
-                (slots.count is count)
+                 line_limit is 8192, slots is slots, limit is 128
+  ) (
+      slots.count is count,
+      method is method,
+      method_length is method_length,
+      path is path,
+      path_length is path_length,
+      minor is minor,
+      body is body,
+      used is result
+  )
 
   writer is already builder (data is page, count is 0, limit is 65536)
   writer.add (source is "R ", length is 2)
@@ -75,7 +81,7 @@ program goes
                            stride is field.size)
     walk goes
       leave walk when i >= slots.count
-      rows.at (index is i, address is where)
+      rows.at (index is i) (where is address)
       one is [where : field.size] as field
       writer.add (source is "H ", length is 2)
       text.hexbytes (data is one.name, count is one.name_length,

@@ -41,11 +41,13 @@ program (arguments, environment) goes
     entry is already span (data is e, length is 4096)
     entry.until (byte is 0)
 
-    entry.find (byte is 61, offset is at)      -- `=`
+    entry.find (byte is 61) (at is offset)      -- `=`
     name is already span (data is entry.data, length is at)
     name.equals (other is wanted.data,
-                 other_length is wanted.length,
-                 result is hit)
+                 other_length is wanted.length
+    ) (
+        hit is result
+    )
 
     entry.skip (count is at + 1)     -- ...and now `entry` is the VALUE
     value_at is entry.data

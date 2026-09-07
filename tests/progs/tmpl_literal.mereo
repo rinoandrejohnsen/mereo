@@ -27,9 +27,9 @@ program goes
   text is 0
   text_length is 0
 
-  greeting.path (at is route, length is route_length)
+  greeting.path () (route is at, route_length is length)
 
-  greeting.body (at is text, length is text_length)
+  greeting.body () (text is at, text_length is length)
 
   ensure route_length == 6
   ensure text_length == 12

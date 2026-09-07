@@ -22,7 +22,7 @@ program (arguments) goes
 
   digits is 24 bytes
   digits.count is 0
-  text.format (value is my_number, buffer is digits, length is digits.count)
+  text.format (value is my_number, buffer is digits) (digits.count is length)
 
   sink is already linux.file (descriptor is 1)
   sink.write (buffer is digits, count is digits.count)

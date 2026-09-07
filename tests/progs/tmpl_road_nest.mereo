@@ -24,12 +24,12 @@ program (arguments) goes
 
   pick goes
     argc == 1 goes
-      text.number (data is digits, length is 3, value is v)
+      text.number (data is digits, length is 3) (v is value)
       leave pick
     end
     v is 7
   end
 
-  text.format (value is v, buffer is text_out, length is length)
+  text.format (value is v, buffer is text_out) (length is length)
   terminal.write (buffer is text_out, count is length)
 end

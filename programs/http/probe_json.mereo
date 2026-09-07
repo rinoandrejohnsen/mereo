@@ -41,10 +41,15 @@ program goes
   walk goes
     document.step (data is wire, length is wire.count, offset is at,
                    stack is nest, depth_limit is 256,
-                   depth is depth, mode is mode, kind is kind,
-                   key_at is key_at, key_length is key_length,
-                   value_at is value_at, value_length is value_length,
-                   result is outcome)
+                   depth is depth, mode is mode
+    ) (
+        kind is kind,
+        key_at is key_at,
+        key_length is key_length,
+        value_at is value_at,
+        value_length is value_length,
+        outcome is result
+    )
     at is outcome
     leave walk when at < 0
     leave walk when kind == 0

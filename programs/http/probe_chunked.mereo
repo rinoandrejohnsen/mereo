@@ -40,9 +40,13 @@ program goes
 
   drain goes
     chunked.step (data is wire, length is wire.count, offset is at,
-                  phase is phase, remaining is remaining,
-                  body_offset is chunk_at, body_length is chunk_len,
-                  finished is finished, result is outcome)
+                  phase is phase, remaining is remaining
+    ) (
+        chunk_at is body_offset,
+        chunk_len is body_length,
+        finished is finished,
+        outcome is result
+    )
     leave drain when outcome < 0
     taken is chunk_len
     taken_at is chunk_at

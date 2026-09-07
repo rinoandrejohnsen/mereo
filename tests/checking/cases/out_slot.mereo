@@ -9,6 +9,6 @@ end
 
 program goes
   n is 0
-  give (value is 5)                             -- MISTAKE
+  give () (5 is value)                             -- MISTAKE
   ensure n == 0
 end

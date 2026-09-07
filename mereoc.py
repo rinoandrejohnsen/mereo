@@ -1925,6 +1925,12 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                              "to here -- declare it first, or name a slot.")
 
                 elif not any(sl.get("name") == _nm for sl in slots):
+                    if not re.fullmatch(r"[A-Za-z_]\w*", _nm):
+                        fail(f"line {n}: `{_nm} is ...` -- the second argument "
+                             "list names what a result LANDS IN, so it needs a "
+                             f"SCALAR SLOT or a field, and '{_nm}' is neither. "
+                             "Declare one with `NAME is NUMBER`, or attach a "
+                             "field to the name the result is about.")
                     name_ok(_nm, n, "slot")
                     slots.append({"kind": "scalar", "name": _nm,
                                   "init": "0", "line": n})
@@ -6242,6 +6248,18 @@ def check_port_needs(definitions, slots, steps):
                              f"and '{meth['name']}' only reads '{port}'. Move "
                              "it to the first list, where the port is named on "
                              f"the left: `{port} is {actual}`.")
+                elif kinds == {"out"}:
+                    # ...and the converse. The two lists do not DECLARE a
+                    # direction -- mereo derives that from the body -- they
+                    # DISPLAY it, so a port the callee only writes has to be
+                    # displayed as one. Written on the left it reads like
+                    # something the call consumes, which is the one thing it
+                    # never does.
+                    fail(f"line {ln}: `{port} is {actual}` is in the first "
+                         "argument list, which is for ports the call READS, "
+                         f"and '{meth['name']}' only writes '{port}'. Move it "
+                         "to the second list, where what it lands in is named "
+                         f"on the left: `(... ) ({actual} is {port})`.")
                 if not kinds:
                     continue
                 head = f"line {ln}: `{port} is {actual}` -- '{meth['name']}'"

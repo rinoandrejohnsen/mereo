@@ -41,11 +41,11 @@ program goes
   lines goes
     leave lines when rest.length == 0
 
-    rest.find (byte is 10, offset is n)
+    rest.find (byte is 10) (n is offset)
     line is already span (data is rest.data, length is n)
     rest.skip (count is n + 1)
 
-    line.find (byte is 61, offset is k)   -- `=`; the whole line if there is none
+    line.find (byte is 61) (k is offset)   -- `=`; the whole line if there is none
     key is already span (data is line.data, length is k)
     line.skip (count is k + 1)            -- ...and now `line` is the VALUE
 

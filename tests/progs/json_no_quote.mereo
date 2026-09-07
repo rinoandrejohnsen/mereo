@@ -19,7 +19,7 @@ program goes
   terminal is already linux.file (descriptor is 1)
   input.read (buffer is raw, capacity is 128, count is n)
   doc is already json (content is raw, length is n)
-  doc.text (key is "a", keylen is "a".size, start is start, vlen is vlen)
+  doc.text (key is "a", keylen is "a".size, start is start) (vlen is vlen)
   field is raw + start
   terminal.write (buffer is field, count is vlen)
 end

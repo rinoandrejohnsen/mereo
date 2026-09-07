@@ -19,8 +19,9 @@ program goes
 
   input.read (
     buffer is buffer,
-    capacity is buffer.size,
-    count is buffer.count
+    capacity is buffer.size
+  ) (
+      buffer.count is count
   )
 
   output.write (

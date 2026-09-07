@@ -30,5 +30,5 @@ program goes
   line is "abcde"
   v is already span (data is line, length is 17)
   n is 0
-  v.find (byte is 32, offset is n)
+  v.find (byte is 32) (n is offset)
 end

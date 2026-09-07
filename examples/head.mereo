@@ -30,7 +30,7 @@ program (arguments) goes
   arg is arguments.pointer + 1
   given is already span (data is arg, length is 24)
   given.until (byte is 0)        -- an argument ends at its NUL; 24 bounds the
-  given.number (value is want)   -- scan, and is past the longest decimal there is
+  given.number () (want is value)   -- scan, and is past the longest decimal there is
   ensure want >= 0
 
   copy goes

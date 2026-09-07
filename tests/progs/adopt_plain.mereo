@@ -65,14 +65,14 @@ program goes
   page.byte (value is 32)
   page.number (value is b.small)      -- 1000
   page.byte (value is 32)
-  b.total (result is t)
+  b.total () (t is result)
   page.number (value is t)            -- 71000
   page.byte (value is 32)
   page.number (value is c.echo)       -- 1
   page.byte (value is 32)
   page.number (value is c.level)      -- 2
   page.byte (value is 32)
-  d.lit (result is t)
+  d.lit () (t is result)
   page.number (value is t)            -- 1
   page.byte (value is 10)
 

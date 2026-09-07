@@ -14,7 +14,7 @@ end
 program goes
   own is record
   n is 0
-  own.total (sink is n)
+  own.total () (n is sink)
   ensure n == 0
 
   letter is 1 bytes

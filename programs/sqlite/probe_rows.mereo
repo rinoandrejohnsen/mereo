@@ -40,7 +40,7 @@ program goes
   db is already sqlite (data is wire, length is wire.count, page_size is 0,
                         page_count is 0, encoding is 0, reserved_space is 0,
                         read_version is 0)
-  db.open (result is outcome)
+  db.open () (outcome is result)
   ensure outcome == 0
 
   writer is already builder (data is page, count is 0, limit is 65536)
@@ -52,9 +52,12 @@ program goes
   more goes
     rows.step (data is wire, page_size is db.page_size,
                reserved is db.reserved_space, stack is nest,
-               depth_limit is 64, depth is depth, rowid is rowid,
-               payload_at is payload_at, payload_length is payload_length,
-               result is got)
+               depth_limit is 64, depth is depth, payload_length is payload_length
+    ) (
+        rowid is rowid,
+        payload_at is payload_at,
+        got is result
+    )
     leave more when got != 1
     writer.add (source is "ROW ", length is 4)
     writer.number (value is rowid)
@@ -62,8 +65,13 @@ program goes
     columns goes
       leave columns when index >= 5
       record.column (payload is payload_at, payload_length is payload_length,
-                     index is index, kind is kind, number is number,
-                     at is at, size is size, result is ok)
+                     index is index, number is number
+      ) (
+          kind is kind,
+          at is at,
+          size is size,
+          ok is result
+      )
       leave columns when ok != 0
       writer.add (source is " | ", length is 3)
       show goes

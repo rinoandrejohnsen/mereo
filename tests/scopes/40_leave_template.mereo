@@ -17,5 +17,5 @@ program (arguments) goes
   n is arguments.count
   r is 0
 
-  peek (mode is n, sink is r)
+  peek (mode is n) (r is sink)
 end

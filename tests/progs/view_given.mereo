@@ -14,7 +14,7 @@ end
 program goes
   h is already record (tag is 5)
   n is 0
-  h.total (sink is n)
+  h.total () (n is sink)
   ensure n == 5
 
   letter is 1 bytes

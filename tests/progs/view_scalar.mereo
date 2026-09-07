@@ -30,7 +30,7 @@ program goes
   f.echo is 1
 
   n is 0
-  h.bump (sink is n)
+  h.bump () (n is sink)
   ensure n == 65                 -- the template wrote through to the scalar
 
   ensure h.span == 4660          -- the neighbouring field is untouched

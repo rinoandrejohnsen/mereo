@@ -58,12 +58,28 @@ A buffer is declared with a size in bytes. Its name *is* its address:
 Every argument is labelled and matched by name. Order carries no meaning:
 
 ```
-  text.find (data is block, length is count, byte is 10, offset is at)
+  text.find (data is block, length is count, byte is 10) (at is offset)
 ```
 
-There is no return value. An **out-port** names where the answer goes:
-`offset is at` means "put the offset in `at`". Three answers, three out-ports,
-no tuple.
+There is no return value. A call has **two argument lists**: what it reads,
+then what it writes. In the first, the port is on the left — `length is count`
+puts `count` into the port `length`. In the second the sentence turns round,
+because the traffic does: `at is offset` puts the port `offset` into `at`.
+
+Direction is not something the lists declare — mereo derives it from the body,
+by whether the port is read or assigned — so the lists **display** it, and a
+port displayed on the wrong side is refused by name. That is why the second
+list is not optional: a result written on the left would read as something the
+call consumes, which is the one thing it never does.
+
+A call whose every port is a result has an empty first list, and says so:
+
+```
+  given.number () (want is value)
+```
+
+A port the call both reads and writes stays in the first list: it is a
+mutation, and the value going in is as real as the value coming out.
 
 ## Conditions
 

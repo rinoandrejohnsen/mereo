@@ -16,14 +16,14 @@ program goes
   terminal is already linux.file (descriptor is 1)
 
   -- "name" -> a string value ("mereo")
-  doc.text (key is "name", keylen is "name".size, start is start, vlen is vlen)
+  doc.text (key is "name", keylen is "name".size, start is start) (vlen is vlen)
   field is raw + start
   terminal.write (buffer is field, count is vlen)
   terminal.write (buffer is "\n", count is 1)
 
   -- "port" -> a number value (443)
   doc.number (key is "port", keylen is "port".size, value is portnum)
-  text.format (value is portnum, buffer is digits, length is digits.count)
+  text.format (value is portnum, buffer is digits) (digits.count is length)
   terminal.write (buffer is digits, count is digits.count)
   terminal.write (buffer is "\n", count is 1)
 

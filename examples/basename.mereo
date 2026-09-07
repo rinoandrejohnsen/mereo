@@ -31,7 +31,7 @@ program (arguments) goes
   rest is already span (data is path.data, length is path.length)
 
   walk goes
-    rest.find (byte is 47, offset is off)
+    rest.find (byte is 47) (off is offset)
     off > 0 goes          -- a non-empty component: remember it. Runs of slashes
       comp_at is rest.data -- (and trailing ones) never clobber the last real one.
       comp_len is off

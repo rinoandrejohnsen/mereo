@@ -11,5 +11,5 @@ program goes
   v is already span (data is line, length is 3)
   b is 0
 
-  v.at (offset is 99, byte is b)
+  v.at (offset is 99) (b is byte)
 end

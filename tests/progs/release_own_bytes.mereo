@@ -56,8 +56,8 @@ program goes
 
   pipe is duct
 
-  pipe.head (value is r)
-  pipe.tail (value is w)
+  pipe.head () (r is value)
+  pipe.tail () (w is value)
 
   sink is already linux.file (descriptor is w)
   sink.write (buffer is "x", count is 1, written is n)
