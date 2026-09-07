@@ -67,6 +67,16 @@ bb span/no-final-nl span    $'a=1\nb=2'       0  $'a -> 1\nb -> 2'
 bb span/no-equals   span    $'bare\nk=v\n'    0  $'bare -> \nk -> v'
 bb span/empty       span    ""               0  ""
 bb tmpl/no-port      tmpl_noport  ""  0  $'hi\nhi'
+
+# ATTACHING -- a field beside a name that already exists. Neither of these was
+# run by anything until now, which is how a regression reached the user: the
+# loop-termination check stopped seeing `wire.round` as written once an
+# attached store became its own step kind, and `attach_loop` stopped compiling
+# with nothing to notice. `attach_fields` covers the three shapes a field takes
+# (a word, a width, a result landing from a call's out-list); `attach_loop`
+# covers one attached INSIDE a loop, which is the case the check got wrong.
+bb attach/fields     attach_fields  $'hello\n'  0  "hello"
+bb attach/in-loop    attach_loop    ""           0  "3 3 6"
 # `{"a":1}` has no quote after the key, so `find` answers the length it was
 # given and the offset lands one PAST a seven-byte document -- reported as the
 # start of a string value, with the following `length - start` underflowing to
@@ -497,7 +507,6 @@ rejects msg/assign-bytes   msg_assign_bytes   "is a run of bytes"
 rejects scope/sibling-temp sibling_temp     "reads what 'one' left"
 # `new NAME is VALUE` is the half of the spelling that was missing: the plain
 # form opens or assigns and nothing says which, `new` says which.
-rejects scope/new-on-a-scalar   new_on_scalar  "`new` on a scalar is gone"
 # Attaching: a name that already exists gains a field where it is first needed.
 # Creation happens on a WRITE, so each of these is a way of getting it wrong.
 rejects attach/undeclared    attach_undeclared   "has nothing to attach to"

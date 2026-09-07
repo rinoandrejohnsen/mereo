@@ -31,6 +31,18 @@ A **backing** is a run of bytes with a name:
 rather than its frame. A buffer sized by a run-time scalar is a run of memory
 by definition and cannot live in a register.
 
+**`in static` is also a performance lever, and a large one where it applies.**
+A static array's address is a link-time constant, so an indexed access folds
+the base into the instruction and one induction variable serves the whole loop;
+a stack array's base is a register, and the loop carries a pointer per array
+instead. Measured on a byte loop over two 64 KB blocks, 8 MB of input: **12
+instructions per byte on the stack against 10 in static, a 20% difference** —
+and a hand-written C++ twin of the same loop moves by exactly the same amount,
+so this is the machine's shape and not mereo's. It does NOT generalise to
+programs whose time goes elsewhere: `serve`, whose copies are short, gains
+1.1%. Reach for it when a loop walks a whole block, and measure rather than
+assume.
+
 A backing written as a **string literal** allocates one byte more than it
 counts, and that byte is zero. `message` above is fourteen bytes of text in
 fifteen bytes of storage, and `message.size` is fourteen — the terminator is

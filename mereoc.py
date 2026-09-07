@@ -1613,10 +1613,6 @@ def take_arg(inblock, s, n):
             fail(f"line {n}: repair assignments are `OUT is VALUE`")
         obj["recover"]["assigns"].append((m.group(1), m.group(2), n))
         return
-    if re.match(r"^fails\b", s):
-        fail(f"line {n}: failure declarations no longer live in the program -- "
-             "the record and exit status are derived; use a `failures is` entry "
-             "to override the exit code")
     m = re.match(r"^(\w+) is (.+)$", s)
     if not m:
         fail(f"line {n}: expected `PARAM is ACTUAL`, not {s!r}")
@@ -1976,15 +1972,6 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     fail(f"line {n}: `include` must appear before any section")
                 continue
             flags["content"] = True
-            m = re.match(r"^(\w+) is (?:final )?call (\d+)$", s)
-            if m:
-                # `call N` is gone -- a syscall is now a raw `asm "syscall"`
-                # primitive (see linux.mereo), so the transpiler injects no
-                # generic syscall wrapper. Point the author at the new form.
-                fail(f"line {n}: `call {m.group(2)}` is no longer a primitive "
-                     f"form; declare the syscall as `{m.group(1)} is assembly "
-                     '"syscall"` with its ports bound to ABI registers on the '
-                     "lines below (see linux.mereo)")
             m = re.match(r'^(\w+) is (pure |final )?assembly "(.*)"$', s)
             if m:
                 name = m.group(1)
@@ -2960,25 +2947,6 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                         laststep = None
                         continue
 
-                m = re.match(r"^(\w+) is (already|adopted) (\w+) over "
-                             r"(\w+)(?: \+ (.+))?$", s)
-                if m:
-                    # RETIRED. Both spellings are `BACKING [+ OFFSET] as [adopted]
-                    # VIEWCLASS` now: the two differ in exactly one thing -- who
-                    # releases -- so they differ by exactly one word, in the same
-                    # word order. `adopted ... over` held out for a while on the
-                    # grounds that a releasing lens "is not a pure view"; that is
-                    # true and irrelevant, because it is still a view of the same
-                    # bytes, and inverting the sentence to say so read as a
-                    # different construct entirely.
-                    fail(f"line {n}: lay a view with `{m.group(1)} is "
-                         f"{m.group(4)}"
-                         + (f" + {m.group(5)}" if m.group(5) else "")
-                         + f" as {'adopted ' if m.group(2) == 'adopted' else ''}"
-                         f"{m.group(3)}` -- `as` is how bits are interpreted, the"
-                         " same word that reads a value as `signed` or `big`."
-                         + (" `as adopted` is that same view, released on the way"
-                            " out." if m.group(2) == "adopted" else ""))
                 # `NAME is new CLASS` -- a fresh zeroed block of that shape,
                 # which is a DECLARATION of storage and not a borrow. It takes no
                 # values: zero is the whole of what it says. `already` is the
@@ -3204,17 +3172,6 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     steps.append(assign_step(nm, rhs, n))
                     laststep = None
                     continue
-                _nm = re.match(r"^new (\w+) is (.+)$", s)
-                if _nm:
-                    # `new NAME is VALUE` was a scalar declaration in 0.2, for
-                    # saying that a name was meant to be fresh. It is gone: one
-                    # word doing one job, and a scalar that wants to be fresh
-                    # says so by having a name nothing else uses.
-                    fail(f"line {n}: `{s}` -- `new` on a scalar is gone. Write "
-                         f"`{_nm.group(1)} is {_nm.group(2)}`, and if the point "
-                         "was a name of its own, give it one nothing else uses "
-                         "-- scalars are one flat set per body. `new` now means "
-                         "a fresh zeroed instance: `NAME is new CLASS`.")
                 fail(f"line {n}: unrecognized program line: {s!r}")
             fail(f"line {n}: unrecognized program line: {s!r}")
 
