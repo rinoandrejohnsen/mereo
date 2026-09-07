@@ -61,11 +61,20 @@ It costs what `count is 0` costs, and it says what the count is *of*.
 
 **A field is beside the name, never inside it.** It takes none of the backing's
 bytes, and the backing gains no layout, no address of its own beyond the one it
-had, and no change to `.size`. That is not a detail of the implementation: a
-cursor kept inside the bytes it writes through aliases them, so the compiler
-must reload it after every store — measured on this project at eight
-instructions and two loads per byte against five and none. Byte-grain records
-are what a layout view is for.
+had, and no change to `.size`. That is not a detail of the implementation. A
+backing's address escapes — to a syscall, to a template that walks it — so a
+store through it may land anywhere in the object it belongs to. Put a field in
+that object and no compiler can keep it in a register: it must be reloaded
+after every store into the bytes.
+
+Measured on `serve`, one variant per shape, byte-identical responses: fields
+inside the block cost **+15.0%** instructions under gcc and **+15.8%** under
+clang, with the six words the program keeps in registers spilled to the stack
+and referenced 119 times against 20. The same fields beside the block cost
+**nothing** — 1364 instructions against 1369. Two unrelated optimisers, the
+same magnitude, the same spill signature: it is a property of the shape, not of
+one compiler's alias analysis. Byte-grain records are what a layout view is
+for.
 
 A width picks the field's machine type and nothing else, so `as big` is refused:
 a byte order describes bytes at an offset, and this is a variable.

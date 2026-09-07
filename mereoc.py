@@ -867,9 +867,11 @@ def render_step(d, out_lv=None, indent=4):
     """One emitted step as a C STATEMENT. An asm primitive is written where it
     is used; everything else keeps its named wrapper and its assignment."""
     if (PRIMITIVES.get(d.get("pname")) or {}).get("kind") == "asm":
-        return inline_asm(d["pname"], d["args"], out_lv or d.get("out"), indent)
+        return inline_asm(d["pname"], d["args"],
+                          lv(out_lv or d.get("out")) if (out_lv or d.get("out"))
+                          else None, indent)
     call = render_call(d)
-    tgt = out_lv or d.get("out")
+    tgt = lv(out_lv or d.get("out")) if (out_lv or d.get("out")) else None
     return f"{tgt} = {call};" if tgt else f"{call};"
 
 
@@ -1332,7 +1334,7 @@ def _word_bits(name):
     """The word read as a plain bit-pattern. A scalar is a signed `long`, so the
     shifts that slice it need it unsigned first (an arithmetic shift would drag
     the sign bit through the field below it)."""
-    return name if name in REGISTER_WORDS else f"(unsigned long){name}"
+    return name if name in REGISTER_WORDS else f"(unsigned long){lv(name)}"
 
 
 def _word_mask(width):
@@ -1374,7 +1376,7 @@ def register_read(name, off, width, signed, big, ln):
     mask = _word_mask(width)
     bits = _word_bits(name)
     if off == 0 and width == size:
-        v = name                              # the whole word, nothing to mask
+        v = lv(name)                          # the whole word, nothing to mask
     else:
         v = bits if off == 0 else f"({bits} >> {off * 8})"
         v = f"({v} & {mask}ul)"
@@ -1401,12 +1403,12 @@ def register_write(name, off, width, big, val, ln):
     # the way in rather than relying on an out-of-range unsigned conversion
     back = (lambda e: e) if name in REGISTER_WORDS else (lambda e: f"(long)({e})")
     if off == 0 and width == size:
-        return f"{name} = {back(f'(unsigned long)({val})')}"
+        return f"{lv(name)} = {back(f'(unsigned long)({val})')}"
     keep = f"{_word_bits(name)} & {~(mask << (off * 8)) & _word_mask(size)}ul"
     put = f"(unsigned long)({val}) & {mask}ul"
     if off:
         put = f"({put}) << {off * 8}"
-    return f"{name} = {back(f'({keep}) | ({put})')}"
+    return f"{lv(name)} = {back(f'({keep}) | ({put})')}"
 
 
 
@@ -2807,13 +2809,10 @@ def parse(src, definitions, slots, steps, overrides, prims, flags,
                     if _at is not None:
                         _off, _wd, _sg = _at
                         _v, _c = store_condition(m.group(3), n, "a field store")
-                        steps.append({"type": "store",
-                                      "addr": f"{m.group(1)} + {_off}",
-                                      "value": _v, "cond": _c, "size": str(_wd),
-                                      "signed": _sg, "big": False, "kind": "",
-                                      "vol": False, "line": n})
-                        laststep = None
-                        continue
+                        steps.append({"type": "afstore", "host": m.group(1),
+                                      "field": m.group(2), "value": _v,
+                                      "cond": _c, "size": str(_wd),
+                                      "signed": _sg, "line": n})
                         laststep = None
                         continue
                     # ...otherwise it is a field of a layout or a resource, and
@@ -4205,7 +4204,7 @@ def check_slots(definitions, slots):
                     entry["reglens" if isinstance(_t, tuple) else "addr"] = _t
                     entry["lens"] = True
                 if slot["name"] in ATTACH_BYTES:
-                    entry["addr"] = f"(long){slot['name']}.data"
+                    entry["addr"] = f"(long){slot['name']}"
                     entry["struct"] = True
                 if slot.get("promotion"):
                     # a PROMOTION shares its name with the backing, and this
@@ -4470,11 +4469,14 @@ def check_slots(definitions, slots):
                 # the compiler lays the members out and aligns them -- doing
                 # that by hand puts a word wherever the arithmetic lands.
                 slot = dict(slot, struct=True)
-                slot["addr"] = f"(long){slot['name']}.data"
+                slot["addr"] = f"(long){slot['name']}"
             buffers[slot["name"]] = slot
         else:
             scalars[slot["name"]] = slot
             SCALAR_WORDS.add(slot["name"])     # eight bytes, in a register
+            SCALAR_BYTES[slot["name"]] = (
+                width_type(slot["width"], slot["line"], slot.get("signed"))
+                if slot.get("width") else "long")
         for name in names:
             if name in seen and slot.get("promotion"):
                 continue          # a promotion IS the backing, under its own name
@@ -4705,7 +4707,7 @@ def view_flags(words, ln):
 # `(long)NAME` -- and `(long)NAME.data`, which is what a host that GREW looks
 # like: the record's first member is the bytes the name was declared with, and
 # that member is the array whose view must be kept.
-_LAUNDERED = re.compile(r"^\(long\)(\w+(?:\.data)?)$")
+_LAUNDERED = re.compile(r"^\(long\)(\w+)$")
 _C_BINOP = re.compile(r" ([-+*/%&|^]|<<|>>|&&|\|\||[<>!=]=|[<>]) ")
 
 
@@ -4974,8 +4976,8 @@ def state_cell(inst_name, path, defn, backing=None):
     storage. Scalar state (`NAME is 0`, no width) has no bytes and no offset, so
     it stays an `INST_field` long."""
     inst_name = emit_of(inst_name)
-    if inst_name in ATTACH_BYTES:      # it grew, so its block is a member now
-        inst_name = f"{inst_name}.data"
+    # a host that gained fields keeps its own name for its bytes: the fields
+    # live in a struct beside it, so nothing about the block moved.
     pl = defn.get("playout")
     if backing is not None and pl is not None and path in pl:
         # a behavioral lens: the field lives in the provided backing's bytes,
@@ -5357,7 +5359,7 @@ def parse_expr(actual, scalars, buffers, ln, cond=False):
                 return cast_suffix(f"(long){t}")
             return cast_suffix(buffers[t].get("addr", f"(long){t}"))  # lens->backing
         if t in scalars:
-            return cast_suffix(t)
+            return cast_suffix(lv(t))
         fail(f"line {ln}: unknown name '{t}' in expression '{actual}'")
 
     def climb(rbp):
@@ -5392,6 +5394,13 @@ ATTACHED = set()
 # with it -- while `.base_size` stays the number the name was declared with,
 # which is what a capacity is and what a syscall's length usually means.
 ATTACH_BYTES = {}   # host -> {field: (offset, width, signed)}
+# A host that gains fields gets a second declaration beside the first: the bytes
+# keep the name, the fields go in `NAME__fields`. Measured, on serve and on the
+# whole corpus, with gcc and with clang: fields carved INTO the block cost 15%,
+# because the block's address escapes to the kernel and a store through it may
+# alias them, so not one of the fields can stay in a register. Beside, they are
+# an object of their own that nothing points into, and the cost is zero.
+ATTACH_SUFFIX = "__fields"
 ATTACH_LAND = {}    # line -> [(temp slot, host, field)] a result to put away
 SIZE_AT = {}        # host -> [(line, size after that line), ...]
 
@@ -5405,6 +5414,37 @@ def size_at(host, base, ln):
         if at <= ln:
             best = total
     return best
+
+
+SCALAR_BYTES = {}   # scalar name -> the C type its block is read through
+
+
+def lv(c):
+    """The C lvalue a step assigns into. Storage in mereo is BYTES -- a scalar
+    is an eight-byte block like any other block -- so a scalar's name reaches
+    its value through an access, the same `*(T *)` every other read and write
+    goes through. `[count : 8]` and `count` then mean the same thing in the
+    emitted C, because they are the same thing in the language.
+
+    Measured before it was written, on serve and on the whole corpus: clang
+    emits BYTE-IDENTICAL binaries for all 99 programs either way, and gcc is
+    within a quarter of a percent. It costs nothing and it buys no speed; what
+    it buys is that one sentence about storage is true without exception.
+
+    Anything that is not a scalar -- a field beside a host, a layout cell, the
+    compiler's own bookkeeping words -- is already an lvalue and comes back
+    unchanged."""
+    t = SCALAR_BYTES.get(c)
+    return f"(*({t} *){c})" if t else c
+
+
+def attach_struct(slot):
+    """The declaration of a host's attached fields: one struct, beside the bytes.
+    Not packed -- nothing reads these as a layout, so let each field sit where
+    its type wants to sit."""
+    ms = "".join(f" {width_type(str(w), slot['line'], sg)} {f};"
+                 for f, (_o, w, sg) in ATTACH_BYTES[slot["name"]].items())
+    return f"struct {{{ms} }} {emit_of(slot['name'])}{ATTACH_SUFFIX} = {{0}};"
 
 
 def attached_to(host):
@@ -5460,7 +5500,6 @@ def attach_field(host, field, slots, definitions, n,
     # field at a time and one declared all at once describe the same bytes.
     # The emitted struct is `packed` to match.
     ATTACH_BYTES.setdefault(host, {})[field] = (at, w, signed)
-    SIZE_AT.setdefault(host, []).append((n, at + w))
     ATTACHED.add((host, field))
     return ATTACH_BYTES[host][field]
 
@@ -5495,7 +5534,7 @@ def attached_field_c(actual, ln):
         return None
     host, field = m.group(1), m.group(2)
     if (host, field) in ATTACHED:
-        return f"{host}.{field}"
+        return f"{host}{ATTACH_SUFFIX}.{field}"
     if host in ATTACH_BYTES and field != "size" and field != "base_size":
         fail(f"line {ln}: '{host}' has no field '{field}' "
              f"(has: {', '.join(attached_to(host))}). A field is attached by "
@@ -5684,11 +5723,11 @@ def call_parts(meth, valmap):
     clauses, assume = [], []
     for e in ens:
         l, c, r, _ = e[0], e[1], e[2], e[3]
-        lhs = valmap.get(l, l)
+        lhs = lv(valmap.get(l, l))
         reading = e[4] if len(e) > 4 else None
         if reading:                       # read the result as the call promises
             lhs = f"({'long' if reading == 'signed' else 'unsigned long'})({lhs})"
-        clauses.append(f"{lhs} {c} {valmap.get(r, r)}")
+        clauses.append(f"{lhs} {c} {lv(valmap.get(r, r))}")
         assume.append(bool(len(e) > 5 and e[5]))
     return prim, args, out, clauses, assume
 
@@ -5808,6 +5847,11 @@ STEP_SCHEMA = {
                     "vol": "carry", "kind": "carry", "line": "carry"},
     "fstore":      {"inst": "rename", "field": "carry", "value": "expr",
                     "cond": "cond", "line": "carry"},
+    # a field attached to a name that already exists -- a member of the struct
+    # beside its bytes, so the host renames like any other name a splice carries
+    "afstore":     {"host": "rename", "field": "carry", "value": "expr",
+                    "cond": "cond", "size": "carry", "signed": "carry",
+                    "line": "carry"},
     "atomic":      {"addr": "expr", "argstr": "expr", "capture": "rename",
                     "op": "carry", "order": "carry", "size": "carry",
                     "line": "carry"},
@@ -6351,6 +6395,17 @@ _ARRDECL = re.compile(r"^(\s*)(?:unsigned )?char (\w+)\[(\d+)\]"
 # have anything to gain. See todo.md.
 
 
+# `(*(long *)count)` -- a scalar read written back as the name it reads. The
+# bound analysis below matches operands with a paren-free character class, which
+# is right for the shape it reads (`i >= n`) and blind to the access around it.
+_SCALAR_ACCESS = re.compile(r"\(\*\((?:unsigned |signed )?\w+ \*\)(\w+)\)")
+
+
+def _plain(t):
+    """A condition with each scalar access written back as its bare name."""
+    return _SCALAR_ACCESS.sub(r"\1", t)
+
+
 def prune_assumes(body):
     """Drop a kernel promise no emitted CHECK can use.
 
@@ -6383,11 +6438,11 @@ def prune_assumes(body):
         t = ln.strip()
         m = re.match(r"if \(__builtin_expect\(!\((.*)\), 0\)\) goto ", t)
         if m:
-            checks.append(m.group(1))
+            checks.append(_plain(m.group(1)))
             continue
         m = re.match(r"if \((.*)\) goto ", t)
         if m:
-            checks.append(m.group(1))
+            checks.append(_plain(m.group(1)))
     # which names a check bounds, and FROM WHICH SIDE. An upper bound decides
     # nothing about a check that asks for a floor: a scan promises
     # `got <= 65536` and checks `got >= 0`, and keeping that one assume cost
@@ -6407,7 +6462,8 @@ def prune_assumes(body):
     for ln in body:
         m = re.match(r"\s*__attribute__\(\(__assume__\((.*)\)\)\);$", ln)
         if m:
-            am = re.match(r"\s*(.+?)\s*(<=|<|>=|>|==)\s*(.+?)\s*$", m.group(1))
+            am = re.match(r"\s*(.+?)\s*(<=|<|>=|>|==)\s*(.+?)\s*$",
+                          _plain(m.group(1)))
             if am:
                 subj = set(re.findall(r"[A-Za-z_]\w*", am.group(1))) - WORDS
                 want = above if am.group(2) in ("<", "<=") else below
@@ -6728,7 +6784,7 @@ def check_never_leaves(steps):
             st, t = steps[k], steps[k].get("type")
             if t == "assign" and st.get("name"):
                 written.add(st["name"])
-            elif t in ("call", "bare", "store", "fstore", "atomic"):
+            elif t in ("call", "bare", "store", "fstore", "afstore", "atomic"):
                 opaque = True
             elif t == "loop_start":
                 opaque = True              # an inner loop; its exits are not ours
@@ -6992,10 +7048,7 @@ def check_call_fit(definitions, slots, steps):
                 if nm.endswith(".size"):      # what the caller actually passes:
                     left = sizes.get(nm[:-5]) # the block, fields and all
                 elif nm.endswith(".base_size"):
-                    _h = nm[:-10]
-                    left = sizes.get(_h)
-                    if _h in ATTACH_BYTES and left is not None:
-                        left -= sum(w for _o, w, _s in ATTACH_BYTES[_h].values())
+                    left = sizes.get(nm[:-10])
                 elif nm in scal:
                     left = _int_value(scal.get(nm, ""))
             if val.endswith(".size"):
@@ -7011,11 +7064,10 @@ def check_call_fit(definitions, slots, steps):
                     # syscall told to fill `X.size` would reach them -- so the
                     # bound here is what the name was declared with. For a name
                     # that gained nothing the two are the same number.
+                    # the block is the block: a name that gained fields
+                    # gained them BESIDE its bytes, so a syscall told to fill
+                    # `X.size` reaches nothing but the bytes it was given.
                     right = sizes.get(backing)
-                    if backing in SIZE_AT and right is not None:
-                        right = min(right, SIZE_AT[backing][0][1]
-                                    - sum(w for _o, w, _s
-                                          in ATTACH_BYTES[backing].values()))
                     shown = f"{backing}"
             else:
                 right = _int_value(wired(val) or val)
@@ -7368,9 +7420,12 @@ def plan(definitions, slots, steps, overrides):
                 # (GCC's cost model chooses cmov or branch), or -- under
                 # MEREO_CMOV -- a forced `cmov` per clause via inline asm, so the
                 # choice is guaranteed branchless whatever the values.
+                # no `default` clause means the name KEEPS ITS VALUE, so the
+                # fallback is a read of the target -- through its access, like
+                # every other read
                 fallback = (resolve_value(st["default"], scalars, buffers,
                                           st["line"])
-                            if st.get("default") else st["name"])
+                            if st.get("default") else lv(st["name"]))
                 clause_cv = [(render_choice_cond(cond, scalars, buffers,
                                                  st["line"]),
                               resolve_value(val, scalars, buffers, st["line"]))
@@ -7560,6 +7615,17 @@ def plan(definitions, slots, steps, overrides):
                 {"store_addr": f"({base} + {off})",
                  "store_val": val,
                  "store_type": width_type(str(width), st["line"]),
+                 "when_c": when_c, "pname": None})
+            return
+
+        if st["type"] == "afstore":          # `HOST.FIELD is VALUE`
+            when_c = (render_choice_cond(st["cond"], scalars, buffers,
+                                         st["line"]) if st.get("cond") else None)
+            into.append(
+                {"afield": (st["host"], st["field"],
+                            width_type(st["size"], st["line"], st["signed"])),
+                 "store_val": resolve_value(st["value"], scalars, buffers,
+                                            st["line"]),
                  "when_c": when_c, "pname": None})
             return
 
@@ -8289,6 +8355,7 @@ def transpile(sources, prog):
     INSTANCE_FIELDS.clear()
     ATTACHED.clear()
     ATTACH_BYTES.clear()
+    SCALAR_BYTES.clear()
     SIZE_AT.clear()
     ATTACH_LAND.clear()
     REGISTER_WORDS.clear()
@@ -8432,19 +8499,15 @@ def transpile(sources, prog):
             else:
                 sc = "static " if slot.get("place") == "static" else ""
                 _n = buffer_size(slot["size"], scalars)
+                body.append(f"    {sc}char {slot['name']}[{_n}]{al};")
                 if slot["name"] in ATTACH_BYTES:
-                    _ms = "".join(
-                        f" {width_type(str(w), slot['line'], sg)} {f};"
-                        for f, (_o, w, sg) in ATTACH_BYTES[slot["name"]].items())
-                    body.append(f"    {sc}struct __attribute__((packed)) "
-                                f"{{ char data[{_n}];{_ms} }} "
-                                f"{slot['name']}{al};")
-                else:
-                    body.append(f"    {sc}char {slot['name']}[{_n}]{al};")
+                    body.append(f"    {sc}{attach_struct(slot)}")
         elif slot["kind"] == "scalar":
-            _ct = (width_type(slot["width"], slot["line"], slot.get("signed"))
-                   if slot.get("width") else "long")
-            body.append(f"    {_ct} {slot['name']} = {slot['init']};")
+            _ct = SCALAR_BYTES[slot["name"]]
+            _bw = int(slot["width"]) if slot.get("width") else 8
+            body.append(f"    char {slot['name']}[{_bw}] "
+                        f"__attribute__((aligned({_bw})));"
+                        f" {lv(slot['name'])} = {slot['init']};")
         elif slot.get("lens"):
             pass                          # a lens owns no storage -- it IS its backing
         elif (slot["kind"] == "instance"
@@ -8459,15 +8522,10 @@ def transpile(sources, prog):
             al = (f" __attribute__((aligned({slot['align']})))"
                   if slot.get("align") else "")
             _ps = definitions[slot["definition"]]["psize"]
+            body.append(f"    char {emit_of(slot['name'])}"
+                        f"[{_ps}]{al} = {{0}};")
             if slot["name"] in ATTACH_BYTES:
-                _ms = "".join(f" {width_type(str(w), slot['line'], sg)} {f};"
-                              for f, (_o, w, sg) in ATTACH_BYTES[slot["name"]].items())
-                body.append(f"    struct __attribute__((packed)) "
-                            f"{{ char data[{_ps}];{_ms} }} "
-                            f"{emit_of(slot['name'])}{al} = {{0}};")
-            else:
-                body.append(f"    char {emit_of(slot['name'])}"
-                            f"[{_ps}]{al} = {{0}};")
+                body.append(f"    {attach_struct(slot)}")
         elif (slot["kind"] == "instance"
               and definitions[slot["definition"]].get("bitfields") is not None
               and is_pure_layout(definitions[slot["definition"]])):
@@ -8537,7 +8595,7 @@ def transpile(sources, prog):
         spliced into one fell through to `render_call` with no primitive and
         crashed. The noreturn/tower case simply never fires there."""
         if p.get("assign"):                      # `X is EXPR` -- recompute
-            body.append(f"    {p['assign']} = {p['expr_c']};")
+            body.append(f"    {lv(p['assign'])} = {p['expr_c']};")
             return
         # a store may carry `when COND` -- the guard wraps whichever single
         # statement it became. Absent everywhere else, so this costs nothing.
@@ -8545,6 +8603,11 @@ def transpile(sources, prog):
         if p.get("stmt") is not None:            # a raw statement: a void atomic
             body.append(f"    {guard}{p['stmt']};")  # op/fence, or a register
             return                                   # word's masked write
+        if p.get("afield") is not None:          # `HOST.FIELD is VALUE`
+            _h, _f, _t = p["afield"]
+            body.append(f"    {guard}{_h}{ATTACH_SUFFIX}.{_f} = "
+                        f"({_t})({p['store_val']});")
+            return
         if p.get("store_addr") is not None:      # `[ADDR : N] is VALUE` -- store
             t = p["store_type"]
             body.append(f"    {guard}*({t} *)({deref_addr(p['store_addr'])}) = "
@@ -8557,7 +8620,8 @@ def transpile(sources, prog):
             # back to a signed scalar's own type. (GCC folds high/low to
             # or/andnot either way.)
             sfx = "ul" if ut == "unsigned long" else "u"
-            bits = cell if not cast else f"(unsigned long){cell}"
+            cell = lv(cell)              # a scalar cell is reached through its
+            bits = cell if not cast else f"(unsigned long){cell}"  # access
             rhs = (f"({bits} & ~({mask}{sfx} << {lo})) "
                    f"| ((({val}) & {mask}{sfx}) << {lo})")
             body.append(f"    {guard}{cell} = "
@@ -8613,7 +8677,7 @@ def transpile(sources, prog):
             return
         if p.get("adopt"):                       # take ownership of an fd
             for tgt, rhs in p["assigns"]:
-                body.append(f"    {tgt} = {rhs};")
+                body.append(f"    {lv(tgt)} = {rhs};")
             return
         if p.get("pname") is None and p.get("stage") is not None:
             for pred in p["clauses"]:            # `ensure` guard: check, no call
@@ -8758,15 +8822,15 @@ def transpile(sources, prog):
         # way, and then says so in the wait status (see _reraise). Both skip
         # the record and the status store and drop to the same tower floor.
         if interrupts_on:
-            body.append(f"    if ({p['errsrc']} == -4) "
+            body.append(f"    if ({lv(p['errsrc'])} == -4) "
                         f"{{ _dying = mereo_signo; goto {p['target']}; }}"
                         f"   /* -EINTR: wind down, then die by the signal */")
         if sigpipe_on:
-            body.append(f"    if ({p['errsrc']} == -32) goto {p['target']};"
+            body.append(f"    if ({lv(p['errsrc'])} == -32) goto {p['target']};"
                         f"   /* -EPIPE: graceful shutdown */")
         body.append(f'    _write(2, (long)"{esc}", {len(text.encode())});')
-        body.append(f"    _write_value({p['errsrc']});")
-        body.append(f"    {stage_slot} = {p['code']};")
+        body.append(f"    _write_value({lv(p['errsrc'])});")
+        body.append(f"    {lv(stage_slot)} = {p['code']};")
         # NO per-stage marker here. There used to be one --
         # `__asm__("# stage N" : "+r"(_status))` -- whose whole job was to be
         # DISTINCT per stage, so that GCC could not fuse the identical tails of
@@ -8796,7 +8860,7 @@ def transpile(sources, prog):
         body.append("")
         body.append(f"{r['label']}:")
         for tgt, val in r["assigns"]:
-            body.append(f"    {tgt} = {val};")
+            body.append(f"    {lv(tgt)} = {val};")
         body.append(f"    goto {r['resume']};")
     body = prune_assumes(body)
     body = scope_spliced_arrays(body)
