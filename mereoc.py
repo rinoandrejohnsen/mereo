@@ -283,10 +283,10 @@ def nowrap_cond(st):
     already fits. The `>` direction is the same statement negated, which is
     why it is an `or`.
 
-    Applied to every sum of this shape. The analysis used to mark the ones it
-    could prove small and those kept the single compare; with it gone they all
-    take the subtraction, which measured ZERO on two corpus programs -- GCC
-    folds it back where the values are known."""
+    Applied to every sum of this shape, with no exceptions: the analysis that
+    once marked the ones it could prove small was removed, and the subtraction
+    measured ZERO on two corpus programs anyway -- GCC folds it back where the
+    values are known."""
     cond = str(st.get("cond") or "")
     m = _CMPX.match(cond)
     if not m:
@@ -1904,7 +1904,7 @@ def free_call(s, definitions, n, here=frozenset(), ns=None):
 
 
 def parse(src, definitions, slots, steps, overrides, prims, flags,
-          bound=frozenset(), procedure=False, namespace=None):
+          bound=frozenset(), namespace=None):
     section = None      # None | definition dict | call-decl | "program" | "failures"
     method = None
     curcall = None      # the call in a multi-step acquire/release
@@ -3642,7 +3642,7 @@ def elaborate_delegate(defn, meth, definitions):
         if port not in dm["params"]:
             fail(f"line {ln}: '{dm_name}' has no parameter '{port}'")
 
-    def translate(tok, ln):
+    def translate(tok):
         if tok in dm["params"]:
             return subst[tok][0]
         if is_int(tok) or is_str(tok):
@@ -3650,9 +3650,9 @@ def elaborate_delegate(defn, meth, definitions):
         return f"{pname} {tok}"          # the part's state, seen from here
 
     meth["prim"] = dm["prim"]
-    meth["bind"] = {port: (translate(actual, ln), ln)
+    meth["bind"] = {port: (translate(actual), ln)
                     for port, (actual, ln) in dm["bind"].items()}
-    meth["ensure"] = ([(translate(l, ln), c, translate(r, ln), ln)
+    meth["ensure"] = ([(translate(l), c, translate(r), ln)
                        for l, c, r, ln in dm["ensure"]] + meth["ensure"])
     meth["delegate"] = None
 
@@ -4537,7 +4537,7 @@ def lit_c(tok):
     return norm_int_c(tok) if is_int(tok) else tok
 
 
-def _decode_str_bytes(tok, ln):
+def _decode_str_bytes(tok):
     """A mereo string literal "..." -> the list of byte values it denotes.
     Escapes: \\n \\r \\t \\0 \\\\ \\" and \\xHH (exactly two hex digits)."""
     body, out, i = tok[1:-1], [], 0
@@ -4561,7 +4561,7 @@ def parse_bytes_literal(rest, ln):
     literal (its bytes) or a comma-separated list of byte numbers (0xHH/decimal)."""
     rest = rest.strip()
     if len(rest) >= 2 and rest[0] == '"' and rest[-1] == '"':
-        return _decode_str_bytes(rest, ln)
+        return _decode_str_bytes(rest)
     out = []
     for part in rest.split(","):
         p = part.strip()
@@ -4857,7 +4857,7 @@ def layout_field_c(actual, buffers, ln):
     return (cexpr, off, width, signed, big)
 
 
-def container_field_c(actual, buffers, ln):
+def container_field_c(actual, buffers):
     """`C.FIELD` where C is a `container of N bytes`: `data` (the byte
     region's address) or `count` (its mutable content-length scalar). Its total
     size is `C.size`, not a container field. None if not a container access."""
@@ -5126,13 +5126,13 @@ def resolve_value(actual, scalars, buffers, ln, cond=False):
     ff = flag_field_c(actual, buffers, ln)     # `BIT of flag-view`
     if ff is not None:
         return ff[0]
-    af = attached_field_c(actual, ln)          # a field carved on later
+    af = attached_field_c(actual)          # a field carved on later
     if af is not None:
         return af
     sf = layout_field_c(actual, buffers, ln)   # `layout-INST.FIELD`
     if sf is not None:
         return sf[0]
-    cf = container_field_c(actual, buffers, ln)   # `container.FIELD`
+    cf = container_field_c(actual, buffers)   # `container.FIELD`
     if cf is not None:
         return cf
     inf = instance_field_c(actual, ln)   # `INSTANCE.FIELD` -- resource state
@@ -5323,7 +5323,7 @@ def parse_expr(actual, scalars, buffers, ln, cond=False):
                      "buffer, view, or literal")
             inst = target                    # a layout or flag field, usable
                                              # inside expressions (`(m.echo) & x`)
-            af = attached_field_c(t, ln)
+            af = attached_field_c(t)
             if af is not None:
                 return cast_suffix(af)
             ff = flag_field_c(t, buffers, ln)
@@ -5332,13 +5332,13 @@ def parse_expr(actual, scalars, buffers, ln, cond=False):
             sf = layout_field_c(t, buffers, ln)
             if sf is not None:
                 return cast_suffix(sf[0])
-            cf = container_field_c(t, buffers, ln)
+            cf = container_field_c(t, buffers)
             if cf is not None:
                 return cast_suffix(cf)
             inf = instance_field_c(t, ln)
             if inf is not None:
                 return cast_suffix(inf)
-            unknown_member(inst, field, t, ln)
+            unknown_member(inst, field, ln)
             fail(f"line {ln}: '{t}' is not a flag or layout "
                  f"field in '{actual}'")
         if t in REGISTER_WORDS:
@@ -5392,7 +5392,6 @@ ATTACH_BYTES = {}   # host -> {field: (width, signed)}
 # alias them, so not one of the fields can stay in a register. Beside, they are
 # an object of their own that nothing points into, and the cost is zero.
 ATTACH_SUFFIX = "__fields"
-ATTACH_LAND = {}    # line -> [(temp slot, host, field)] a result to put away
 
 
 
@@ -5443,7 +5442,7 @@ def is_attached(actual):
     return bool(m) and (m.group(1), m.group(2)) in ATTACHED
 
 
-def unknown_member(host, field, shown, ln):
+def unknown_member(host, field, ln):
     """Nothing resolved `HOST.FIELD` and HOST has attached fields -- so name
     them. Reached only after the declared members have all been tried, because
     a name that gained fields keeps the ones it came with."""
@@ -5519,7 +5518,7 @@ def hosts_bytes(slot, definitions):
     return False
 
 
-def attached_field_c(actual, ln):
+def attached_field_c(actual):
     """`HOST.FIELD` where FIELD was attached -> the load, at its offset in the
     host's block. None if that pair was never attached."""
     m = re.match(r"^(\w+)\.(\w+)$", actual)
@@ -5624,10 +5623,10 @@ def wire_call(meth, defn, inst, conns_list, scalars, buffers, line):
         actual, ln = conns.pop(p)
         k = meth["dirs"][p]                     # value | return
         if k == "return":
-            cf = container_field_c(actual, buffers, ln)
+            cf = container_field_c(actual, buffers)
             if cf is not None:                  # `count of C` -> its scalar
                 actual = cf                     # (data resolves to a non-scalar
-            af = attached_field_c(actual, ln)   # ...and an ATTACHED field is a
+            af = attached_field_c(actual)   # ...and an ATTACHED field is a
             if af is not None:                  # member: `X.f = call()` is
                 actual = af                     # ordinary C, so it lands there
             elif actual not in scalars:         #  and fails below, not an output)
@@ -6000,7 +5999,7 @@ def inline_procedure(meth, st, cid, definitions, slots, prims):
         bound |= {p for p in idefn.get("flat", ()) if re.fullmatch(r"\w+", p)}
     bslots, bsteps = [], []
     parse("program goes\n" + "\n".join(meth["procedure"]), definitions, bslots,
-          bsteps, [], prims, {}, bound=bound, procedure=True,
+          bsteps, [], prims, {}, bound=bound,
           namespace=meth.get("namespace"))
     # a TEMPLATE BODY is its own parse, so it needs its own check -- and it is
     # the half that matters, because a splice is where a mis-declared field
@@ -6978,7 +6977,7 @@ def check_adoption_fit(definitions, slots):
                 left = _int_value(scal.get(nm, "")) if nm in scal else None
             backing = value(val[:-5])
             if is_str(backing or ""):
-                right = len(_decode_str_bytes(backing, ln))
+                right = len(_decode_str_bytes(backing))
             else:
                 right = sizes.get(backing)
             if left is None or right is None:
@@ -7054,7 +7053,7 @@ def check_call_fit(definitions, slots, steps):
                 if is_str(backing or ""):
                     # a literal's own bytes, plus the NUL the emitter appends --
                     # so writing the terminator too is not called a mistake
-                    right = len(_decode_str_bytes(backing, ln))
+                    right = len(_decode_str_bytes(backing))
                     shown = backing
                 else:
                     # The PAYLOAD, not the block. A name that gained fields
@@ -7393,7 +7392,7 @@ def plan(definitions, slots, steps, overrides):
                          "lives exactly as long as that scope, and its name "
                          "lives no longer.")
 
-    def plan_one(st, into, cold=False):
+    def plan_one(st, into):
         nonlocal n_resume, loop_id
         check_released(st)
         if st["type"] == "assign":           # `X is EXPR` -- recompute a scalar
@@ -7637,10 +7636,9 @@ def plan(definitions, slots, steps, overrides):
             # rewritten to the subtraction form, that value must be the
             # SUBJECT and not the sum: recomputing `count + length` to report
             # it performs the very addition the rewrite exists to avoid, and
-            if not st.get("nowrap"):
-                _t = top_split(lhs)
-                if len(_t) == 2 and len(top_split(lhs, "-")) == 1:
-                    lhs = _t[0]
+            _t = top_split(lhs)
+            if len(_t) == 2 and len(top_split(lhs, "-")) == 1:
+                lhs = _t[0]
             if stage_slot is None:
                 fail(f"line {st['line']}: cannot derive the status slot for "
                      "`ensure` -- wire a scalar into the final noreturn step")
@@ -8354,7 +8352,6 @@ def transpile(sources, prog):
     ATTACHED.clear()
     ATTACH_BYTES.clear()
     SCALAR_BYTES.clear()
-    ATTACH_LAND.clear()
     REGISTER_WORDS.clear()
     SCALAR_WORDS.clear()
     definitions, slots, steps, overrides, prims = {}, [], [], [], {}
