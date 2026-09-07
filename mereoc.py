@@ -738,87 +738,6 @@ NARROWABLE = {"read": ("buffer", "capacity", "+m"),
               "write": ("buffer", "count", "m")}
 
 
-def emit_asm_wrapper(name, prim):
-    """Generate the MACRO for one asm primitive: the declared template, named
-    operands, and clobbers. Directions become constraint prefixes (is/into ->
-    input/=output). volatile unless `pure`. One with a result is a statement
-    expression, one without is `do { } while (0)`; every parameter is used as
-    `(long)(x)`, which is the conversion the function prototype used to do and
-    which nothing else would do for a macro -- an `int` field read reaching a
-    "D" operand uncast arrives in `edi`, so a negative one (AT_FDCWD is -100)
-    would lose its sign bits on the way to the kernel."""
-    for ref in re.findall(r"%\[(\w+)\]", prim["template"]):
-        if ref not in prim["constraints"]:
-            fail(f"assembly '{name}': template uses %[{ref}] but there is no "
-                 "such operand")
-    constvals = prim.get("constvals", {})
-    # the macro's parameters are the value inputs; a CONSTANT operand
-    # (`number is N in rax`) is baked into the asm, not a parameter.
-    #
-    # The parameter is the port name UNDERSCORED, and that underscore is not
-    # cosmetic: an asm operand NAME is written `[descriptor] "D" (...)`, and to
-    # the preprocessor that is just the token `descriptor` in the replacement
-    # list. A macro parameter of the same name is substituted into it, so
-    # `_assembly_linux_write(*(int *)(terminal + 0), ...)` produced
-    # `[(*(int *)(terminal + 0))] "D" (...)` and the compiler asked for an
-    # identifier. A function had no such problem: its parameter was a NAME in
-    # scope over expressions, and an operand name is not an expression. mereo
-    # names may not begin with an underscore (see name_ok), so the prefixed
-    # form cannot collide with anything a program can write either.
-    ins = [p for k, p in prim["args"] if k != "const"]
-    vol = " volatile" if prim["volatile"] else ""
-    out_ops = []
-    if prim["out"]:
-        oc = constraint_of(prim["constraints"][prim["out"]], name)
-        out_ops.append(f'[{prim["out"]}] "={oc}" (_r)')
-    # an operand pinned to r8-r15 has no letter constraint, so bind it through a
-    # register-scoped local (`register long x asm("r10")`) -- the same idiom the
-    # syscall4/5/6 wrappers use for the 4th-6th argument.
-    pre, in_ops = [], []
-    for k, p in prim["args"]:
-        # a baked constant is already a literal; a PARAMETER is macro text, so
-        # it is converted here the way the old prototype converted it
-        val = str(constvals[p]) if k == "const" else f"(long)(_{p})"
-        reg = prim["constraints"][p]
-        if reg in HARDREG:
-            pre.append(f'    register long _hr_{p} __asm__("{reg}") = {val};')
-            in_ops.append(f'[{p}] "r" (_hr_{p})')
-        else:
-            in_ops.append(f'[{p}] "{constraint_of(reg, name)}" ({val})')
-    clobbers = list(prim["clobbers"])
-    # Opt-in: name the memory a syscall really touches instead of clobbering all
-    # of it, so values the call cannot reach stay in registers across it. Guarded
-    # by mereoclobber.py, which asserts no store moved relative to a blanket
-    # build -- a wrong extent here is a silent miscompilation, not a slowdown.
-    if os.environ.get("MEREO_NARROW_CLOBBER") and name in NARROWABLE:
-        ptr, ext, mode = NARROWABLE[name]
-        have = {p for _k, p in prim["args"]}
-        if "memory" in clobbers and ptr in have and ext in have:
-            clobbers.remove("memory")
-            cell = f"(*(char (*)[(long)(_{ext})])(char *)(long)(_{ptr}))"
-            (out_ops if mode.startswith("+") else in_ops).append(
-                f'"{mode}" {cell}')
-    clob = ", ".join(f'"{c}"' for c in clobbers)
-    lines = ["({" if prim["out"] else "do {"]
-    if prim["out"]:
-        lines.append("    long _r;")
-    lines.extend(pre)
-    lines.append(f'    __asm__{vol} ("{prim["template"]}"')
-    lines.append(f'        : {", ".join(out_ops)}')
-    lines.append(f'        : {", ".join(in_ops)}')
-    lines.append(f'        : {clob});')
-    if prim["noreturn"]:
-        # a macro carries no `__attribute__((noreturn))`. This is what said the
-        # same thing to the optimizer in the function form too -- the attribute
-        # was the redundant half, since the body ends here either way.
-        lines.append("    __builtin_unreachable();")
-    lines.append("    _r; })" if prim["out"] else "} while (0)")
-    # the macro is prefixed so a syscall named like a libc/GCC builtin
-    # (exit, read, write, open, close, ...) never collides with it
-    return macro(f"_assembly_{csym(name)}({', '.join('_' + i for i in ins)})",
-                 "\n".join(lines))
-
-
 def inline_asm(name, args, out_lv, indent=4):
     """One asm primitive, written where it is used instead of behind a macro.
 
@@ -879,8 +798,6 @@ def render_call(d):
     """The C call expression for one emitted step: an asm primitive is a
     plain named-wrapper call; a syscall is syscallK(number, args...)."""
     prim = PRIMITIVES[d["pname"]]
-    if prim.get("kind") == "asm":
-        return f"_assembly_{csym(d['pname'])}(" + ", ".join(d["args"]) + ")"
     if prim.get("kind") == "helper":
         return f"{prim['cfunc']}(" + ", ".join(d["args"]) + ")"
     return (f"syscall{len(d['args'])}("
@@ -955,22 +872,13 @@ def _step_text(st):
 def landmark(name):
     """The label a noreturn primitive leaves in the program -- `exit`.
 
-    Unlike the `_assembly_` wrapper, this is not the primitive's symbol but the
-    PROGRAM'S END: the place every release floor falls through to, and the
-    landmark `mereocheck` measures hot/cold layout against. So it keeps the bare
-    name even though the primitive is now `linux.exit` -- the namespace says
-    where the syscall was declared, which is not what this label is about."""
+    Not the primitive's symbol -- no primitive has one, since each is written
+    where it is used -- but the PROGRAM'S END: the place every release floor
+    falls through to, and the landmark `mereocheck` measures hot/cold layout
+    against. So it keeps the bare name even though the primitive is now
+    `linux.exit` -- the namespace says where the syscall was declared, which is
+    not what this label is about."""
     return name.rpartition(".")[2]
-
-
-def csym(name):
-    """A canonical name -> a C identifier.
-
-    Primitives are the one declaration whose NAME reaches the output, as
-    `_assembly_open`. Now that a name carries its namespace the dot has to go,
-    and it goes here rather than at either call site, so the wrapper's
-    definition and its uses cannot disagree about the spelling."""
-    return name.replace(".", "_")
 
 
 def _indent(line):
@@ -8381,12 +8289,11 @@ def transpile(sources, prog):
     sigpipe_on = bool(fallible)
 
     # every emitted call, across the happy path, alternatives, and the
-    # cleanup tower, so the right wrappers are emitted (and no others)
-    # Nested scopes count too: a call that appears ONLY in one still needs its
-    # wrapper. It went unnoticed while a scope could hold nothing but a
-    # fallible call (those reach `fallible`, and through it the same scan) --
-    # the moment a scope could hold a whole spliced body, an infallible call in
-    # one compiled to an undeclared `_assembly_open`.
+    # cleanup tower, so the right HELPERS are declared (and no others). Nested
+    # scopes count too: a call that appears ONLY in one still counts. It went
+    # unnoticed while a scope could hold nothing but a fallible call (those
+    # reach `fallible`, and through it the same scan) -- the moment a scope
+    # could hold a whole spliced body, an infallible call in one was missed.
     emitted = [d for d in (plan_steps + [a for alts in attempts for a in alts]
                            + [c for f in cascade for c in f["calls"]])
                if d.get("pname")]
@@ -8403,9 +8310,6 @@ def transpile(sources, prog):
         out.append(SYS_SIGQUERY)   # a disposition already SIG_IGN is left alone
         out.append(SYS_STDFD)      # a program that opens can misplace 0/1/2
         out.append(SYS_RERAISE)    # ...and one that catches owes a wait status
-    out += [emit_asm_wrapper(p, PRIMITIVES[p]) for p in sorted(used)
-            if PRIMITIVES[p].get("kind") != "asm"
-            if PRIMITIVES[p].get("kind") == "asm"]
     _helpers = sorted({PRIMITIVES[p]["cfunc"] for p in used
                        if PRIMITIVES[p].get("kind") == "helper"})
     if "_scan" in _helpers:
