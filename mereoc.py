@@ -5343,6 +5343,7 @@ def parse_expr(actual, scalars, buffers, ln, cond=False):
             inf = instance_field_c(t, ln)
             if inf is not None:
                 return cast_suffix(inf)
+            unknown_member(inst, field, t, ln)
             fail(f"line {ln}: '{t}' is not a flag or layout "
                  f"field in '{actual}'")
         if t in REGISTER_WORDS:
@@ -5463,6 +5464,16 @@ def is_attached(actual):
     return bool(m) and (m.group(1), m.group(2)) in ATTACHED
 
 
+def unknown_member(host, field, shown, ln):
+    """Nothing resolved `HOST.FIELD` and HOST has attached fields -- so name
+    them. Reached only after the declared members have all been tried, because
+    a name that gained fields keeps the ones it came with."""
+    if host in ATTACH_BYTES and field not in ("size", "base_size"):
+        fail(f"line {ln}: '{host}' has no field '{field}' "
+             f"(has: {', '.join(attached_to(host))}). A field is attached by "
+             "WRITING it -- a read of one nothing attached is a typo.")
+
+
 def attached_to(host):
     """The fields attached to `host`, so a "no such field" message can name
     them beside the declared ones -- they are equally real to the reader."""
@@ -5551,11 +5562,12 @@ def attached_field_c(actual, ln):
     host, field = m.group(1), m.group(2)
     if (host, field) in ATTACHED:
         return f"{host}{ATTACH_SUFFIX}.{field}"
-    if host in ATTACH_BYTES and field != "size" and field != "base_size":
-        fail(f"line {ln}: '{host}' has no field '{field}' "
-             f"(has: {', '.join(attached_to(host))}). A field is attached by "
-             "WRITING it -- a read of one nothing attached is a typo.")
-    return None
+    return None                 # somebody else's field, or nobody's. A host
+                                # that gained fields still has the ones it was
+                                # DECLARED with -- a view's `port`, a resource's
+                                # `descriptor` -- so the "no such field" answer
+                                # belongs at the end of the resolution chain,
+                                # not here. See `unknown_member`.
 
 
 def instance_field_c(actual, ln):

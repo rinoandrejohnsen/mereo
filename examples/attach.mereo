@@ -43,5 +43,15 @@ program goes
   page.add (source is " in ", length is 4)
   page.number (value is sink.calls)
   page.add (source is " call\n", length is 6)
+
+  -- ...and the claim above, checked rather than asserted: `bound` still reads
+  -- its OWN declared fields, and still measures the sixteen bytes it was
+  -- declared with. A name that gains fields keeps everything it came with.
+  page.add (source is "port ", length is 5)
+  page.number (value is bound.port)
+  page.add (source is " in ", length is 4)
+  page.number (value is bound.size)
+  page.add (source is " bytes\n", length is 7)
+
   sink.write (buffer is wire + wire.count, count is page.count - wire.count)
 end
